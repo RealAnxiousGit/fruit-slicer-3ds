@@ -8,7 +8,7 @@
 #include "port_api.h"
 #if defined(PORT_HAS_VORBIS) && PORT_HAS_VORBIS
 #define FS_OGG 1
-#include "vorbis_port.h"
+#include "song_decoder.h"
 #else
 #define FS_OGG 0
 #endif
@@ -162,11 +162,11 @@ static constexpr u32 kOggReadPerFrame = 256 * 1024;
 static constexpr int kOggFramesPerStep = 16384;  // about a third of a second of music
 static u8* sOgg;
 static u32 sOggSize;
-static vorbis::Decoder* sOggDec;
+static songdec::Decoder* sOggDec;
 static u32 sOggDecoded;
 
 static void oggDrop() {
-	if (sOggDec) vorbis::close(sOggDec);
+	if (sOggDec) songdec::close(sOggDec);
 	sOggDec = nullptr;
 	free(sOgg);
 	sOgg = nullptr;
@@ -177,9 +177,9 @@ static void oggDrop() {
 static void oggStartDecode() {
 	int ch = 0, rate = 0;
 	unsigned frames = 0;
-	sOggDec = vorbis::open(sOgg, (int)sOggSize, &ch, &rate, &frames);
+	sOggDec = songdec::open(sOgg, (int)sOggSize, &ch, &rate, &frames);
 	if (!sOggDec || ch < 1 || ch > 2 || rate < 8000 || rate > 96000 || frames == 0 || frames > (unsigned)rate * 600) {
-		fprintf(stderr, "[audio] skipping a track that isn't playable Ogg Vorbis\n");
+		fprintf(stderr, "[audio] skipping a track that can't be decoded\n");
 		oggDrop();
 		return;
 	}
@@ -328,7 +328,7 @@ void update(float dt) {
 	} else if (sOggDec) {
 		u32 left = sMusicClip.samples - sOggDecoded;
 		int want = left < (u32)kOggFramesPerStep ? (int)left : kOggFramesPerStep;
-		int got = vorbis::read(sOggDec, sMusicClip.pcm + sOggDecoded * sMusicClip.channels, (int)sMusicClip.channels, want);
+		int got = songdec::read(sOggDec, sMusicClip.pcm + sOggDecoded * sMusicClip.channels, (int)sMusicClip.channels, want);
 		if (got > 0) sOggDecoded += (u32)got;
 		if (got <= 0 || sOggDecoded >= sMusicClip.samples) {
 			// The stream's own length can be a touch longer than what decodes: play what is there.

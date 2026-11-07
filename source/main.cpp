@@ -2064,7 +2064,7 @@ static void drawBeatScreen() {
 #if PORT_CUSTOM_MUSIC
 	if (t >= kTrackCount) drawTap(kBeatTool, kBeatTool.label);
 	drawTap(kBeatFolder, kBeatFolder.label);
-	if (custom::count() == 0) hint = "Add .ogg or .wav songs to the Custom Music folder.";
+	if (custom::count() == 0) hint = "Add .mp3, .ogg, .flac or .wav songs to the Custom Music folder.";
 	if (sFolderNote > 0) hint = custom::folder();
 #endif
 	float s = 0.28f, w = gfx::textWidth(hint, s);
