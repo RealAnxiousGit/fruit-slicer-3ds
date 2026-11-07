@@ -17,11 +17,13 @@ static const ShopItem kTrails[] = {
 	{"Comet", 450, "A bright head and a long tail."},
 };
 static const ShopItem kTracks[] = {
-	{"Sunny Side", 200, "A bouncy plucked tune."},
-	{"Ember Glow", 300, "Warm and slow, for late games."},
-	{"Juice Bar", 250, "Drums, bass and a bouncy hook."},
-	{"Pip Pop", 300, "A playful marimba skip."},
-	{"Peel Out", 400, "Fast and loud, for a high score."},
+	// Recorded music by Of Far Different Nature (fardifferent.carrd.co), CC BY 4.0: Loop Box #1 and #4.
+	{"Summer House", 150, "Chill house for easy slicing."},
+	{"8-Bit Hero Quest", 200, "Bouncy chiptune adventure."},
+	{"Friendly Trap", 250, "Trap drums and a sunny hook."},
+	{"Unruly Beat", 300, "A laid-back hip-hop groove."},
+	{"Vengeance Electro", 400, "Big electro drops."},
+	{"Eternal Explorer", 450, "Wide, warm and cinematic."},
 };
 static_assert(sizeof kThemes / sizeof kThemes[0] == kBoardCount - kBaseBoards, "one theme per Shop board");
 static_assert(sizeof kTrails / sizeof kTrails[0] == kTrailCount - 1, "one item per Shop trail");

@@ -193,34 +193,53 @@ static inline Vertex mixVertex(const Vertex& a, const Vertex& b, float t) {
 	return o;
 }
 
+// The cut outline arrives as one short segment per triangle. Segments are joined end to end into
+// closed outlines, one per piece the plane passes through (each grape, each cherry), and each gets
+// its own face. Worked out the same way as the ready-made halves in tools/gen_models.py.
+static constexpr int kMaxSeg = 256;
+struct CutSeg {
+	float a[3], b[3];
+};
+
+static inline bool samePoint(const float* p, const float* q) {
+	return fabsf(p[0] - q[0]) < 1e-3f && fabsf(p[1] - q[1]) < 1e-3f && fabsf(p[2] - q[2]) < 1e-3f;
+}
+
 static void cutBuild(int handle, int mesh, float nx, float ny, float nz, float offset) {
 	const PartData& d = sParts[mesh][PART_WHOLE];
 	Vertex* out = sCutVerts + handle * kCutMaxVerts;
 	u32 n = 0;
-	const u32 room = kCutMaxVerts - 800;  // keeps space for the cut face
+	const u32 room = kCutMaxVerts - 800;  // keeps space for the cut faces
 
-	static constexpr int kMaxEdge = 84;
-	float ex[kMaxEdge], ey[kMaxEdge], ez[kMaxEdge];
-	int edges = 0;
+	CutSeg seg[kMaxSeg];
+	int segs = 0;
+	// A hair off the requested plane, so no point (a fruit's top or bottom) lies exactly on it.
+	offset -= 1e-4f;
 
 	for (u32 t = 0; t + 2 < d.ni && n + 6 < room; t += 3) {
 		const Vertex* tri[3] = {&d.v[d.idx[t]], &d.v[d.idx[t + 1]], &d.v[d.idx[t + 2]]};
 		float dist[3];
 		for (int k = 0; k < 3; k++) dist[k] = tri[k]->x * nx + tri[k]->y * ny + tri[k]->z * nz - offset;
 		Vertex poly[4];
-		int count = 0;
+		int count = 0, cuts = 0;
+		float cut[2][3];
 		for (int k = 0; k < 3; k++) {
 			int j = (k + 1) % 3;
 			if (dist[k] >= 0 && count < 4) poly[count++] = *tri[k];
 			if ((dist[k] > 0) != (dist[j] > 0)) {
-				Vertex mid = mixVertex(*tri[k], *tri[j], dist[k] / (dist[k] - dist[j]));
+				// Worked out from the same end every time, so neighbouring triangles agree exactly.
+				int a = k, b = j;
+				if (tri[b]->x < tri[a]->x || (tri[b]->x == tri[a]->x && (tri[b]->y < tri[a]->y || (tri[b]->y == tri[a]->y && tri[b]->z < tri[a]->z)))) {
+					a = j;
+					b = k;
+				}
+				Vertex mid = mixVertex(*tri[a], *tri[b], dist[a] / (dist[a] - dist[b]));
 				if (count < 4) poly[count++] = mid;
-				// Each outline point once, and only from the fruit itself: stems stay out of the face.
-				if (dist[k] > 0 && t < d.body && edges < kMaxEdge) {
-					ex[edges] = mid.x;
-					ey[edges] = mid.y;
-					ez[edges] = mid.z;
-					edges++;
+				if (cuts < 2) {
+					cut[cuts][0] = mid.x;
+					cut[cuts][1] = mid.y;
+					cut[cuts][2] = mid.z;
+					cuts++;
 				}
 			}
 		}
@@ -229,78 +248,110 @@ static void cutBuild(int handle, int mesh, float nx, float ny, float nz, float o
 			out[n++] = poly[k];
 			out[n++] = poly[k + 1];
 		}
+		// Only the fruit itself makes faces: stems and leaves stay out of them.
+		if (cuts == 2 && t < d.body && segs < kMaxSeg) {
+			memcpy(seg[segs].a, cut[0], sizeof cut[0]);
+			memcpy(seg[segs].b, cut[1], sizeof cut[1]);
+			segs++;
+		}
 	}
 
 	sCutSurface[handle] = n;
 	sCutMesh[handle] = mesh;
 
-	// Close the fruit with a coloured face: rind ring, flesh and a lighter centre.
-	if (edges >= 3) {
-		float cx = 0, cy = 0, cz = 0;
-		for (int i = 0; i < edges; i++) {
-			cx += ex[i];
-			cy += ey[i];
-			cz += ez[i];
-		}
-		cx /= edges;
-		cy /= edges;
-		cz /= edges;
-		// Two axes in the plane, to sort the outline by angle.
-		float ux = fabsf(nx) < 0.8f ? 1.0f : 0.0f, uy = fabsf(nx) < 0.8f ? 0.0f : 1.0f, uz = 0;
-		float dot = ux * nx + uy * ny + uz * nz;
-		ux -= nx * dot;
-		uy -= ny * dot;
-		uz -= nz * dot;
-		float wx = ny * uz - nz * uy, wy = nz * ux - nx * uz, wz = nx * uy - ny * ux;
-		float ang[kMaxEdge];
-		for (int i = 0; i < edges; i++) {
-			float px = ex[i] - cx, py = ey[i] - cy, pz = ez[i] - cz;
-			ang[i] = atan2f(px * wx + py * wy + pz * wz, px * ux + py * uy + pz * uz);
-		}
-		for (int i = 1; i < edges; i++) {
-			float a = ang[i], x = ex[i], y = ey[i], z = ez[i];
-			int j = i - 1;
-			while (j >= 0 && ang[j] > a) {
-				ang[j + 1] = ang[j];
-				ex[j + 1] = ex[j];
-				ey[j + 1] = ey[j];
-				ez[j + 1] = ez[j];
-				j--;
+	// Two axes in the plane, so every outline turns the same way.
+	float ux = fabsf(nx) < 0.8f ? 1.0f : 0.0f, uy = fabsf(nx) < 0.8f ? 0.0f : 1.0f, uz = 0;
+	float dot = ux * nx + uy * ny + uz * nz;
+	ux -= nx * dot;
+	uy -= ny * dot;
+	uz -= nz * dot;
+	float ul = sqrtf(ux * ux + uy * uy + uz * uz);
+	ux /= ul;
+	uy /= ul;
+	uz /= ul;
+	float wx = ny * uz - nz * uy, wy = nz * ux - nx * uz, wz = nx * uy - ny * ux;
+	const u32 flesh = d.flesh, rim = d.rim;
+	auto vert = [&](float x, float y, float z, u32 c, float lighten) {
+		Vertex o;
+		o.x = x;
+		o.y = y;
+		o.z = z;
+		o.nx = (s8)(-nx * 127);
+		o.ny = (s8)(-ny * 127);
+		o.nz = (s8)(-nz * 127);
+		o.pad = 0;
+		u8 r = c & 255, g = (c >> 8) & 255, b = (c >> 16) & 255;
+		o.r = (u8)(r + (255 - r) * lighten);
+		o.g = (u8)(g + (255 - g) * lighten);
+		o.b = (u8)(b + (255 - b) * lighten);
+		o.a = 255;
+		return o;
+	};
+
+	static constexpr int kMaxRing = 96;
+	bool used[kMaxSeg] = {};
+	int faces = 0;
+	for (int start = 0; start < segs; start++) {
+		if (used[start]) continue;
+		used[start] = true;
+		float ring[kMaxRing][3];
+		int len = 0;
+		memcpy(ring[len++], seg[start].a, sizeof ring[0]);
+		memcpy(ring[len++], seg[start].b, sizeof ring[0]);
+		const float* cur = seg[start].b;
+		for (;;) {
+			int next = -1;
+			const float* other = nullptr;
+			for (int k = 0; k < segs && next < 0; k++) {
+				if (used[k]) continue;
+				if (samePoint(seg[k].a, cur)) next = k, other = seg[k].b;
+				else if (samePoint(seg[k].b, cur)) next = k, other = seg[k].a;
 			}
-			ang[j + 1] = a;
-			ex[j + 1] = x;
-			ey[j + 1] = y;
-			ez[j + 1] = z;
+			if (next < 0) break;
+			used[next] = true;
+			cur = other;
+			if (samePoint(cur, ring[0])) break;
+			// Points closer than this add triangles and nothing anyone can see.
+			float dx = cur[0] - ring[len - 1][0], dy = cur[1] - ring[len - 1][1], dz = cur[2] - ring[len - 1][2];
+			if (dx * dx + dy * dy + dz * dz > 0.36f && len < kMaxRing) memcpy(ring[len++], cur, sizeof ring[0]);
 		}
-		const u32 flesh = d.flesh, rim = d.rim;
-		auto vert = [&](float x, float y, float z, u32 c, float lighten) {
-			Vertex o;
-			o.x = x;
-			o.y = y;
-			o.z = z;
-			o.nx = (s8)(-nx * 127);
-			o.ny = (s8)(-ny * 127);
-			o.nz = (s8)(-nz * 127);
-			o.pad = 0;
-			u8 r = c & 255, g = (c >> 8) & 255, b = (c >> 16) & 255;
-			o.r = (u8)(r + (255 - r) * lighten);
-			o.g = (u8)(g + (255 - g) * lighten);
-			o.b = (u8)(b + (255 - b) * lighten);
-			o.a = 255;
-			return o;
-		};
-		for (int i = 0; i < edges && n + 9 < kCutMaxVerts; i++) {
-			int k = (i + 1) % edges;
-			float ix = cx + (ex[i] - cx) * 0.86f, iy = cy + (ey[i] - cy) * 0.86f, iz = cz + (ez[i] - cz) * 0.86f;
-			float jx = cx + (ex[k] - cx) * 0.86f, jy = cy + (ey[k] - cy) * 0.86f, jz = cz + (ez[k] - cz) * 0.86f;
-			out[n++] = vert(ex[i], ey[i], ez[i], rim, 0);
+		if (len < 3) continue;
+		float cx = 0, cy = 0, cz = 0;
+		for (int i = 0; i < len; i++) {
+			cx += ring[i][0];
+			cy += ring[i][1];
+			cz += ring[i][2];
+		}
+		cx /= len;
+		cy /= len;
+		cz /= len;
+		// Same turning direction for every outline (as the angle-sorted outline had before).
+		float area = 0;
+		for (int i = 0; i < len; i++) {
+			const float* p = ring[i];
+			const float* q = ring[(i + 1) % len];
+			float pu = (p[0] - cx) * ux + (p[1] - cy) * uy + (p[2] - cz) * uz, pw = (p[0] - cx) * wx + (p[1] - cy) * wy + (p[2] - cz) * wz;
+			float qu = (q[0] - cx) * ux + (q[1] - cy) * uy + (q[2] - cz) * uz, qw = (q[0] - cx) * wx + (q[1] - cy) * wy + (q[2] - cz) * wz;
+			area += pu * qw - qu * pw;
+		}
+		// Later faces sit a hair in front, so overlapping pieces (a grape bunch) don't flicker.
+		float lift = 0.04f * faces++;
+		float lx = -nx * lift, ly = -ny * lift, lz = -nz * lift;
+		for (int s = 0; s < len && n + 9 < kCutMaxVerts; s++) {
+			int i = area >= 0 ? s : len - 1 - s;
+			int k = area >= 0 ? (s + 1) % len : (len - 1 - (s + 1) % len);
+			const float* p = ring[i];
+			const float* q = ring[k];
+			float ix = cx + (p[0] - cx) * 0.86f + lx, iy = cy + (p[1] - cy) * 0.86f + ly, iz = cz + (p[2] - cz) * 0.86f + lz;
+			float jx = cx + (q[0] - cx) * 0.86f + lx, jy = cy + (q[1] - cy) * 0.86f + ly, jz = cz + (q[2] - cz) * 0.86f + lz;
+			out[n++] = vert(p[0] + lx, p[1] + ly, p[2] + lz, rim, 0);
 			out[n++] = vert(ix, iy, iz, flesh, 0);
-			out[n++] = vert(ex[k], ey[k], ez[k], rim, 0);
-			out[n++] = vert(ex[k], ey[k], ez[k], rim, 0);
+			out[n++] = vert(q[0] + lx, q[1] + ly, q[2] + lz, rim, 0);
+			out[n++] = vert(q[0] + lx, q[1] + ly, q[2] + lz, rim, 0);
 			out[n++] = vert(ix, iy, iz, flesh, 0);
 			out[n++] = vert(jx, jy, jz, flesh, 0);
 			out[n++] = vert(ix, iy, iz, flesh, 0);
-			out[n++] = vert(cx, cy, cz, flesh, 0.35f);
+			out[n++] = vert(cx + lx, cy + ly, cz + lz, flesh, 0.35f);
 			out[n++] = vert(jx, jy, jz, flesh, 0);
 		}
 	}

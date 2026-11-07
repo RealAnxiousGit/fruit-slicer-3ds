@@ -1,10 +1,17 @@
 #include "audio.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "audio_port.h"
 #include "port_api.h"
+#if defined(PORT_HAS_VORBIS) && PORT_HAS_VORBIS
+#define FS_OGG 1
+#include "vorbis_port.h"
+#else
+#define FS_OGG 0
+#endif
 
 namespace audio {
 static Clip sSfx[SFX_COUNT];
@@ -24,7 +31,7 @@ static const char* const kSfxFiles[SFX_COUNT] = {
 	"combo3", "combo4", "combo5", "combo6", "combo8", "combo10",
 	"strike", "click", "power", "freeze", "fever", "go", "over", "best", "gold",
 	"finale_rise", "finale_hit", "finale_burst",
-	"coin", "plink",
+	"coin", "plink", "shopbell",
 };
 static_assert(sizeof kSfxFiles / sizeof kSfxFiles[0] == SFX_COUNT, "every sound needs a file name");
 // How much of the mix one sound may take. A new sound is turned down if the ones still playing have
@@ -131,7 +138,7 @@ static float makeRoom(Sfx s, float gain, float seconds, float minShare) {
 }
 
 static const char* const kTrackFiles[kTrackCount] = {
-	"music_menu", "music_play", "music_meadow", "music_lantern", "music_zen", "music_moss", "music_bamboo", "music_clouds", "music_sunny", "music_ember", "music_juice", "music_pip", "music_peel",
+	"music_menu", "music_play", "music_meadow", "music_lantern", "music_zen", "music_moss", "music_bamboo", "music_clouds", "music_summer", "music_hero", "music_trap", "music_unruly", "music_vengeance", "music_explorer",
 };
 // What each screen plays on Auto: menus, games, and Zen.
 static constexpr int kAutoTrack[MUSIC_COUNT] = {0, 1, 4};
@@ -140,6 +147,43 @@ static constexpr u32 kReadPerFrame = 24 * 1024;  // whole tracks arrive in under
 static int sContext = MUSIC_NONE;
 static port::AssetFile* sLoadFile;
 static u32 sLoadDone;
+
+#if FS_OGG
+// Recorded tracks (the Shop's) are Ogg Vorbis on this port, at full quality and in stereo. The file
+// arrives a piece per frame, then decodes a piece per frame, so a new track never stalls a frame.
+static constexpr u32 kOggReadPerFrame = 256 * 1024;
+static constexpr int kOggFramesPerStep = 16384;  // about a third of a second of music
+static u8* sOgg;
+static u32 sOggSize;
+static vorbis::Decoder* sOggDec;
+static u32 sOggDecoded;
+
+static void oggDrop() {
+	if (sOggDec) vorbis::close(sOggDec);
+	sOggDec = nullptr;
+	free(sOgg);
+	sOgg = nullptr;
+	sOggSize = 0;
+}
+
+// The whole file is here: check it, then make room for all of its samples.
+static void oggStartDecode() {
+	int ch = 0, rate = 0;
+	unsigned frames = 0;
+	sOggDec = vorbis::open(sOgg, (int)sOggSize, &ch, &rate, &frames);
+	if (!sOggDec || ch < 1 || ch > 2 || rate < 8000 || rate > 96000 || frames == 0 || frames > (unsigned)rate * 600) {
+		fprintf(stderr, "[audio] skipping a track that isn't playable Ogg Vorbis\n");
+		oggDrop();
+		return;
+	}
+	sMusicClip.samples = frames;
+	sMusicClip.rate = (u32)rate;
+	sMusicClip.channels = (u32)ch;
+	sMusicClip.pcm = audioport::alloc(frames * ch * 2);
+	sOggDecoded = 0;
+	if (!sMusicClip.pcm) oggDrop();
+}
+#endif
 
 
 static int resolveTrack(int context) {
@@ -224,6 +268,9 @@ void shutdown() {
 		if (c.pcm) audioport::release(c.pcm);
 	if (sLoadFile) port::assetClose(sLoadFile);
 	sLoadFile = nullptr;
+#if FS_OGG
+	oggDrop();
+#endif
 	if (sMusicClip.pcm) audioport::release(sMusicClip.pcm);
 	if (sMusicRetired) audioport::release(sMusicRetired);
 	if (sFuse.pcm) audioport::release(sFuse.pcm);
@@ -240,7 +287,7 @@ void click(float volume) {
 }
 
 static void beginPlayback() {
-	audioport::ready(sMusicClip.pcm, sMusicClip.samples * 2);
+	audioport::ready(sMusicClip.pcm, sMusicClip.samples * sMusicClip.channels * 2);
 	refreshVolumes();
 	audioport::musicStart(sMusicClip);
 }
@@ -257,6 +304,31 @@ void update(float dt) {
 		for (int i = 0; i < 6; i++) play((Sfx)(SFX_CRISP0 + i), 0.95f, (i - 3) * 0.2f);
 		play(SFX_SWISH0, 0.5f);
 	}
+#endif
+#if FS_OGG
+	if (sLoadFile && sOgg) {
+		u32 left = sOggSize - sLoadDone;
+		u32 want = left < kOggReadPerFrame ? left : kOggReadPerFrame;
+		size_t got = port::assetRead(sOgg + sLoadDone, want, sLoadFile);
+		sLoadDone += got;
+		if (got != want || sLoadDone >= sOggSize) {
+			port::assetClose(sLoadFile);
+			sLoadFile = nullptr;
+			if (got == want) oggStartDecode();
+			else oggDrop();
+		}
+	} else if (sOggDec) {
+		u32 left = sMusicClip.samples - sOggDecoded;
+		int want = left < (u32)kOggFramesPerStep ? (int)left : kOggFramesPerStep;
+		int got = vorbis::read(sOggDec, sMusicClip.pcm + sOggDecoded * sMusicClip.channels, (int)sMusicClip.channels, want);
+		if (got > 0) sOggDecoded += (u32)got;
+		if (got <= 0 || sOggDecoded >= sMusicClip.samples) {
+			// The stream's own length can be a touch longer than what decodes: play what is there.
+			sMusicClip.samples = sOggDecoded;
+			oggDrop();
+			if (sMusicClip.samples > 0) beginPlayback();
+		}
+	} else
 #endif
 	if (sLoadFile) {
 		u32 left = sMusicClip.samples * 2 - sLoadDone;
@@ -292,6 +364,7 @@ static const char* captionFor(Sfx s) {
 		case SFX_GOLD: return "Gold!";
 		case SFX_COIN: return "Coin!";
 		case SFX_PLINK: return "Plink!";
+		case SFX_SHOPBELL: return "Ding-a-ling!";
 		case SFX_FINALE_RISE: return "Big fruit!";
 		case SFX_FINALE_BURST: return "Burst!";
 		default: return nullptr;
@@ -320,6 +393,16 @@ static void startTrack(int track) {
 	if (!sReady || track == sCurrent) return;
 	sCurrent = track;
 	audioport::musicStop();
+#if FS_OGG
+	if (sOgg || sOggDec) {
+		// Still arriving or decoding, so the mixer never saw this one.
+		oggDrop();
+		if (sLoadFile) port::assetClose(sLoadFile);
+		sLoadFile = nullptr;
+		if (sMusicClip.pcm) audioport::release(sMusicClip.pcm);
+		sMusicClip.pcm = nullptr;
+	}
+#endif
 	if (sLoadFile) {
 		// Still arriving, so the hardware never saw this one.
 		port::assetClose(sLoadFile);
@@ -337,11 +420,28 @@ static void startTrack(int track) {
 		sMusicClip.pcm = nullptr;
 	}
 	if (track < 0) return;
+#if FS_OGG
+	{
+		char path[64];
+		snprintf(path, sizeof path, "audio/%s.ogg", kTrackFiles[track]);
+		if (port::AssetFile* ogg = port::assetOpen(path)) {
+			long size = port::assetSize(ogg);
+			if (size > 0 && size < 32L * 1024 * 1024 && (sOgg = (u8*)malloc((size_t)size))) {
+				sOggSize = (u32)size;
+				sLoadFile = ogg;
+				sLoadDone = 0;
+				return;
+			}
+			port::assetClose(ogg);
+		}
+	}
+#endif
 	u32 head[3];
 	port::AssetFile* f = openClip(kTrackFiles[track], head);
 	if (!f) return;
 	sMusicClip.samples = head[1];
 	sMusicClip.rate = head[2];
+	sMusicClip.channels = 1;
 	sMusicClip.pcm = audioport::alloc(sMusicClip.samples * 2);
 	if (!sMusicClip.pcm) {
 		port::assetClose(f);

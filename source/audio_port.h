@@ -4,8 +4,9 @@
 
 struct Clip {
 	s16* pcm;
-	u32 samples;
+	u32 samples;   // frames: one sample per channel
 	u32 rate;
+	u32 channels = 1;  // 2 only for recorded music on the universal port
 };
 
 namespace audioport {

@@ -567,7 +567,7 @@ static const char* const kSliceNames[] = {"Quick", "Exact"};
 static const char* const kDifficultyNames[DIFF_COUNT] = {"Easy", "Normal", "Hard", "Insane"};
 
 static const char* const kTrackRowNames[kTrackCount + 1] = {
-	"Auto", "Orchard Morning", "Picnic Stroll", "Sleepy Meadow", "Lantern Walk", "Still Water", "Moss Garden", "Bamboo Breeze", "Drifting Clouds", "Sunny Side", "Ember Glow", "Juice Bar", "Pip Pop", "Peel Out",
+	"Auto", "Orchard Morning", "Picnic Stroll", "Sleepy Meadow", "Lantern Walk", "Still Water", "Moss Garden", "Bamboo Breeze", "Drifting Clouds", "Summer House", "8-Bit Hero Quest", "Friendly Trap", "Unruly Beat", "Vengeance Electro", "Eternal Explorer",
 };
 
 static const Row kAudioRows[] = {
@@ -993,6 +993,7 @@ static void openShop() {
 	sShopItem = 0;
 	sShopArmT = sShopNoteT = 0;
 	sFocus[SCREEN_SHOP] = kShopTile0;
+	audio::play(SFX_SHOPBELL, 0.8f);  // the bell over the shop door
 	shopTryOn();
 	goTo(SCREEN_SHOP, 1);
 }
@@ -1970,7 +1971,7 @@ static void drawBottomContent(Screen screen) {
 				line("Claude Code, Graphify", 165, COL_CREAM);
 				line("Claude Code Game Studios by Donchitos", 178, COL_CREAM);
 				line("Anti Slop by miqdadbadjuber", 191, COL_CREAM);
-				line("Art, sound and music made from code.", 207, COL_DIM);
+				line("Shop music: Of Far Different Nature (CC BY 4.0)", 207, COL_DIM);
 			}
 			break;
 		case SCREEN_HOWTO: {

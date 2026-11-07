@@ -451,7 +451,7 @@ def cherry(lat, lon):
     for x in (-c, c):
         m.add(prism((x, -a + 2, 0), (1.5, -34, 0), 1.0, 0.8, (108, 140, 56), 4))
     m.add(leaf((1.5, -33, 0), 0.3, 0.3, 12, 3.6, (84, 170, 72)))
-    m = deform(m, turn_y(0.45))
+    m = deform(m, turn_y(1.15))  # mostly front to back, so a cut goes through both cherries
     return centred(deform(m, turn_z(0.22)))
 
 
@@ -507,6 +507,7 @@ def grapes(lat, lon):
             shade_k = 0.86 + 0.14 * ((k + row) % 2)
             m.add(ball((math.cos(ph) * ring, y, math.sin(ph) * ring), 6.8, glat, glon,
                        lambda th, ph2, s=shade_k: lerp3((140, 72, 186), (92, 40, 136), th / math.pi * 0.8 + 0.2 * (1 - s) * 5)))
+    m.body = len(m.i)  # the core and every grape: all of them get cut faces
     m.add(prism((0, -20, 0), (-1.5, -30, 0), 1.4, 1.0, (102, 80, 44), 4))
     m.add(leaf((-1, -26, 0), 0.6, 0.3, 17, 5.5, (84, 170, 72)))
     return centred(m)
@@ -658,8 +659,97 @@ FRUIT = [
 
 
 # ---------------------------------------------------------------- pre-split halves
+def chain_loops(segs):
+    """Joins cut segments end to end into closed outlines. A fruit made of several pieces
+    (a grape bunch, a cherry pair cut through both) gives one outline per piece."""
+    def key(q):
+        return (round(q[0], 3), round(q[1], 3), round(q[2], 3))
+
+    ends = {}
+    for k, (a, b) in enumerate(segs):
+        ends.setdefault(key(a), []).append(k)
+        ends.setdefault(key(b), []).append(k)
+    used = [False] * len(segs)
+    loops = []
+    for start in range(len(segs)):
+        if used[start]:
+            continue
+        used[start] = True
+        first, cur = segs[start]
+        loop = [first, cur]
+        while True:
+            nxt = next((k for k in ends.get(key(cur), ()) if not used[k]), None)
+            if nxt is None:
+                break
+            used[nxt] = True
+            a, b = segs[nxt]
+            cur = b if key(a) == key(cur) else a
+            if key(cur) == key(first):
+                break
+            loop.append(cur)
+        if len(loop) >= 2:
+            loops.append(loop)
+    # Join outlines that stop short of each other (a seam that doesn't quite meet).
+    merged = True
+    while merged:
+        merged = False
+        for i in range(len(loops)):
+            for j in range(len(loops)):
+                if i == j:
+                    continue
+                a, b = loops[i], loops[j]
+                if np.linalg.norm(np.array(a[0]) - np.array(a[-1])) < 1.0:
+                    continue  # already closed
+                for cand in (b, b[::-1]):
+                    if np.linalg.norm(np.array(a[-1]) - np.array(cand[0])) < 1.0:
+                        loops[i] = a + list(cand)
+                        del loops[j]
+                        merged = True
+                        break
+                if merged:
+                    break
+            if merged:
+                break
+    return [np.array(lp) for lp in loops if len(lp) >= 3]
+
+
+def cap_ring(out, ring, side, flesh, rim, lift):
+    """One cut face: rind ring, flesh, and a lighter centre, fanned from the outline's middle."""
+    keep = [ring[0]]
+    for q in ring[1:]:
+        if np.linalg.norm(q - keep[-1]) > 0.6:
+            keep.append(q)
+    if len(keep) > 3 and np.linalg.norm(keep[-1] - keep[0]) <= 0.6:
+        keep.pop()
+    if len(keep) < 3:
+        return
+    ring = np.array(keep)
+    centre = ring.mean(axis=0)
+    # Same turning direction for every outline: angle round the middle, measured in (z, y), rising.
+    dz, dy = ring[:, 2] - centre[2], ring[:, 1] - centre[1]
+    if np.sum(dz * np.roll(dy, -1) - np.roll(dz, -1) * dy) < 0:
+        ring = ring[::-1]
+    normal = (-side, 0.0, 0.0)
+    push = np.array(normal) * lift
+    mid = out.add_vertex(tuple(centre + push), normal, tuple(c * 1.0 + (255 - c) * 0.35 for c in flesh))
+    outer = [out.add_vertex(tuple(q + push), normal, rim) for q in ring]
+    inner = [out.add_vertex(tuple(centre + (q - centre) * 0.86 + push), normal, flesh) for q in ring]
+    count = len(ring)
+    for k in range(count):
+        n = (k + 1) % count
+        out.add_tri(outer[k], inner[k], outer[n])
+        out.add_tri(outer[n], inner[k], inner[n])
+        out.add_tri(inner[k], mid, inner[n])
+
+
+def outline_area(ring):
+    c = ring.mean(axis=0)
+    dz, dy = ring[:, 2] - c[2], ring[:, 1] - c[1]
+    return abs(np.sum(dz * np.roll(dy, -1) - np.roll(dz, -1) * dy)) / 2
+
+
 def split(mesh, side, flesh, rim):
-    """Keeps the part of the mesh on one side of x = 0 and closes it with a cut face."""
+    """Keeps the part of the mesh on one side of x = 0 and closes every piece it cuts with a face."""
     out = Mesh()
     cache = {}
 
@@ -669,48 +759,37 @@ def split(mesh, side, flesh, rim):
             cache[key] = out.add_vertex(p, n, c)
         return cache[key]
 
-    loop = []
+    segs = []
     for t in range(0, len(mesh.i), 3):
         tri = [mesh.v[mesh.i[t + k]] for k in range(3)]
-        d = [side * v[0][0] for v in tri]
+        # The plane sits a hair off x = 0, so no point (a fruit's top or bottom) lies exactly on it
+        # and breaks the outline in two.
+        d = [side * v[0][0] + 1e-4 for v in tri]
         poly = []
+        cuts = []
         for k in range(3):
             a, b = tri[k], tri[(k + 1) % 3]
             da, db = d[k], d[(k + 1) % 3]
             if da >= 0:
                 poly.append(a)
             if (da > 0) != (db > 0) and abs(da - db) > 1e-9:
-                f = da / (da - db)
-                p = tuple(a[0][j] + (b[0][j] - a[0][j]) * f for j in range(3))
-                nv = tuple(a[1][j] + (b[1][j] - a[1][j]) * f for j in range(3))
-                c = tuple(a[2][j] + (b[2][j] - a[2][j]) * f for j in range(3))
+                # Worked out from the same end every time, so neighbouring triangles agree exactly.
+                (a2, d2), (b2, e2) = sorted(((a, da), (b, db)), key=lambda q: q[0][0])
+                f = d2 / (d2 - e2)
+                p = tuple(a2[0][j] + (b2[0][j] - a2[0][j]) * f for j in range(3))
+                nv = tuple(a2[1][j] + (b2[1][j] - a2[1][j]) * f for j in range(3))
+                c = tuple(a2[2][j] + (b2[2][j] - a2[2][j]) * f for j in range(3))
                 poly.append((p, nv, c))
-                if t < mesh.body and da > 0:  # each edge of the cut outline, once; stems stay out of it
-                    loop.append(p)
+                cuts.append(p)
         for k in range(1, len(poly) - 1):
             out.add_tri(*[emit(*poly[j]) for j in (0, k, k + 1)])
+        if t < mesh.body and len(cuts) == 2:  # stems and leaves stay out of the faces
+            segs.append(tuple(np.array(q) for q in cuts))
 
-    if len(loop) >= 3:
-        pts = np.array(loop)
-        centre = pts.mean(axis=0)
-        ang = np.arctan2(pts[:, 1] - centre[1], pts[:, 2] - centre[2])
-        order = np.argsort(ang)
-        ring = pts[order]
-        keep = [ring[0]]
-        for p in ring[1:]:
-            if np.linalg.norm(p - keep[-1]) > 0.6:
-                keep.append(p)
-        ring = keep
-        normal = (-side, 0.0, 0.0)
-        mid = out.add_vertex(tuple(centre), normal, tuple(c * 1.0 + (255 - c) * 0.35 for c in flesh))
-        count = len(ring)
-        outer = [out.add_vertex(tuple(p), normal, rim) for p in ring]
-        inner = [out.add_vertex(tuple(centre + (p - centre) * 0.86), normal, flesh) for p in ring]
-        for k in range(count):
-            n = (k + 1) % count
-            out.add_tri(outer[k], inner[k], outer[n])
-            out.add_tri(outer[n], inner[k], inner[n])
-            out.add_tri(inner[k], mid, inner[n])
+    # Biggest face first; smaller ones sit a hair in front so overlapping pieces don't flicker.
+    loops = sorted(chain_loops(segs), key=outline_area, reverse=True)
+    for rank, ring in enumerate(loops):
+        cap_ring(out, ring, side, flesh, rim, 0.04 * rank)
     return out
 
 

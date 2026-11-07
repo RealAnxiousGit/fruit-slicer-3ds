@@ -54,7 +54,7 @@ enum Effects { FX_NONE, FX_LOW, FX_MEDIUM, FX_FULL };
 enum Difficulty { DIFF_EASY, DIFF_NORMAL, DIFF_HARD, DIFF_INSANE, DIFF_COUNT };
 
 static constexpr int kBaseTracks = 8;  // free; the rest come from the Shop
-static constexpr int kTrackCount = 13;
+static constexpr int kTrackCount = 14;
 constexpr int kTrailCount = 7;  // 0 is the plain blade colour, 1.. are Shop trails
 
 // Save data (save.cpp). Sliders hold 0..100.
