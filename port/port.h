@@ -21,6 +21,8 @@
 #define PORT_CREDITS_TOOLS_1 "devkitARM, libctru, citro2d, citro3d"
 #define PORT_CREDITS_TOOLS_2 "tex3ds, bannertool, makerom, Azahar"
 #define PORT_CHECK_SETTINGS
+#define PORT_RESET_DISPLAY
+#define PORT_UPGRADE_V4(data, size)
 #define PORT_VISUALS_HINT "Art style, board, scenery, blade,"
 #define PORT_GAMEPLAY_HINT "Stylus, difficulty, and how the"
 #define PORT_DATA_HINT "Speed test, and resetting scores."

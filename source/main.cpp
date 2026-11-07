@@ -451,11 +451,7 @@ static void rowAction(int index, const Row& r) {
 		case ACT_RESET_AUDIO: saveDefaults(true, 0); break;
 		case ACT_RESET_VISUALS: saveDefaults(true, 1); break;
 		case ACT_RESET_GAMEPLAY: saveDefaults(true, 2); break;
-		case ACT_RESET_SCORES:
-			memset(gSave.best, 0, sizeof gSave.best);
-			gSave.totalFruit = 0;
-			gSave.bestCombo = 0;
-			break;
+		case ACT_RESET_SCORES: saveResetScores(); break;
 		case ACT_RESET_ALL: saveDefaults(false, -1); break;
 		default: break;
 	}
@@ -711,7 +707,6 @@ static void benchSetup() {
 	gSave.detail = p.detail;
 	gSave.bgDetail = p.bg;
 	gSave.sliceStyle = p.slice;
-	gSave.topFruit = 1;
 	gSave.depth = 50;
 	gSave.difficulty = DIFF_INSANE;
 	gSave.bombs = 0;

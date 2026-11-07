@@ -55,10 +55,28 @@ enum Difficulty { DIFF_EASY, DIFF_NORMAL, DIFF_HARD, DIFF_INSANE, DIFF_COUNT };
 static constexpr int kTrackCount = 8;
 
 // Save data (save.cpp). Sliders hold 0..100.
+// From 1.0 ("FLS5") the file records its own size, so this struct only ever grows:
+// new shared fields take bytes from `reserved`, and older saves load with the rest at defaults.
+constexpr int kMaxModes = 12;
+constexpr int kMaxFruitKinds = 16;
+constexpr int kMaxTracks = 16;
+constexpr int kDailyDays = 32;
 struct Settings {
-	u32 best[MODE_COUNT];
+	// Scores and progress
+	u32 best[kMaxModes];
 	u32 totalFruit;
 	u32 bestCombo;
+	u32 bestAssisted[kMaxModes];  // runs with Slice Assist on or Game Speed below 100%
+	u32 coins, coinsLifetime;
+	u32 playSeconds;
+	u32 fruitSliced[kMaxFruitKinds];  // Fruit Journal, by mesh kind
+	u32 ownedThemes, ownedTrails, ownedTracks, ownedExtras;  // Shop: bit n = item n
+	u32 dailyDay;                 // days since 2000-01-01 of the newest Daily Fruit played, 0 = never
+	u32 dailyScore[kDailyDays];   // [0] is dailyDay, [1] the day before, ...
+	u16 dailyStreak, dailyBestStreak;
+	u32 beatBest[kMaxTracks];     // Beat Slice, by track
+	u32 updLastDay;               // day of the last update check
+	char updSkipped[16];          // version the player chose Later for
 	// Audio
 	u8 sfx, music, menuSfx;
 	u8 menuTrack, gameTrack;  // 0 lets the game choose, otherwise 1 + a track
@@ -68,7 +86,6 @@ struct Settings {
 	u8 depth;       // 3D depth; 50 is the normal strength
 	u8 shake;
 	u8 bgDetail;    // 0 simple, 1 full
-	u8 topFruit;    // no longer a setting; kept so that existing saves still line up
 	u8 detail;      // 3D model detail: 0 low, 1 high
 	u8 sliceStyle;  // 0 ready-made halves, 1 cut along the actual swipe
 	u8 transitions;
@@ -80,10 +97,32 @@ struct Settings {
 	u8 forgiveness;  // 50 is normal
 	u8 frenzyDrain;  // 50 is normal
 	u8 misses;       // 1..5, Classic only
-	PORT_SETTINGS_FIELDS
+	// Controls
+	u8 stickStyle;   // 0 hold the slice button, 1 flick
+	u8 stickSpeed;   // 50 is normal
+	u8 snapAssist;   // 0 off, 1 low, 2 high
+	u8 vibration;    // 0 off, 1 on
+	// Accessibility
+	u8 uiScale;      // 0 100%, 1 125%, 2 150%
+	u8 colorBlind;   // 0 off, 1 red-weak, 2 green-weak, 3 blue-weak
+	u8 highContrast, largeText, calmFx, sliceAssist, captions, sliceNoHold;
+	u8 gameSpeed;    // 0 100%, 1 85%, 2 70%
+	// Updates and first-start flags
+	u8 updConsent;   // 0 not asked, 1 check, 2 don't
+	u8 practiceDone;
+	u8 reserved[66];  // sized so the port block starts on a 4-byte boundary
+	// The port's own settings, in a fixed-size block so shared fields never move.
+	union {
+		struct { u8 portRev; PORT_SETTINGS_FIELDS };
+		u8 portBlock[32];
+	};
 };
+static_assert(MODE_COUNT <= kMaxModes, "more modes than the save holds");
+static_assert(kTrackCount <= kMaxTracks, "more tracks than the save holds");
 extern Settings gSave;
-void saveDefaults(bool keepScores, int section);  // section: -1 all, 0 audio, 1 visuals, 2 gameplay
+enum SaveSection { SEC_ALL = -1, SEC_AUDIO, SEC_VISUALS, SEC_GAMEPLAY, SEC_CONTROLS, SEC_ACCESS, SEC_DISPLAY };
+void saveDefaults(bool keepScores, int section);  // section: SaveSection; coins and Shop items are never reset
+void saveResetScores();
 void saveLoad();
 void saveWrite();
 
