@@ -30,7 +30,7 @@
 #define PORT_NO_SOUND_TEXT "No sound: needs 3ds/dspfirm.cdc"
 #define PORT_DEFAULT_SENSITIVITY 40
 #define PORT_SETTINGS_FIELDS
-#define PORT_EXTRA_VISUAL_ROWS
+#define PORT_HAS_DISPLAY 0
 
 // Filling the GPU's command list drops its closing commands and hangs the GPU, so draws stop short of that.
 inline bool gpuHasRoom() {

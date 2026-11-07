@@ -107,13 +107,6 @@ static const Button kModeButtons[] = {
 	{8, 142, 148, 44, "Sudden Death"},  {164, 142, 148, 44, "Minefield"},
 	{86, 190, 148, 44, "Combo Rush"},
 };
-static const Button kOptionButtons[] = {
-	kBack,
-	{36, 46, 248, 44, "Audio"},
-	{36, 94, 248, 44, "Visuals"},
-	{36, 142, 248, 44, "Gameplay"},
-	{36, 190, 248, 44, "Scores and Data"},
-};
 static const Button kOnlyBack[] = {kBack};
 static const Button kResultButtons[] = {kBack, {20, 170, 134, 52, "Again"}, {166, 170, 134, 52, "Modes"}};
 #if PORT_PAUSE_BUTTON
@@ -261,7 +254,7 @@ static int menuInput(const Button* btns, int n, Screen screen, const Input& in, 
 
 // ---------------------------------------------------------------- settings rows
 enum RowKind { ROW_SLIDER, ROW_CHOICE, ROW_ACTION };
-enum RowAction { ACT_NONE, ACT_RESET_AUDIO, ACT_RESET_VISUALS, ACT_RESET_GAMEPLAY, ACT_RESET_SCORES, ACT_RESET_ALL, ACT_SPEED_TEST };
+enum RowAction { ACT_NONE, ACT_RESET_AUDIO, ACT_RESET_VISUALS, ACT_RESET_GAMEPLAY, ACT_RESET_SCORES, ACT_RESET_ALL, ACT_SPEED_TEST, ACT_APPLY_DISPLAY, ACT_RESET_DISPLAY };
 
 struct Row {
 	RowKind kind;
@@ -320,7 +313,6 @@ static const Row kVisualRows[] = {
 	{ROW_CHOICE, "3D Detail", &gSave.detail, 0, 1, kDetailNames, 0, 0, ACT_NONE, "Polygons per fruit, 3D style only.", PORT_DETAIL_HINT},
 	{ROW_CHOICE, "Slice Style", &gSave.sliceStyle, 0, 1, kSliceNames, 0, 0, ACT_NONE, "Exact cuts along your swipe.", "Quick uses ready-made halves."},
 	{ROW_CHOICE, "Transitions", &gSave.transitions, 0, 1, kOffOn, 0, 0, ACT_NONE, "Slides between menus.", ""},
-	PORT_EXTRA_VISUAL_ROWS
 	{ROW_ACTION, "Reset Visuals", nullptr, 0, 0, nullptr, 0, 0, ACT_RESET_VISUALS, PORT_RESET_HINT, ""},
 };
 static const Row kGameplayRows[] = {
@@ -343,19 +335,75 @@ static const Row kDataRows[] = {
 	{ROW_ACTION, "Reset Everything", nullptr, 0, 0, nullptr, 0, 0, ACT_RESET_ALL, "Erases scores and all settings.", ""},
 };
 
+#if PORT_HAS_DISPLAY
+static const char* const kWindowModeNames[] = {"Windowed", "Borderless", "Fullscreen"};
+// Not const: the Resolution row's last choice depends on the screen and the Display Mode.
+static Row kDisplayRows[] = {
+#if !PORT_ANDROID
+	{ROW_CHOICE, "Display Mode", &gSave.windowMode, 0, 2, kWindowModeNames, 0, 0, ACT_NONE, "Borderless fills the screen.", "Fullscreen takes it over."},
+	{ROW_CHOICE, "Resolution", &port::gResChoice, 0, 0, port::gResNames, 0, 0, ACT_NONE, "Window size, or the screen mode", "in Fullscreen."},
+	{ROW_ACTION, "Apply", nullptr, 0, 0, nullptr, 0, 0, ACT_APPLY_DISPLAY, "Tries the mode and resolution.", "Undone in 10 seconds unless kept."},
+	{ROW_CHOICE, "V-Sync", &gSave.vsync, 0, 1, kOffOn, 0, 0, ACT_NONE, "Waits for the screen: no tearing.", "Works on 60 and 120 Hz screens."},
+#endif
+	{ROW_CHOICE, "Renderer", &gSave.renderer, 0, (u8)(kRendererCount - 1), kRendererNames, 0, 0, ACT_NONE, "How the game draws. Takes effect", "the next time the game starts."},
+	{ROW_ACTION, "Reset Display", nullptr, 0, 0, nullptr, 0, 0, ACT_RESET_DISPLAY, "Back to the default display.", ""},
+};
+#endif
+
+enum SectionId { SID_AUDIO, SID_VISUALS, SID_GAMEPLAY, SID_DISPLAY, SID_DATA };
 struct Section {
 	const char* title;
 	const Row* rows;
 	int count;
+	SectionId id;
+	bool inPause;  // reachable from the pause menu
+	const char* hint1;
+	const char* hint2;
 };
 static const Section kSections[] = {
-	{"Audio", kAudioRows, sizeof kAudioRows / sizeof(Row)},
-	{"Visuals", kVisualRows, sizeof kVisualRows / sizeof(Row)},
-	{"Gameplay", kGameplayRows, sizeof kGameplayRows / sizeof(Row)},
-	{"Scores and Data", kDataRows, sizeof kDataRows / sizeof(Row)},
+	{"Audio", kAudioRows, sizeof kAudioRows / sizeof(Row), SID_AUDIO, true, "Sound, music and menu volume.", ""},
+	{"Visuals", kVisualRows, sizeof kVisualRows / sizeof(Row), SID_VISUALS, true, PORT_VISUALS_HINT, "effects and speed savers."},
+	{"Gameplay", kGameplayRows, sizeof kGameplayRows / sizeof(Row), SID_GAMEPLAY, true, PORT_GAMEPLAY_HINT, "game plays."},
+#if PORT_HAS_DISPLAY
+	{"Display", kDisplayRows, sizeof kDisplayRows / sizeof(Row), SID_DISPLAY, true, PORT_DISPLAY_HINT, ""},
+#endif
+	// Mid-game, the data section stays out of reach: its speed test would replace the paused game.
+	{"Scores and Data", kDataRows, sizeof kDataRows / sizeof(Row), SID_DATA, false, PORT_DATA_HINT, ""},
 };
+constexpr int kSectionCount = sizeof kSections / sizeof kSections[0];
 
 static bool sOptionsFromPause = false;  // Options opened from the pause menu, with a game waiting
+
+// The Options signs: the back arrow, then each section that can be reached right now. Up to four
+// stack in one column; more go in two columns, with an odd last one centred.
+static Button sOptionButtons[kSectionCount + 1];
+static int sOptionSection[kSectionCount + 1];
+static int optionButtons() {
+	int n = 0;
+	int visible[kSectionCount];
+	for (int i = 0; i < kSectionCount; i++)
+		if (!sOptionsFromPause || kSections[i].inPause) visible[n++] = i;
+	sOptionButtons[0] = kBack;
+	sOptionSection[0] = -1;
+	for (int i = 0; i < n; i++) {
+		Button b;
+		if (n <= 4) b = {36, 46 + 48.0f * i, 248, 44, nullptr};
+		else if (i == n - 1 && (n & 1)) b = {86, 46 + 48.0f * (i / 2), 148, 44, nullptr};
+		else b = {i & 1 ? 164.0f : 8.0f, 46 + 48.0f * (i / 2), 148, 44, nullptr};
+		b.label = kSections[visible[i]].title;
+		sOptionButtons[i + 1] = b;
+		sOptionSection[i + 1] = visible[i];
+	}
+	return n + 1;
+}
+#ifdef AUTOTEST
+static const Button& optionButtonFor(SectionId id) {
+	int n = optionButtons();
+	for (int i = 1; i < n; i++)
+		if (kSections[sOptionSection[i]].id == id) return sOptionButtons[i];
+	return kBack;
+}
+#endif
 
 static constexpr float kListTop = 46;
 static constexpr float kRowH = 38;
@@ -382,7 +430,23 @@ static float maxScroll() {
 	return h > room ? h - room : 0;
 }
 
-static bool rowDisabled(const Row& r) { return r.value == &gSave.depth && !gHas3dScreen; }
+#if PORT_HAS_DISPLAY
+// After Apply, the new mode stays only if it is kept: a mode the screen can't show must undo itself.
+static float sRevertT = 0;
+static int sRevertFocus = 0;
+static const Button kRevertButtons[] = {{40, 150, 110, 44, "Keep"}, {170, 150, 110, 44, "Undo"}};
+static void refreshResolutions() {
+	for (Row& r : kDisplayRows)
+		if (r.value == &port::gResChoice) r.hi = (u8)(port::resolutionCount() - 1);
+}
+#endif
+
+static bool rowDisabled(const Row& r) {
+#if PORT_HAS_DISPLAY
+	if (r.value == &port::gResChoice) return gSave.windowMode == 1;  // borderless always matches the desktop
+#endif
+	return r.value == &gSave.depth && !gHas3dScreen;
+}
 
 static void rowValueText(const Row& r, char* buf, size_t size) {
 	buf[0] = 0;
@@ -406,6 +470,10 @@ static void changedSetting(const Row& r) {
 	// Hear a track as soon as it is picked. Leaving the section puts the right one back.
 	if (r.value == &gSave.menuTrack) audio::preview(MUSIC_MENU);
 	if (r.value == &gSave.gameTrack) audio::preview(MUSIC_PLAY);
+#if PORT_HAS_DISPLAY
+	if (r.value == &gSave.windowMode) refreshResolutions();
+	if (r.value == &gSave.vsync) port::applyVsync();
+#endif
 }
 
 static void adjustRow(const Row& r, int dir) {
@@ -441,6 +509,13 @@ static void rowAction(int index, const Row& r) {
 		return;
 	}
 #endif
+#if PORT_HAS_DISPLAY
+	if (r.action == ACT_APPLY_DISPLAY) {
+		audio::click();
+		if (port::displayApply()) sRevertT = 10;
+		return;
+	}
+#endif
 	if (sArmed != index) {
 		sArmed = index;
 		audio::click();
@@ -448,13 +523,21 @@ static void rowAction(int index, const Row& r) {
 	}
 	sArmed = -1;
 	switch (r.action) {
-		case ACT_RESET_AUDIO: saveDefaults(true, 0); break;
-		case ACT_RESET_VISUALS: saveDefaults(true, 1); break;
-		case ACT_RESET_GAMEPLAY: saveDefaults(true, 2); break;
+		case ACT_RESET_AUDIO: saveDefaults(true, SEC_AUDIO); break;
+		case ACT_RESET_VISUALS: saveDefaults(true, SEC_VISUALS); break;
+		case ACT_RESET_GAMEPLAY: saveDefaults(true, SEC_GAMEPLAY); break;
 		case ACT_RESET_SCORES: saveResetScores(); break;
-		case ACT_RESET_ALL: saveDefaults(false, -1); break;
+		case ACT_RESET_ALL: saveDefaults(false, SEC_ALL); break;
+		case ACT_RESET_DISPLAY: saveDefaults(true, SEC_DISPLAY); break;
 		default: break;
 	}
+#if PORT_HAS_DISPLAY
+	if (r.action == ACT_RESET_DISPLAY || r.action == ACT_RESET_ALL) {
+		refreshResolutions();
+		port::displayApply();
+		port::applyVsync();
+	}
+#endif
 	audio::refreshVolumes();
 	audio::reapply();
 	audio::play(SFX_GOLD, 0.7f);
@@ -464,6 +547,9 @@ static void rowAction(int index, const Row& r) {
 
 static void leaveSection(bool clicked = false) {
 	if (!clicked) audio::click();
+#if PORT_HAS_DISPLAY
+	port::displayDiscard();  // a mode or resolution picked but never applied
+#endif
 	if (sDirty) saveWrite();
 	sDirty = false;
 	sArmed = -1;
@@ -486,6 +572,26 @@ static void updateSection(const Input& in, bool wasTouching) {
 	const Section& sec = kSections[sSection];
 	int& focus = sFocus[SCREEN_SECTION];  // -1 is the back arrow
 
+#if PORT_HAS_DISPLAY
+	if (sRevertT > 0) {
+		int t = touchButtons(kRevertButtons, 2, in, wasTouching, sRevertFocus);
+		if (in.repeat & (KEY_LEFT | KEY_RIGHT)) sRevertFocus ^= 1;
+		if (in.down & KEY_A) t = sRevertFocus;
+		if (in.down & KEY_B) t = 1;
+		sRevertT -= 1.0f / 60;
+		if (t < 0 && sRevertT <= 0) t = 1;
+		if (t >= 0) {
+			if (t == 1) port::displayRevert();
+			else audio::play(SFX_GOLD, 0.7f);
+			refreshResolutions();
+			sRevertT = 0;
+			sRevertFocus = 0;
+			saveWrite();
+			sDirty = false;
+		}
+		return;
+	}
+#endif
 	if (in.down & KEY_B) {
 		leaveSection();
 		return;
@@ -858,21 +964,16 @@ static void drawTopContent(Screen screen) {
 			break;
 		}
 		case SCREEN_OPTIONS: {
-			static const char* const kLines[][2] = {
-				{"", "Back to the title"},
-				{"Sound, music and menu volume.", ""},
-				{PORT_VISUALS_HINT, "effects and speed savers."},
-				{PORT_GAMEPLAY_HINT, "game plays."},
-				{PORT_DATA_HINT, ""},
-			};
+			int n = optionButtons();
 			int f = sFocus[SCREEN_OPTIONS];
+			const Section* sec = f >= 1 && f < n ? &kSections[sOptionSection[f]] : nullptr;
 			gfx::setDepth(1.0f);
 			gfx::sprite(SHEET_LOGO, logo_logo_idx, 200, 50, 0.62f, 0.62f);
 			topPanel(40, 112, 320, 84);
 			gfx::setDepth(0.7f);
-			gfx::text(f >= 1 ? kOptionButtons[f].label : "Options", 200, 118, 0.5f, COL_ACCENT, ALIGN_CENTER);
-			gfx::text(kLines[f][0], 200, 146, 0.38f, COL_CREAM, ALIGN_CENTER);
-			gfx::text(kLines[f][1], 200, 164, 0.38f, COL_CREAM, ALIGN_CENTER);
+			gfx::text(sec ? sec->title : "Options", 200, 118, 0.5f, COL_ACCENT, ALIGN_CENTER);
+			gfx::text(sec ? sec->hint1 : "", 200, 146, 0.38f, COL_CREAM, ALIGN_CENTER);
+			gfx::text(sec ? sec->hint2 : (sOptionsFromPause ? "Back to the game" : "Back to the title"), 200, 164, 0.38f, COL_CREAM, ALIGN_CENTER);
 			break;
 		}
 		case SCREEN_SECTION: {
@@ -887,7 +988,7 @@ static void drawTopContent(Screen screen) {
 			} else if (r && r->value == &gSave.blade) {
 				gfx::setDepth(0.6f);
 				sPreviewBlade.draw();
-			} else if (sSection == 3) {
+			} else if (kSections[sSection].id == SID_DATA) {
 				gfx::setDepth(0.6f);
 				snprintf(buf, sizeof buf, "FRUIT SLICED %lu", (unsigned long)gSave.totalFruit);
 				gfx::text(buf, 200, 20, 0.5f, COL_CREAM, ALIGN_CENTER);
@@ -1066,7 +1167,8 @@ static void drawBottomContent(Screen screen) {
 			int f = sFocus[SCREEN_OPTIONS];
 			drawHeader("Options");
 			drawBackArrow(f == 0, sPressed == 0);
-			for (int i = 1; i < (sOptionsFromPause ? 4 : 5); i++) drawSign(kOptionButtons[i], kOptionButtons[i].label, f == i, sPressed == i, 0.56f);
+			int n = optionButtons();
+			for (int i = 1; i < n; i++) drawSign(sOptionButtons[i], sOptionButtons[i].label, f == i, sPressed == i, 0.56f);
 			break;
 		}
 		case SCREEN_SECTION:
@@ -1076,6 +1178,17 @@ static void drawBottomContent(Screen screen) {
 			gfx::rect(0, 0, 320, 44, gfx::themeBar());
 			drawHeader(kSections[sSection].title);
 			drawBackArrow(sFocus[SCREEN_SECTION] < 0, sPressed == 0);
+#if PORT_HAS_DISPLAY
+			if (sRevertT > 0 && screen == sScreen) {
+				gfx::rect(0, 0, 320, 240, rgba(30, 18, 10, 170));
+				gfx::sign(sprites_plank_idx, 20, 60, 280, 146, COL_PLANK);
+				gfx::text("Keep this display?", 160, 72, 0.56f, COL_ACCENT, ALIGN_CENTER);
+				char line[32];
+				snprintf(line, sizeof line, "Going back in %d", (int)ceilf(sRevertT));
+				gfx::text(line, 160, 108, 0.42f, COL_CREAM, ALIGN_CENTER);
+				for (int i = 0; i < 2; i++) drawSign(kRevertButtons[i], kRevertButtons[i].label, sRevertFocus == i, sPressed == i, 0.5f);
+			}
+#endif
 			break;
 		case SCREEN_CREDITS:
 			drawMenuBack();
@@ -1276,8 +1389,7 @@ static void updateFrame(const Input& in, bool wasTouching) {
 		}
 		case SCREEN_OPTIONS: {
 			if (blocked) break;
-			// Mid-game, the data section stays out of reach: its speed test would replace the paused game.
-			int t = menuInput(kOptionButtons, sOptionsFromPause ? 4 : 5, SCREEN_OPTIONS, in, wasTouching);
+			int t = menuInput(sOptionButtons, optionButtons(), SCREEN_OPTIONS, in, wasTouching);
 			if (in.down & KEY_B) {
 				audio::click();
 				t = 0;
@@ -1287,7 +1399,10 @@ static void updateFrame(const Input& in, bool wasTouching) {
 				else goTo(SCREEN_TITLE, -1);
 			}
 			else if (t > 0) {
-				sSection = t - 1;
+				sSection = sOptionSection[t];
+#if PORT_HAS_DISPLAY
+				if (kSections[sSection].id == SID_DISPLAY) refreshResolutions();
+#endif
 				sScroll = 0;
 				sArmed = -1;
 				sFocus[SCREEN_SECTION] = 0;
@@ -1465,6 +1580,16 @@ static void drawFrame() {
 		} else {
 			content(sScreen);
 		}
+	}
+	// A message from starting up, such as the chosen renderer not working, shows under the logo for a while.
+	static int noticeFrames = 0;
+	const char* note = port::notice();
+	if (note && sScreen == SCREEN_TITLE && !sSliding && noticeFrames < 60 * 10) {
+		noticeFrames++;
+		gfx::beginTop(0);
+		float w = gfx::textWidth(note, 0.36f);
+		gfx::rect(200 - w / 2 - 8, 214, w + 16, 22, rgba(30, 18, 10, 190));
+		gfx::text(note, 200, 216, 0.36f, COL_CREAM, ALIGN_CENTER);
 	}
 	if (sFade > 0) gfx::fadeAll(clampf(sFade, 0, 1));
 	gfx::endFrame();

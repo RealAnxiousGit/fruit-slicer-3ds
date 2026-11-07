@@ -61,20 +61,20 @@ static void autotestMenus(Input& in) {
 		case 2: botTap(kTitleButtons[2]); return;   // Credits
 		case 3: botTap(kBack); return;
 		case 4: botTap(kTitleButtons[1]); return;   // Options
-		case 5: botTap(kOptionButtons[1]); return;  // Audio
+		case 5: botTap(optionButtonFor(SID_AUDIO)); return;  // Audio
 		case 6: botTapXY((int)kTrackX1, (int)firstRowY); return;  // drag-free slider tap
 		case 7: botTapXY((int)((kTrackX0 + kTrackX1) / 2), (int)firstRowY); return;
 		case 8: botTap(kBack); return;
-		case 9: botTap(kOptionButtons[2]); return;  // Visuals
+		case 9: botTap(optionButtonFor(SID_VISUALS)); return;  // Visuals
 		case 10: botTapXY(231, (int)(firstRowY + kRowH)); return;  // Board: next
 		case 11: botTapXY(231, (int)(firstRowY + kRowH * 2)); return;  // Scenery: next
 		case 12: botTapXY(231, (int)(firstRowY + kRowH * 3)); return;  // Blade: next
 		case 13: botTapXY(231, (int)(firstRowY + kRowH * 4)); return;  // Effects: wraps round
 		case 14: botTap(kBack); return;
-		case 15: botTap(kOptionButtons[3]); return;  // Gameplay
+		case 15: botTap(optionButtonFor(SID_GAMEPLAY)); return;  // Gameplay
 		case 16: botTapXY(231, (int)(firstRowY + kRowH)); return;  // Difficulty
 		case 17: botTap(kBack); return;
-		case 18: botTap(kOptionButtons[4]); return;  // Scores and Data
+		case 18: botTap(optionButtonFor(SID_DATA)); return;  // Scores and Data
 		case 19: botTap(kBack); return;
 		case 20: botTap(kBack); return;              // back to the title
 #ifdef BOT_TOUR
