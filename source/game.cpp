@@ -51,10 +51,12 @@ static constexpr float kSpawnY = 262.0f;
 static constexpr float kKillY = 276.0f;
 // Bomb and fruit radii are 19 and 23, so paths this far apart never visually touch.
 static constexpr float kWantClearance = 62.0f;
-static constexpr float kFeverGrace = 1.5f;    // seconds without a slice before the meter drains
-static constexpr float kFeverDrain = 1.0f / 25.0f;  // full to empty in 25 seconds, at the default slider
+static constexpr float kComboFade = 0.35f;  // seconds the COMBO text takes to fade once the meter runs dry
+static constexpr float kFeverDrain = 1.0f / 18.0f;  // full to empty in 18 seconds, on Normal at the default slider
 static constexpr float kFrenzySeconds = 7.0f;
 static constexpr float kAfterFrenzy = 0.25f;  // the meter restarts here, so a good run can chain
+// About the longest a fruit thrown by a Frenzy stays in the air. Two screens throw higher.
+static constexpr float kFrenzyGrace = PORT_TWO_SCREENS ? 3.5f : 2.5f;
 
 // Top-screen placement of a field position: the top screen hangs above the bottom one, with a gap.
 static constexpr float kTopOffsetX = 40.0f;
@@ -63,12 +65,14 @@ static constexpr float kTopOffsetY = 264.0f;
 struct DifficultyInfo {
 	float gravity, interval, bombs;
 	int extra;
+	float feverDrain, feverGain;  // how fast the Frenzy meter empties, and how much a slice adds
+	int bombsPerWave;
 };
 static const DifficultyInfo kDifficulty[DIFF_COUNT] = {
-	{0.88f, 1.2f, 0.6f, -1},
-	{1.0f, 1.0f, 1.0f, 0},
-	{1.12f, 0.85f, 1.25f, 1},
-	{1.25f, 0.7f, 1.6f, 2},
+	{0.88f, 1.2f, 0.6f, -1, 0.55f, 1.5f, 1},
+	{1.0f, 1.0f, 1.0f, 0, 1.0f, 1.0f, 1},
+	{1.12f, 0.85f, 1.25f, 1, 1.5f, 0.65f, 2},
+	{1.25f, 0.7f, 1.6f, 2, 2.0f, 0.5f, 2},
 };
 
 u32 hueColor(float t) {
@@ -121,6 +125,11 @@ void Game::start(Mode m) {
 		case MODE_COMBO: timeLeft = 45; break;
 		default: break;
 	}
+#ifdef TEST_BALANCE
+	// Measures what each mode throws, so nothing ends a game early.
+	if (timeLeft <= 0) timeLeft = 120;
+	maxStrikes = 0;
+#endif
 	audio::music(m == MODE_ZEN ? MUSIC_ZEN : MUSIC_PLAY);
 }
 
@@ -178,6 +187,11 @@ void Game::launch(const Pending& p) {
 #ifdef AUTOTEST
 		statThrows++;
 		if (feverT > 0) statFeverThrows++;
+		else {
+			const int at = elapsed < 30 ? 0 : (elapsed < 60 ? 1 : 2);
+			if (p.kind == OBJ_BOMB) statBombsAt[at]++;
+			else statFruitAt[at]++;
+		}
 		u32 live = 0;
 		for (const auto& other : objs) live += other.on;
 		if (live > statPeakObjs) statPeakObjs = live;
@@ -314,24 +328,31 @@ void Game::spawnWave() {
 		case MODE_ARCADE: bombChance = lerpf(0.08f, 0.20f, d); maxExtra += 1; break;
 		case MODE_FRENZY: bombChance = lerpf(0.06f, 0.10f, d); maxExtra = 1; break;
 		case MODE_SUDDEN: bombChance = lerpf(0.05f, 0.18f, d); maxExtra = (int)lerpf(0, 3, d); break;
-		case MODE_MINEFIELD: bombChance = lerpf(0.38f, 0.62f, d); maxExtra += 1; break;
-		case MODE_COMBO: bombChance = 0.10f; maxExtra += 2; break;
+		case MODE_MINEFIELD: bombChance = lerpf(0.26f, 0.45f, d); maxExtra = (int)lerpf(1, 4, d); break;
+		case MODE_COMBO: bombChance = lerpf(0.12f, 0.20f, d); maxExtra += 2; break;
 		default: break;
 	}
-	bombChance = clampf(bombChance * level.bombs * (gSave.bombs / 50.0f), 0, 0.9f);
+	float bombSetting = gSave.bombs / 50.0f;
+	if (mode == MODE_MINEFIELD && bombSetting < 0.5f) bombSetting = 0.5f;  // with no bombs, this mode could never end
+	// Even a minefield has to leave some fruit worth going for.
+	const float bombLimit = mode == MODE_MINEFIELD ? (bombSetting > 1 ? 0.65f * bombSetting : 0.65f) : 0.9f;
+	bombChance = clampf(bombChance * level.bombs * bombSetting, 0, bombLimit > 0.9f ? 0.9f : bombLimit);
 	maxExtra = maxExtra + level.extra < 0 ? 0 : maxExtra + level.extra;
+	if (mode == MODE_MINEFIELD && maxExtra > 4) maxExtra = 4;
+	// One touch ends Sudden Death, so it never throws two at once.
+	const int bombsAllowed = mode == MODE_MINEFIELD ? 8 : (mode == MODE_SUDDEN ? 1 : level.bombsPerWave);
 	int count = 1 + gRng.below(maxExtra + 1);
 	float stagger = gRng.below(3) == 0 ? lerpf(0.22f, 0.11f, d) : 0.0f;
-	bool bombUsed = false;
+	int bombsUsed = 0;
 
 	// Decide the types first, so fruit can route around bombs from the same wave.
 	ObjKind kinds[8];
 	if (count > 8) count = 8;
 	for (int i = 0; i < count; i++) {
 		ObjKind kind = OBJ_FRUIT;
-		if (gRng.unit() < bombChance && !(bombUsed && mode != MODE_MINEFIELD)) {
+		if (gRng.unit() < bombChance && bombsUsed < bombsAllowed) {
 			kind = OBJ_BOMB;
-			bombUsed = true;
+			bombsUsed++;
 #ifdef AUTOTEST
 		} else if (mode == MODE_ARCADE && gRng.unit() < 0.3f) {
 			// Test builds cycle the power-ups so that every one gets exercised.
@@ -361,8 +382,52 @@ void Game::spawnWave() {
 	float interval = lerpf(2.1f, 0.95f, d);
 	if (mode == MODE_FRENZY) interval = lerpf(0.42f, 0.30f, d);
 	if (mode == MODE_ZEN) interval *= 0.95f;
+	if (mode == MODE_SUDDEN) interval *= 0.85f;
 	waveTimer = interval * level.interval + stagger * count;
 }
+
+#ifdef TEST_SPAWN
+// Runs the real wave code many times for each mode, difficulty and stage of a game, and prints what it throws.
+void Game::spawnReport() {
+	static const char* const names[MODE_COUNT] = {"Classic", "Arcade", "Zen", "Frenzy", "Sudden", "Minefield", "ComboRush"};
+	for (int m = 0; m < MODE_COUNT; m++) {
+		for (int diff = 0; diff < DIFF_COUNT; diff++) {
+			gSave.difficulty = (u8)diff;
+			for (int stage = 0; stage < 3; stage++) {
+				const float want[3] = {0.0f, 0.5f, 1.0f};
+				start((Mode)m);
+				float ramp = 150;
+				switch (m) {
+					case MODE_ARCADE: ramp = 60; break;
+					case MODE_ZEN: ramp = 240; break;
+					case MODE_FRENZY: ramp = 30; break;
+					case MODE_SUDDEN: ramp = 120; break;
+					case MODE_MINEFIELD: ramp = 90; break;
+					case MODE_COMBO: ramp = 45; break;
+					default: break;
+				}
+				double fruit = 0, bombs = 0, seconds = 0, biggest = 0;
+				static constexpr int kWaves = 20000;
+				for (int i = 0; i < kWaves; i++) {
+					elapsed = 7 + ramp * want[stage];
+					spawnWave();
+					seconds += waveTimer;
+					int n = 0;
+					for (auto& p : pending) {
+						if (!p.on) continue;
+						n++;
+						if (p.kind == OBJ_BOMB) bombs++;
+						else fruit++;
+						p.on = false;
+					}
+					if (n > biggest) biggest = n;
+				}
+				fprintf(stderr, "SPAWN %s %d %.1f fruit/min=%.1f bombs/min=%.1f bomb%%=%.1f biggest=%.0f gravity=%.0f\n", names[m], diff, want[stage], fruit / seconds * 60, bombs / seconds * 60, bombs / (fruit + bombs) * 100, biggest, gravity);
+			}
+		}
+	}
+}
+#endif
 
 // ---------------------------------------------------------------- effects
 void Game::emitJuice(float x, float y, u32 color, int count, float dirX, float dirY) {
@@ -430,13 +495,22 @@ void Game::award(int points) {
 }
 
 void Game::addFever(float amount) {
-	feverIdle = 0;
 	if (feverT > 0 || phase != PHASE_PLAY) return;
-	feverMeter += amount;
+	feverMeter += amount * kDifficulty[gSave.difficulty % DIFF_COUNT].feverGain;
 	if (feverMeter >= 1) {
 		feverMeter = 0;
 		feverT = kFrenzySeconds;
 		feverTimer = 0;
+		// A Frenzy promises no bombs, so any on their way fizzle out.
+		for (auto& p : pending)
+			if (p.on && p.kind == OBJ_BOMB) p.on = false;
+		for (auto& o : objs) {
+			if (o.on && o.kind == OBJ_BOMB) {
+				emitSparks(o.x, o.y, rgba(255, 190, 110), juiceCount(8), 110);
+				o.on = false;
+			}
+		}
+		audio::fuse(false);
 #ifdef AUTOTEST
 		statFrenzies++;
 #endif
@@ -497,12 +571,34 @@ void Game::finishCombo() {
 	}
 	snprintf(buf, sizeof buf, "+%d", bonus);
 	addPopup(buf, comboX, comboY - 16, t->color, 0.7f + n * 0.05f);
-	addFever(n * 0.02f);  // a big single stroke tops the meter up on top of each fruit's own share
+	addFever(n < 15 ? n * 0.02f : 0.3f);  // a big single stroke tops the meter up on top of each fruit's own share
 	if (n > bestCombo) bestCombo = n;
 }
 
+// A run's score goes on record once, however it ends: played out, quit from the pause menu, or window closed.
+// The app may be closed for good while it is away. Only the best score goes in now: the fruit count
+// waits for commitScore, or a run that carries on would count twice.
+bool Game::keepBestSoFar() {
+	if (scoreCommitted || score <= gSave.best[mode]) return false;
+	gSave.best[mode] = score;
+	return true;
+}
+
+void Game::commitScore() {
+	if (scoreCommitted) return;
+	scoreCommitted = true;
+	if (score > gSave.best[mode]) gSave.best[mode] = score;
+	if (score > best) {
+		best = score;
+		newBest = score > 0;
+	}
+	gSave.totalFruit += sliced;
+	if ((u32)bestCombo > gSave.bestCombo) gSave.bestCombo = bestCombo;
+	saveWrite();
+}
+
 void Game::addStrike(float x) {
-	if (maxStrikes == 0 || feverT > 0) return;
+	if (maxStrikes == 0 || feverT > 0 || feverGrace > 0) return;
 	strikes++;
 	strikePulse = 1;
 	audio::play(SFX_STRIKE, 0.9f, fieldPan(x));
@@ -628,7 +724,7 @@ void Game::sliceFruit(Obj& o, const Blade& blade) {
 	sliced++;
 	chain++;
 	if (chain > bestCombo) bestCombo = chain;
-	addFever(o.kind == OBJ_GOLD ? 0.12f : 0.05f);
+	addFever(o.kind == OBJ_GOLD ? 0.14f : 0.065f);
 	if (pts > 1) {
 		char buf[8];
 		snprintf(buf, sizeof buf, "+%d", pts);
@@ -683,12 +779,14 @@ void Game::hitBomb(Obj& o) {
 				setCallout("BOMB! -5 SECONDS", rgba(255, 110, 90));
 			} else {
 				timeLeft = 0;
-				setCallout("TIME!", rgba(255, 230, 140));  // the time-up path brings the finale in
+				startFinale();  // the clock has run out, and only a running clock would bring it in
 			}
 			break;
 		default:
 			setCallout("BOOM!", rgba(255, 110, 90));
+#ifndef TEST_BALANCE
 			endGame();
+#endif
 			break;
 	}
 }
@@ -843,7 +941,6 @@ void Game::finaleBurst() {
 	}
 	int bonus = finaleHits * 2;
 	award(bonus);
-	if (finaleHits > bestCombo) bestCombo = finaleHits;
 	char buf[40];
 	snprintf(buf, sizeof buf, "SUNBURST! %d HITS +%d", finaleHits, bonus);
 	setCallout(buf, rgba(255, 220, 90), 0.95f);
@@ -872,7 +969,7 @@ void Game::updateFinale(Blade& blade) {
 	finaleT += kDt;
 	updateObjects(kDt);  // leftover fruit falls away, with no strikes now
 	float k = clampf(finaleT / kFinaleRise, 0, 1);
-	finaleY = lerpf(300, 112, 1 - (1 - k) * (1 - k) * (1 - k));
+	finaleY = lerpf(300, 120, 1 - (1 - k) * (1 - k) * (1 - k));  // it comes to rest in the middle of the screen
 	finaleJoltX *= 0.82f;
 	finaleJoltY *= 0.82f;
 
@@ -1001,19 +1098,20 @@ void Game::update(Blade& blade) {
 		if (freezeT > 0) freezeT -= kDt;
 		if (doubleT > 0) doubleT -= kDt;
 
-		// The meter drains unless you keep slicing. If it runs dry, the combo is lost.
-		if (feverT <= 0) {
-			feverIdle += kDt;
-			if (feverIdle > kFeverGrace && feverMeter > 0) {
-				feverMeter -= kFeverDrain * (0.4f + gSave.frenzyDrain * 0.012f) * kDt;
-				if (feverMeter <= 0) {
-					feverMeter = 0;
-					if (chain >= 3) addPopup("COMBO LOST", kFieldW * 0.5f, kFieldTop + 40, rgba(255, 170, 120), 0.6f);
-					chain = 0;
-#ifdef AUTOTEST
-					statResets++;
-#endif
+		// The meter never stops draining, in step with the fruit. The combo only lives while it has some left.
+		if (comboFadeT > 0) comboFadeT -= kDt;
+		if (feverT <= 0 && feverMeter > 0) {
+			feverMeter -= kFeverDrain * kDifficulty[gSave.difficulty % DIFF_COUNT].feverDrain * (0.4f + gSave.frenzyDrain * 0.012f) * objDt;
+			if (feverMeter <= 0) {
+				feverMeter = 0;
+				if (chain >= 2) {
+					fadingChain = chain;
+					comboFadeT = kComboFade;
 				}
+				chain = 0;
+#ifdef AUTOTEST
+				statResets++;
+#endif
 			}
 		}
 
@@ -1031,6 +1129,7 @@ void Game::update(Blade& blade) {
 		}
 
 		if (phase == PHASE_PLAY) {
+			if (feverGrace > 0) feverGrace -= objDt;
 			if (feverT > 0) {
 				// Frenzy: a shower of bomb-free fruit, routed around anything already airborne.
 				feverT -= kDt;
@@ -1039,8 +1138,8 @@ void Game::update(Blade& blade) {
 #endif
 				if (feverT <= 0) {
 					feverT = 0;
+					feverGrace = kFrenzyGrace;
 					feverMeter = kAfterFrenzy;
-					feverIdle = 0;
 				}
 				feverTimer -= kDt;
 				if (feverTimer <= 0) {
@@ -1118,14 +1217,7 @@ void Game::update(Blade& blade) {
 		if (phaseT >= (finaleHits > 0 ? 2.1f : 1.2f)) {
 			phase = PHASE_OVER;
 			phaseT = 0;
-			if (score > gSave.best[mode]) {
-				gSave.best[mode] = score;
-				best = score;
-				newBest = score > 0;
-			}
-			gSave.totalFruit += sliced;
-			if ((u32)bestCombo > gSave.bestCombo) gSave.bestCombo = bestCombo;
-			saveWrite();
+			commitScore();
 			audio::play(newBest ? SFX_BEST : SFX_OVER);
 		}
 		return;
@@ -1161,7 +1253,7 @@ const Obj* Game::botTarget(bool wantBomb) const {
 static inline bool onThisScreen(float y, float r, bool top, float oy) {
 	float sy = y + oy;
 	if (top) return sy + r > 0 && sy - r < 240;
-	return sy + r > 0;
+	return sy + r > 0 && sy - r < 300;  // screen shake and tall windows can show a little past the field
 }
 
 static constexpr float kFruitZ = 8.0f;
@@ -1321,7 +1413,7 @@ void Game::drawHud() const {
 	char buf[32];
 	// Status panel plane.
 	gfx::setDepth(0.5f);
-	gfx::image(SHEET_SPRITES, sprites_plank_idx, 6, 2, 388, 76, COL_PLANK);
+	gfx::sign(sprites_plank_idx, 6, 2, 388, 76, COL_PLANK);
 
 	// Score: closest plane.
 	gfx::setDepth(1.3f);
@@ -1354,10 +1446,11 @@ void Game::drawHud() const {
 	gfx::setDepth(0.7f);
 	snprintf(buf, sizeof buf, "%lu", (unsigned long)score);
 	float px = 24 + gfx::textWidth(buf, 1.25f) + 14;
-	if (chain >= 2) {
+	if (chain >= 2 || comboFadeT > 0) {
+		const int shown = chain >= 2 ? chain : fadingChain;
 		char line[20];
-		snprintf(line, sizeof line, "COMBO %d", chain);
-		gfx::text(line, px, 16, 0.5f + clampf(chain * 0.004f, 0, 0.14f), feverIdle > kFeverGrace ? COL_DIM : COL_CREAM);
+		snprintf(line, sizeof line, "COMBO %d", shown);
+		gfx::text(line, px, 16, 0.5f + clampf(shown * 0.004f, 0, 0.14f), chain >= 2 ? COL_CREAM : withAlpha(COL_CREAM, comboFadeT / kComboFade));
 	}
 	if (comboCount >= 2) {
 		char line[20];
@@ -1373,9 +1466,7 @@ void Game::drawHud() const {
 		gfx::rect(bx, by, bw * clampf(feverT / kFrenzySeconds, 0, 1), 7, hueColor(elapsed * 0.7f));
 		gfx::text("FRUIT FRENZY X2", 200, by + 9, 0.42f, hueColor(elapsed * 0.7f), ALIGN_CENTER);
 	} else {
-		bool draining = feverIdle > kFeverGrace && feverMeter > 0;
-		gfx::rect(bx, by, bw * clampf(feverMeter, 0, 1), 7, draining ? COL_DIM : COL_ACCENT);
-		gfx::text("FRUIT FRENZY", bx, by + 9, 0.3f, draining ? rgba(255, 170, 120) : COL_DIM);
+		gfx::rect(bx, by, bw * clampf(feverMeter, 0, 1), 7, COL_ACCENT);
 	}
 
 	// Active power-up meters.
@@ -1418,16 +1509,16 @@ void Game::drawFieldTop() const {}
 // One screen: a slim score sign across the top of the field, with the meter beneath it.
 void Game::drawHud() const {
 	char buf[32];
-	const float right = kFieldW - (PORT_PAUSE_BUTTON ? 38 : 10);
-	gfx::image(SHEET_SPRITES, sprites_plank_idx, 2, 1, kFieldW - 4, 29, COL_PLANK);
+	const float right = kFieldW - (PORT_PAUSE_BUTTON ? 38 : 22);  // clear of the sign's screws
+	gfx::sign(sprites_plank_idx, 2, 1, kFieldW - 4, 29, COL_PLANK);
 
 	float pulse = 1.0f + clampf(scorePulse, 0, 1) * 0.16f;
 	snprintf(buf, sizeof buf, "%lu", (unsigned long)score);
-	gfx::text(buf, 12, 3 - (pulse - 1) * 10, 0.58f * pulse, feverT > 0 ? hueColor(elapsed * 0.6f) : COL_ACCENT);
-	float px = 12 + gfx::textWidth(buf, 0.58f) + 10;
-	if (chain >= 2) {
-		snprintf(buf, sizeof buf, "COMBO %d", chain);
-		gfx::text(buf, px, 9, 0.32f, feverIdle > kFeverGrace ? COL_DIM : COL_CREAM);
+	gfx::text(buf, 16, 3 - (pulse - 1) * 10, 0.58f * pulse, feverT > 0 ? hueColor(elapsed * 0.6f) : COL_ACCENT);
+	float px = 16 + gfx::textWidth(buf, 0.58f) + 10;
+	if (chain >= 2 || comboFadeT > 0) {
+		snprintf(buf, sizeof buf, "COMBO %d", chain >= 2 ? chain : fadingChain);
+		gfx::text(buf, px, 9, 0.32f, chain >= 2 ? COL_CREAM : withAlpha(COL_CREAM, comboFadeT / kComboFade));
 		px += gfx::textWidth(buf, 0.32f) + 10;
 	}
 	if (comboCount >= 2) {
@@ -1460,13 +1551,12 @@ void Game::drawHud() const {
 		gfx::rect(bx, by, bw * clampf(feverT / kFrenzySeconds, 0, 1), 4, hueColor(elapsed * 0.7f));
 		gfx::text("FRUIT FRENZY X2", kFieldW * 0.5f, by + 6, 0.3f, hueColor(elapsed * 0.7f), ALIGN_CENTER);
 	} else {
-		bool draining = feverIdle > kFeverGrace && feverMeter > 0;
-		gfx::rect(bx, by, bw * clampf(feverMeter, 0, 1), 4, draining ? COL_DIM : COL_ACCENT);
+		gfx::rect(bx, by, bw * clampf(feverMeter, 0, 1), 4, COL_ACCENT);
 	}
 
 	struct Meter { float t, max; int spr; };
 	const Meter meters[] = {{freezeT, 6, sprites_pw_freeze_idx}, {doubleT, 8, sprites_pw_double_idx}, {frenzyT, 5, sprites_pw_frenzy_idx}};
-	float mx = 12;
+	float mx = PORT_PAUSE_BUTTON ? 44 : 12;  // the pause sign has the corner
 	for (const auto& m : meters) {
 		if (m.t <= 0) continue;
 		gfx::sprite(SHEET_SPRITES, m.spr, mx + 8, 44, 0.36f, 0.36f);
@@ -1490,7 +1580,7 @@ void Game::drawHud() const {
 		float s = calloutSize + (1 - in) * 0.5f;
 		float w = gfx::textWidth(callout, s);
 		if (w > kFieldW - 20) s *= (kFieldW - 20) / w;
-		gfx::text(callout, cx, phase == PHASE_FINALE ? 40 : 96, s, withAlpha(calloutColor, clampf(calloutT * 2.5f, 0, 1)), ALIGN_CENTER);
+		gfx::text(callout, cx, phase == PHASE_FINALE ? 192 : 96, s, withAlpha(calloutColor, clampf(calloutT * 2.5f, 0, 1)), ALIGN_CENTER);
 	}
 }
 #endif

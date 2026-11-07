@@ -20,7 +20,7 @@ namespace audio {
 bool init();
 int loadStepCount();
 void loadStep(int i);
-void update();  // once per frame: reads music in, and frees a replaced track when it's safe
+void update(float dt);  // once per frame, with the game time that passed: reads music in, and frees a replaced track when it's safe
 void shutdown();
 bool available();
 // pan is -1 (left) to +1 (right). pitch multiplies the playback rate, so one clip can vary.
@@ -29,7 +29,6 @@ void click(float volume = 1.0f);  // menu sound, on its own volume slider
 void music(Music m);        // what the current screen wants; the player's track choice applies on top
 void preview(Music m);      // plays what that screen would, for the settings rows
 void reapply();             // back to the current screen's track after a preview or a changed choice
-const char* trackName(int i);
 void refreshVolumes();
 // The sizzle that plays while a bomb is in the air.
 void fuse(bool on, float pan = 0.0f);

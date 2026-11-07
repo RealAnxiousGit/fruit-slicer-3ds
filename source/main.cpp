@@ -122,6 +122,10 @@ static const Button kPauseSign = {2, kFieldTop + 2, 36, 36, nullptr};  // in fie
 static const Button kPauseButtons[] = {kBack, {50, 44, 220, 56, "Resume"}, {50, 108, 220, 56, "Options"}, {50, 172, 220, 56, "Main Menu"}};
 
 static bool hit(const Button& b, int x, int y) {
+#if PORT_PAUSE_BUTTON
+	// The way out is small for a fingertip, so it answers a little beyond its edges.
+	if (b.x == kBack.x && b.y == kBack.y && b.w == kBack.w && b.h == kBack.h) return x >= 0 && x < b.x + b.w + 12 && y >= 0 && y < b.y + b.h + 2;
+#endif
 	return x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h;
 }
 
@@ -132,8 +136,8 @@ static u32 withDim(u32 c) {
 
 static void drawPlank(float x, float y, float w, float h, bool focused, bool pressed) {
 	float dy = pressed ? 2 : 0;
-	gfx::image(SHEET_SPRITES, sprites_plank_idx, x, y + dy, w, h, pressed ? withDim(COL_PLANK) : COL_PLANK);
-	if (focused) gfx::image(SHEET_SPRITES, sprites_plank_focus_idx, x - 2, y - 2 + dy, w + 4, h + 4, COL_ACCENT);
+	gfx::sign(sprites_plank_idx, x, y + dy, w, h, pressed ? withDim(COL_PLANK) : COL_PLANK);
+	if (focused) gfx::sign(sprites_plank_focus_idx, x - 2, y - 2 + dy, w + 4, h + 4, COL_ACCENT);
 }
 
 static void drawSign(const Button& b, const char* label, bool focused, bool pressed, float scale = 0.56f, int icon = -1) {
@@ -167,19 +171,26 @@ static void drawMenuBack() {}  // one screen, one board: it's already behind eve
 #endif
 
 // Press highlights, release on the same sign activates: a swipe that ends on a sign does nothing.
+// A sign clicks the moment a finger or stylus lands on it, since a tap takes a tenth of a second to
+// lift, and acts on release, so sliding off still cancels. It plays the click itself.
 static int touchButtons(const Button* btns, int n, const Input& in, bool wasTouching, int& focus) {
+	static bool clicked;
 	int result = -1;
 	if (in.touching) {
 		if (!wasTouching) {
 			sPressed = -1;
 			for (int i = 0; i < n; i++)
 				if (hit(btns[i], in.tx, in.ty)) sPressed = focus = i;
+			clicked = sPressed >= 0;
+			if (clicked) audio::click();
 		} else if (sPressed >= 0 && !hit(btns[sPressed], in.tx, in.ty)) {
 			sPressed = -1;
 		}
 	} else if (wasTouching) {
 		if (sPressed >= 0) result = sPressed;
+		if (result >= 0 && !clicked) audio::click();  // pressed while the screen was still locked
 		sPressed = -1;
+		clicked = false;
 	}
 	return result;
 }
@@ -241,8 +252,10 @@ static int menuInput(const Button* btns, int n, Screen screen, const Input& in, 
 			if (hit(btns[i], in.tx, in.ty)) focus = i;
 #endif
 	int tapped = touchButtons(btns, n, in, wasTouching, focus);
-	if (tapped < 0 && (in.down & KEY_A)) tapped = focus;
-	if (tapped >= 0) audio::click();
+	if (tapped < 0 && (in.down & KEY_A)) {
+		tapped = focus;
+		audio::click();
+	}
 	return tapped;
 }
 
@@ -314,11 +327,11 @@ static const Row kGameplayRows[] = {
 #if PORT_HAS_SENSITIVITY
 	{ROW_SLIDER, PORT_SENSITIVITY_LABEL, &gSave.stylus, 0, 100, nullptr, 0, 100, ACT_NONE, PORT_SENSITIVITY_HINT, "Lower smooths out a shaky line."},
 #endif
-	{ROW_CHOICE, "Difficulty", &gSave.difficulty, 0, DIFF_COUNT - 1, kDifficultyNames, 0, 0, ACT_NONE, "Changes throw speed, how often", "fruit comes, and how many bombs."},
-	{ROW_SLIDER, "Fruit Speed", &gSave.fruitSpeed, 0, 100, nullptr, 70, 130, ACT_NONE, "How fast everything flies.", ""},
-	{ROW_SLIDER, "Bomb Amount", &gSave.bombs, 0, 100, nullptr, 0, 200, ACT_NONE, "More or fewer bombs than usual.", ""},
-	{ROW_SLIDER, "Slice Forgiveness", &gSave.forgiveness, 0, 100, nullptr, 70, 130, ACT_NONE, "How close a swipe has to pass", "for a fruit to count as cut."},
-	{ROW_SLIDER, "Frenzy Drain", &gSave.frenzyDrain, 0, 100, nullptr, 40, 160, ACT_NONE, "How fast the meter drops when", "you stop slicing."},
+	{ROW_CHOICE, "Difficulty", &gSave.difficulty, 0, DIFF_COUNT - 1, kDifficultyNames, 0, 0, ACT_NONE, "Changes fruit, bombs and how", "fast the Frenzy meter moves."},
+	{ROW_SLIDER, "Fruit Speed", &gSave.fruitSpeed, 0, 100, nullptr, 70, 130, ACT_NONE, "How fast everything flies.", "100% is normal."},
+	{ROW_SLIDER, "Bomb Amount", &gSave.bombs, 0, 100, nullptr, 0, 200, ACT_NONE, "More or fewer bombs than usual.", "100% is normal."},
+	{ROW_SLIDER, "Slice Forgiveness", &gSave.forgiveness, 0, 100, nullptr, 70, 130, ACT_NONE, "How close a swipe must pass.", "100% is normal."},
+	{ROW_SLIDER, "Frenzy Drain", &gSave.frenzyDrain, 0, 100, nullptr, 40, 160, ACT_NONE, "How fast the meter drops.", "100% is normal."},
 	{ROW_SLIDER, "Misses Allowed", &gSave.misses, 1, 5, nullptr, 1, 5, ACT_NONE, "Misses before Classic ends.", ""},
 	{ROW_ACTION, "Reset Gameplay", nullptr, 0, 0, nullptr, 0, 0, ACT_RESET_GAMEPLAY, "Puts these back to their defaults.", "Your scores stay."},
 };
@@ -453,8 +466,8 @@ static void rowAction(int index, const Row& r) {
 	sDirty = false;
 }
 
-static void leaveSection() {
-	audio::click();
+static void leaveSection(bool clicked = false) {
+	if (!clicked) audio::click();
 	if (sDirty) saveWrite();
 	sDirty = false;
 	sArmed = -1;
@@ -534,6 +547,7 @@ static void updateSection(const Input& in, bool wasTouching) {
 				sTouchMode = TOUCH_BACK;
 				sPressed = 0;
 				focus = -1;
+				audio::click();
 			} else if (in.ty >= kListTop) {
 				int row = (int)((in.ty - kListTop + sScroll) / kRowH);
 				if (row >= 0 && row < sec.count) {
@@ -582,7 +596,7 @@ static void updateSection(const Input& in, bool wasTouching) {
 		sPressed = -1;
 		if (sTouchMode == TOUCH_BACK) {
 			sTouchMode = TOUCH_NONE;
-			leaveSection();
+			leaveSection(true);
 			return;
 		}
 		if (sTouchMode == TOUCH_SLIDER) {
@@ -637,7 +651,7 @@ static void drawHero(float x, float y, float scale, float depth) {
 
 static void topPanel(float x, float y, float w, float h) {
 	gfx::setDepth(0.3f);
-	gfx::image(SHEET_SPRITES, sprites_plank_idx, x, y, w, h, COL_PLANK);
+	gfx::sign(sprites_plank_idx, x, y, w, h, COL_PLANK);
 }
 
 #if PORT_3DS
@@ -706,7 +720,7 @@ static void benchSetup() {
 	jobs::setEnabled(p.fast);
 	gfx::forceStereo(p.stereo);
 	gRng.s = 0x51CE51CE;
-	sGame.start(MODE_FRENZY);  // the most objects on screen of any mode, with a Fruit Frenzy held on below
+	sGame.start(MODE_ARCADE);  // with a Fruit Frenzy held on below: Frenzy mode itself runs lighter here
 	sBlade.reset();
 	sBenchFrame = 0;
 	sBenchResults[sBenchIndex] = {};
@@ -937,7 +951,7 @@ static void drawTopContent(Screen screen) {
 		case SCREEN_RESULT: {
 			float in = clampf(sGame.phaseT * 4, 0, 1);
 			gfx::setDepth(0.5f);
-			gfx::image(SHEET_SPRITES, sprites_plank_idx, 30, 12, 340, 212, withAlpha(COL_PLANK, in));
+			gfx::sign(sprites_plank_idx, 30, 12, 340, 212, withAlpha(COL_PLANK, in));
 			gfx::setDepth(1.0f);
 			gfx::text(kModes[sGame.mode].name, 200, 26, 0.56f, COL_CREAM, ALIGN_CENTER);
 			gfx::setDepth(1.7f);
@@ -996,7 +1010,7 @@ static void drawRows() {
 		float ty = y + kRowH * 0.5f - 8;
 		u32 labelColor = rowDisabled(r) ? COL_DIM : COL_CREAM;
 		if (r.kind == ROW_ACTION) {
-			const char* label = sArmed == i ? "Tap again to confirm" : r.label;
+			const char* label = sArmed == i ? PORT_CONFIRM_TEXT : r.label;
 			gfx::text(label, 160, ty - 1, 0.42f, sArmed == i ? COL_ACCENT : COL_CREAM, ALIGN_CENTER);
 			continue;
 		}
@@ -1072,19 +1086,32 @@ static void drawBottomContent(Screen screen) {
 			drawMenuBack();
 			drawHeader("Credits");
 			drawBackArrow(true, sPressed == 0);
-			gfx::image(SHEET_SPRITES, sprites_plank_idx, 10, 50, 300, 176, COL_PLANK);
-			gfx::text("PROGRAMMING", 160, 60, 0.36f, COL_ACCENT, ALIGN_CENTER);
-			gfx::text("Claude Opus 5.5", 160, 78, 0.56f, COL_CREAM, ALIGN_CENTER);
-			gfx::text("PROMPT ENGINEERING", 160, 114, 0.36f, COL_ACCENT, ALIGN_CENTER);
-			gfx::text("RealAnxiousGit", 160, 132, 0.56f, COL_CREAM, ALIGN_CENTER);
-			gfx::text("Art, sound and music are all", 160, 172, 0.34f, COL_DIM, ALIGN_CENTER);
-			gfx::text("generated from code in the repo.", 160, 190, 0.34f, COL_DIM, ALIGN_CENTER);
+			gfx::sign(sprites_plank_idx, 10, 50, 300, 176, COL_PLANK);
+			gfx::text("PROGRAMMING", 90, 57, 0.3f, COL_ACCENT, ALIGN_CENTER);
+			gfx::text("Claude", 90, 69, 0.46f, COL_CREAM, ALIGN_CENTER);
+			gfx::text("PROMPT ENGINEERING", 225, 57, 0.3f, COL_ACCENT, ALIGN_CENTER);
+			gfx::text("RealAnxiousGit", 225, 69, 0.46f, COL_CREAM, ALIGN_CENTER);
+			{
+				const auto line = [](const char* s, float y, u32 color) {
+					float w = gfx::textWidth(s, 0.3f);
+					gfx::text(s, 160, y, w > 280 ? 0.3f * 280 / w : 0.3f, color, ALIGN_CENTER);
+				};
+				line("BUILT WITH", 96, COL_ACCENT);
+				line(PORT_CREDITS_TOOLS_1, 109, COL_CREAM);
+				line(PORT_CREDITS_TOOLS_2, 122, COL_CREAM);
+				line("Python, Pillow, numpy", 135, COL_CREAM);
+				line("TOOLKITS", 152, COL_ACCENT);
+				line("Claude Code, Graphify", 165, COL_CREAM);
+				line("Claude Code Game Studios by Donchitos", 178, COL_CREAM);
+				line("Anti Slop by miqdadbadjuber", 191, COL_CREAM);
+				line("Art, sound and music made from code.", 207, COL_DIM);
+			}
 			break;
 		case SCREEN_HOWTO: {
 			static const char* const kLines[] = {
 				"Swipe through fruit. Miss the bombs.",
 				"Each slice fills the Fruit Frenzy meter.",
-				"Stop slicing and it drains.",
+				"It never stops draining, so keep slicing.",
 				"If it runs dry, your combo resets.",
 				"Fill it for Frenzy: double points!",
 				"One long swipe scores a big bonus.",
@@ -1093,7 +1120,7 @@ static void drawBottomContent(Screen screen) {
 			drawMenuBack();
 			drawHeader("How to Play");
 			drawBackArrow(true, sPressed == 0);
-			gfx::image(SHEET_SPRITES, sprites_plank_idx, 8, 48, 304, 186, COL_PLANK);
+			gfx::sign(sprites_plank_idx, 8, 48, 304, 186, COL_PLANK);
 			// One size for every line, narrow enough to stay clear of the plank's screws.
 			float s = 0.36f;
 			for (int i = 0; i < 7; i++) {
@@ -1159,6 +1186,8 @@ static void startGame() {
 	sPressed = -1;
 }
 
+static bool sLeaving = false;
+
 static void toModes() {
 	sScreen = SCREEN_MODES;
 	sPressed = -1;
@@ -1171,6 +1200,11 @@ static void toTitle() {
 	sOptionsFromPause = false;
 	toModes();
 	sScreen = SCREEN_TITLE;
+}
+
+static void quitRun() {
+	sGame.commitScore();
+	toTitle();
 }
 
 static void pauseGame() {
@@ -1226,6 +1260,9 @@ static void updateFrame(const Input& in, bool wasTouching) {
 			else if (t == 1) goTo(SCREEN_OPTIONS, 1);
 			else if (t == 2) goTo(SCREEN_CREDITS, 1);
 			else if (t == 3) goTo(SCREEN_HOWTO, 1);
+#if PORT_ANDROID
+			if (in.down & KEY_B) sLeaving = true;  // Back on the first screen leaves, as on any phone app
+#endif
 			break;
 		}
 		case SCREEN_MODES: {
@@ -1284,7 +1321,7 @@ static void updateFrame(const Input& in, bool wasTouching) {
 			int& f = sFocus[sScreen];
 			int t = touchButtons(kOnlyBack, 1, in, wasTouching, f);
 			if (t == 0 || (in.down & (KEY_A | KEY_B))) {
-				audio::click();
+				if (t != 0) audio::click();
 				goTo(SCREEN_TITLE, -1);
 			}
 			break;
@@ -1327,7 +1364,7 @@ static void updateFrame(const Input& in, bool wasTouching) {
 				sFocus[SCREEN_OPTIONS] = 1;
 				goTo(SCREEN_OPTIONS, 1);
 			} else if (t == 3) {
-				fadeThen(toTitle);
+				fadeThen(quitRun);
 			}
 			break;
 		}
@@ -1335,8 +1372,8 @@ static void updateFrame(const Input& in, bool wasTouching) {
 			sGame.update(sBlade);  // keeps debris falling behind the buttons
 			sGame.kickParticles();
 			if (blocked) break;
-			// A short lock-out stops a frantic swipe from tapping a sign by accident.
-			if (sGame.phaseT <= 0.7f) break;
+			// A short lock-out stops a frantic swipe from tapping a sign by accident. Keys can't do that.
+			if (sGame.phaseT <= (in.touching || wasTouching ? 0.7f : 0.25f)) break;
 			int t = menuInput(kResultButtons, 3, SCREEN_RESULT, in, wasTouching);
 			if (in.down & KEY_B) {
 				audio::click();
@@ -1412,7 +1449,7 @@ static void drawFrame() {
 #if PORT_PAUSE_BUTTON
 		if (sScreen == SCREEN_GAME) {
 			// Half see-through, so fruit passing behind it stays easy to see.
-			gfx::image(SHEET_SPRITES, sprites_plank_idx, kPauseSign.x + 3, kPauseSign.y + 3, 30, 30, withAlpha(COL_PLANK, 0.55f));
+			gfx::sign(sprites_plank_idx, kPauseSign.x + 3, kPauseSign.y + 3, 30, 30, withAlpha(COL_PLANK, 0.55f));
 			gfx::rect(kPauseSign.x + 12, kPauseSign.y + 10, 4, 16, withAlpha(COL_CREAM, 0.55f));
 			gfx::rect(kPauseSign.x + 20, kPauseSign.y + 10, 4, 16, withAlpha(COL_CREAM, 0.55f));
 		}
@@ -1493,6 +1530,9 @@ bool app::init() {
 #ifdef TEST_ART
 	gSave.artStyle = TEST_ART;
 #endif
+#ifdef TEST_DIFF
+	gSave.difficulty = TEST_DIFF;
+#endif
 #ifdef TEST_FX
 	gSave.effects = TEST_FX;
 #endif
@@ -1514,7 +1554,13 @@ bool app::init() {
 	return true;
 }
 
-void app::notifySuspended() { sSuspended = true; }
+void app::notifySuspended() {
+	sSuspended = true;
+	// A phone may close the app from here without another word, so changed settings can't wait.
+	if (sGame.keepBestSoFar()) sDirty = true;
+	if (sDirty) saveWrite();
+	sDirty = false;
+}
 
 bool app::inFieldView() { return sScreen == SCREEN_GAME; }
 
@@ -1530,15 +1576,17 @@ bool app::frame(Input& in, int steps) {
 
 		updateFrame(in, sWasTouching);
 		sWasTouching = in.touching;
+		if (sLeaving) return false;
 		// A press belongs to the first step only.
 		in.down = 0;
 		in.repeat = 0;
+		in.wheel = 0;
 	}
 
 	// New scenery, boards and models load here, between frames.
 	gfx::sync();
 	m3d::sync();
-	audio::update();
+	audio::update(steps * kDt);
 
 	drawFrame();
 #if PORT_3DS
@@ -1552,6 +1600,7 @@ bool app::frame(Input& in, int steps) {
 }
 
 void app::shutdown() {
+	if (sScreen == SCREEN_GAME || sScreen == SCREEN_PAUSE || sOptionsFromPause) sGame.commitScore();
 	if (sDirty) saveWrite();
 	jobs::shutdown();
 	m3d::shutdown();

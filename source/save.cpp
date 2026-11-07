@@ -1,5 +1,8 @@
 #include <stdio.h>
 #include <string.h>
+#if defined(__ANDROID__) || defined(__linux__)
+#include <unistd.h>
+#endif
 
 #include "common.h"
 #include "port_api.h"
@@ -8,9 +11,8 @@ Settings gSave;
 bool gIsNew3ds = false;
 bool gHas3dScreen = true;
 
-static constexpr u32 kMagic = 0x33534C46;    // "FLS3"
-static constexpr u32 kMagicV2 = 0x32534C46;  // "FLS2", written by 0.2.0
-static constexpr u32 kMagicV1 = 0x31534C46;  // "FLS1", written by 0.1.0
+// 0.4.0 starts everyone fresh: saves from earlier versions ("FLS1" to "FLS3") are not read.
+static constexpr u32 kMagic = 0x34534C46;  // "FLS4"
 
 static u32 checksum(const void* data, size_t size) {
 	const u8* p = (const u8*)data;
@@ -43,6 +45,7 @@ void saveDefaults(bool keepScores, int section) {
 		gSave.detail = gIsNew3ds ? 1 : 0;
 		gSave.sliceStyle = gIsNew3ds ? 1 : 0;
 		gSave.transitions = 1;
+		PORT_RESET_VISUALS
 	}
 	if (section < 0 || section == 2) {
 		gSave.stylus = PORT_DEFAULT_SENSITIVITY;
@@ -54,19 +57,6 @@ void saveDefaults(bool keepScores, int section) {
 		gSave.misses = 3;
 	}
 }
-
-// The 0.2.0 layout.
-struct SettingsV2 {
-	u32 best[MODE_COUNT];
-	u32 totalFruit;
-	u32 bestCombo;
-	u8 sfx, music, blade, board, scene, juice, depth, shake;
-};
-// The 0.1.0 layout: six best scores followed by three settings bytes.
-struct SettingsV1 {
-	u32 best[6];
-	u8 sfx, music, blade, pad;
-};
 
 void saveLoad() {
 	saveDefaults(false, -1);
@@ -82,32 +72,6 @@ void saveLoad() {
 			Settings tmp;
 			if (fread(&tmp, sizeof tmp, 1, f) == 1 && fread(&sum, 4, 1, f) == 1 && sum == checksum(&tmp, sizeof tmp)) gSave = tmp;
 			else fprintf(stderr, "[save] ignoring invalid save file\n");
-		} else if (magic == kMagicV2) {
-			SettingsV2 old;
-			if (fread(&old, sizeof old, 1, f) == 1 && fread(&sum, 4, 1, f) == 1 && sum == checksum(&old, sizeof old)) {
-				memcpy(gSave.best, old.best, sizeof old.best);
-				gSave.totalFruit = old.totalFruit;
-				gSave.bestCombo = old.bestCombo;
-				gSave.sfx = old.sfx > 4 ? 100 : old.sfx * 25;
-				gSave.music = old.music > 4 ? 75 : old.music * 25;
-				gSave.blade = old.blade;
-				gSave.board = old.board;
-				gSave.scene = old.scene;
-				if (old.juice == 0) gSave.effects = FX_LOW;
-				else if (old.juice == 2) gSave.effects = FX_FULL;
-				gSave.depth = old.depth == 0 ? 0 : (old.depth == 1 ? 50 : 90);
-				gSave.shake = old.shake ? 100 : 0;
-				fprintf(stderr, "[save] upgraded 0.2.0 save\n");
-			}
-		} else if (magic == kMagicV1) {
-			SettingsV1 old;
-			if (fread(&old, sizeof old, 1, f) == 1 && fread(&sum, 4, 1, f) == 1 && sum == checksum(&old, sizeof old)) {
-				memcpy(gSave.best, old.best, sizeof old.best);
-				gSave.sfx = old.sfx ? 100 : 0;
-				gSave.music = old.music ? 75 : 0;
-				gSave.blade = old.blade;
-				fprintf(stderr, "[save] upgraded 0.1.0 save\n");
-			}
 		}
 	}
 	fclose(f);
@@ -123,6 +87,7 @@ void saveLoad() {
 	gSave.detail &= 1;
 	gSave.sliceStyle &= 1;
 	gSave.transitions &= 1;
+	PORT_CHECK_SETTINGS
 	gSave.menuTrack %= kTrackCount + 1;
 	gSave.gameTrack %= kTrackCount + 1;
 	u8* const sliders[] = {&gSave.sfx, &gSave.music, &gSave.menuSfx, &gSave.depth, &gSave.shake, &gSave.stylus, &gSave.fruitSpeed, &gSave.bombs, &gSave.forgiveness, &gSave.frenzyDrain};
@@ -142,10 +107,21 @@ void saveWrite() {
 		return;
 	}
 	u32 sum = checksum(&gSave, sizeof gSave);
-	fwrite(&kMagic, 4, 1, f);
-	fwrite(&gSave, sizeof gSave, 1, f);
-	fwrite(&sum, 4, 1, f);
-	fclose(f);
-	remove(file);
-	rename(temp, file);
+	bool ok = fwrite(&kMagic, 4, 1, f) == 1 && fwrite(&gSave, sizeof gSave, 1, f) == 1 && fwrite(&sum, 4, 1, f) == 1;
+#if defined(__ANDROID__) || defined(__linux__)
+	// On disk before the swap, so a power cut can't leave an empty save behind it.
+	if (ok && (fflush(f) != 0 || fsync(fileno(f)) != 0)) ok = false;
+#endif
+	if (fclose(f) != 0) ok = false;
+	if (!ok) {
+		// A full disk or card: the old save stays as it was.
+		fprintf(stderr, "[save] could not finish writing %s\n", temp);
+		remove(temp);
+		return;
+	}
+	// Where rename can replace a file this is one safe step. Elsewhere the old save has to go first.
+	if (rename(temp, file) != 0) {
+		remove(file);
+		if (rename(temp, file) != 0) fprintf(stderr, "[save] could not replace %s\n", file);
+	}
 }

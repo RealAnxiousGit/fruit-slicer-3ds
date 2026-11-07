@@ -3,10 +3,15 @@
 //   BOT_ONLY=n   measure one mode with hands off
 //   BOT_TOUR     stop on each menu for a few seconds, for screenshots, and don't play
 //   TEST_ART=n   start with this art style
+//   TEST_DIFF=n  start on this difficulty
 //   TEST_SPEED   run the Speed Test once, then quit
 //   BOT_SHOTS    skip the menu walk and go straight to playing, for screenshots
 //   BOT_PLAY     with BOT_ONLY, play that mode normally instead of keeping hands off
 //   TEST_SEEKBOMB  with BOT_ONLY, aim for bombs
+//   TEST_LATEBOMB  aim for bombs in a timed mode's last 5 seconds
+//   TEST_BALANCE play every mode at high speed with nothing ending a game early, and count what is thrown
+//   TEST_SPAWN   print what every mode and difficulty throws, from thousands of waves, then quit
+//   TEST_LOUD    in audio.cpp: fire big combos and full swipes of cuts on a timer, to measure the mix
 #ifdef BOT_ONLY
 static int sBotMode = BOT_ONLY;
 #else
@@ -19,7 +24,7 @@ static int sBotTapFrames = 0;
 static bool sBotDone = false;
 static int sBotTapX, sBotTapY;
 static u32 sBotModeFrames = 0;
-#if defined(BOT_ONLY) || defined(TEST_SPEED) || defined(BOT_SHOTS)
+#if defined(BOT_ONLY) || defined(TEST_SPEED) || defined(BOT_SHOTS) || defined(TEST_BALANCE)
 static int sBotMenuStep = 100;
 #else
 static int sBotMenuStep = 0;
@@ -93,6 +98,11 @@ static void autotestMenus(Input& in) {
 
 static void autotestInput(Input& in) {
 	in = Input{};
+#ifdef TEST_SPAWN
+	sGame.spawnReport();
+	sBotDone = true;
+	return;
+#endif
 	sBotPhaseFrames++;
 	static Screen lastScreen = SCREEN_LOADING;
 	if (sScreen != lastScreen) {
@@ -166,6 +176,11 @@ static void autotestInput(Input& in) {
 					        (unsigned long)sGame.statBombFrames, (unsigned long)sGame.statOverlapFrames, (unsigned long)sGame.statFrenzies, (unsigned long)sGame.statResets, sGame.finaleHits);
 					fprintf(f, "  elapsed=%.1f throws=%lu feverThrows=%lu feverTime=%.1f bombHits=%lu dropped=%lu peakObjs=%lu\n", sGame.elapsed, (unsigned long)sGame.statThrows, (unsigned long)sGame.statFeverThrows, sGame.statFeverTime,
 					        (unsigned long)sGame.statBombHits, (unsigned long)sGame.statDropped, (unsigned long)sGame.statPeakObjs);
+#ifdef TEST_BALANCE
+					fprintf(f, "BAL %s diff=%d t=%.0f fruit=%lu,%lu,%lu bombs=%lu,%lu,%lu fever=%lu sliced=%d hits=%lu score=%lu combo=%d frenzies=%lu resets=%lu gravity=%.0f\n", kModes[sGame.mode].name, gSave.difficulty, sGame.elapsed,
+					        (unsigned long)sGame.statFruitAt[0], (unsigned long)sGame.statFruitAt[1], (unsigned long)sGame.statFruitAt[2], (unsigned long)sGame.statBombsAt[0], (unsigned long)sGame.statBombsAt[1], (unsigned long)sGame.statBombsAt[2],
+					        (unsigned long)sGame.statFeverThrows, sGame.sliced, (unsigned long)sGame.statBombHits, (unsigned long)sGame.score, sGame.bestCombo, (unsigned long)sGame.statFrenzies, (unsigned long)sGame.statResets, sGame.gravity);
+#endif
 					fclose(f);
 				}
 			}
@@ -202,7 +217,9 @@ static void autotestInput(Input& in) {
 		in.ty = 112 + (int)(cosf(sBotModeFrames * 0.31f) * 18);
 		return;
 	}
-#if defined(TEST_SEEKBOMB)
+#if defined(TEST_BALANCE)
+	bool suicide = false;
+#elif defined(TEST_SEEKBOMB)
 	bool suicide = true;  // always goes for bombs, to prove what a bomb costs in this mode
 #elif defined(BOT_ONLY) && !defined(BOT_PLAY)
 	// Measurement run: keep hands off so every throw flies its whole path, then end the game.
@@ -211,7 +228,11 @@ static void autotestInput(Input& in) {
 #else
 	// After 25 seconds, go looking for bombs so the bomb and game-over paths get covered.
 	// Timed modes stay alive instead, so that their finale always gets exercised.
+#ifdef TEST_LATEBOMB
+	bool suicide = sGame.timeLeft > 0 && sGame.timeLeft <= 5;
+#else
 	bool suicide = sBotModeFrames > 1500 && sGame.timeLeft <= 0;
+#endif
 #endif
 	if (sBotStroke > 0) {
 		sBotStroke--;

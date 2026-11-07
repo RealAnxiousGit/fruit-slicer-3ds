@@ -91,6 +91,8 @@ struct Game {
 	int maxStrikes;     // 0 means no strike rule
 	int sliced;
 	int bestCombo;
+	bool scoreCommitted;
+	float feverGrace;   // fruit thrown by a Frenzy is still landing: misses stay free
 	int chain;          // the running combo: fruit in a row while the meter stays alive
 	int comboCount;
 	float comboTimer;
@@ -102,8 +104,9 @@ struct Game {
 	u32 calloutColor;
 	float freezeT, doubleT, frenzyT;
 	float frenzyTimer;
-	float feverMeter;   // 0..1, fills as you slice; running dry resets the combo
-	float feverIdle;    // seconds since the meter last gained anything
+	float feverMeter;   // 0..1, fills as you slice and never stops draining; running dry ends the combo
+	float comboFadeT;   // the COMBO text fades out for this long after the meter runs dry
+	int fadingChain;    // the combo that is fading
 	float feverT;       // seconds of Fruit Frenzy left
 	float feverTimer;
 	float slowT;        // brief slow motion after a huge combo
@@ -122,9 +125,12 @@ struct Game {
 	u32 statBombFrames, statOverlapFrames, statWaves, statFrenzies, statResets;
 	u32 statThrows, statFeverThrows, statBombHits, statDropped, statPeakObjs;
 	float statFeverTime;
+	u32 statFruitAt[3], statBombsAt[3];  // thrown outside a Frenzy, by minute and a half of play: 0-30 s, 30-60 s, after
 #endif
 
 	void start(Mode m);
+	void commitScore();
+	bool keepBestSoFar();
 	void update(Blade& blade);
 	void drawField(const Blade& blade) const;   // bottom screen
 	void drawFieldTop() const;                  // top screen: fruit thrown high, one eye at a time
@@ -168,6 +174,10 @@ private:
 	void finaleHit(const Blade& blade);
 	void finaleBurst();
 	float difficulty() const;
+#ifdef TEST_SPAWN
+public:
+	void spawnReport();
+#endif
 };
 
 u32 hueColor(float t);

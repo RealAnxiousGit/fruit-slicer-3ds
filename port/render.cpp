@@ -250,6 +250,39 @@ void image(SheetId sheet, int idx, float x, float y, float w, float h, u32 color
 	drawCallsLive++;
 }
 
+void imagePart(SheetId sheet, int idx, float x, float y, float w, float h, float u0, float v0, float u1, float v1, u32 color) {
+	if (!sSheets[sheet] || !gpuHasRoom()) return;
+	C2D_Image img = C2D_SpriteSheetGetImage(sSheets[sheet], idx);
+	const Tex3DS_SubTexture& s = *img.subtex;
+	Tex3DS_SubTexture part = s;
+	part.left = s.left + (s.right - s.left) * u0;
+	part.right = s.left + (s.right - s.left) * u1;
+	part.top = s.top + (s.bottom - s.top) * v0;
+	part.bottom = s.top + (s.bottom - s.top) * v1;
+	img.subtex = &part;
+	C2D_DrawParams p;
+	p.pos = {x + offX(), y + offY(), w, h};
+	p.center = {0, 0};
+	p.depth = kZ;
+	p.angle = 0;
+	// libctru reads top < bottom as "rotated in the atlas", and a negative height is culled. So a
+	// mirror in v is a half turn with u reversed, which leaves the winding alone.
+	if (v0 > v1) {
+		part.top = s.top + (s.bottom - s.top) * v1;
+		part.bottom = s.top + (s.bottom - s.top) * v0;
+		part.left = s.left + (s.right - s.left) * u1;
+		part.right = s.left + (s.right - s.left) * u0;
+		p.pos.x += w / 2;
+		p.pos.y += h / 2;
+		p.center = {w / 2, h / 2};
+		p.angle = kPi;
+	}
+	C2D_ImageTint tint;
+	C2D_PlainImageTint(&tint, color, 1.0f);
+	C2D_DrawImage(img, &p, &tint);
+	drawCallsLive++;
+}
+
 void rect(float x, float y, float w, float h, u32 color) {
 	C2D_DrawRectSolid(x + offX(), y + offY(), kZ, w, h, color);
 	drawCallsLive++;

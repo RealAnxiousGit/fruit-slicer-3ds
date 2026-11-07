@@ -25,11 +25,111 @@ static const char* const kSfxFiles[SFX_COUNT] = {
 	"strike", "click", "power", "freeze", "fever", "go", "over", "best", "gold",
 	"finale_rise", "finale_hit", "finale_burst",
 };
+// How much of the mix one sound may take. A new sound is turned down if the ones still playing have
+// used this up, so a long Frenzy stays at the level of a quiet moment instead of piling up to clipping.
+static constexpr float kSfxGain = 0.7f;
+static constexpr float kMaxPeak = 0.7f;        // what the start of a sound may add at once; music takes the rest
+static constexpr float kMaxPower = 0.16f * 0.16f;  // the sound effects together, as RMS squared
+static constexpr float kMinShare = 0.35f;      // however busy it gets, a slice stays audible
+static constexpr float kPeakFade = 0.05f;      // seconds for a sound's opening hit to fade by about two thirds
+static constexpr int kLiveCount = 24;
+// Every combo sound hits as hard as the loudest slices, however big the combo. One landing over
+// another drops to keep the pair at about that level, but never so far that it gets lost.
+static constexpr float kComboLoud = 0.15f;      // RMS of its loudest tenth of a second
+static constexpr float kComboMinStack = 0.6f;
+static constexpr float kComboMinShare = 0.7f;
+
+struct Live {
+	float born, length, peak, power;
+	bool combo;
+};
+static Live sLive[kLiveCount];
+static int sLiveNext;
+static float sClock;
+static float sClipPeak[SFX_COUNT], sClipPower[SFX_COUNT], sClipLoud[SFX_COUNT];
+
+static bool isCombo(int s) { return s >= SFX_COMBO3 && s <= SFX_COMBO10; }
+
+// These run far louder and longer than the rest.
+static float clipTrim(Sfx s) {
+	switch (s) {
+		case SFX_BOOM: return 0.6f;
+		case SFX_FINALE_BURST: return 0.75f;
+		default: return 1.0f;
+	}
+}
+
+static void measureClip(int s, const Clip& c) {
+	float peak = 0;
+	double sum = 0;
+	for (u32 i = 0; i < c.samples; i++) {
+		float a = c.pcm[i] / 32768.0f;
+		sum += a * a;
+		if (a < 0) a = -a;
+		if (a > peak) peak = a;
+	}
+	sClipPeak[s] = peak;
+	sClipPower[s] = c.samples ? (float)(sum / c.samples) : 0;
+	if (!isCombo(s)) return;
+	const u32 window = c.rate / 10;
+	double power = 0, loudest = 0;
+	for (u32 i = 0; i < c.samples; i++) {
+		const double a = c.pcm[i] / 32768.0;
+		power += a * a;
+		if (i >= window) {
+			const double old = c.pcm[i - window] / 32768.0;
+			power -= old * old;
+		}
+		if (power > loudest) loudest = power;
+	}
+	sClipLoud[s] = (float)sqrt(loudest / (c.samples < window ? c.samples : window));
+}
+
+// Sounds are cued the moment something happens, so silence at the front of a file would be heard as
+// lag. Everything before the sound really starts goes, with a tiny fade in so that no click is added.
+static void trimLeadIn(Clip& c) {
+	s16 peak = 0;
+	for (u32 i = 0; i < c.samples; i++) {
+		const s16 a = c.pcm[i] < 0 ? (s16)-(c.pcm[i] + 1) : c.pcm[i];
+		if (a > peak) peak = a;
+	}
+	const s16 gate = peak / 25;
+	u32 first = 0;
+	while (first < c.samples && c.pcm[first] < gate && c.pcm[first] > -gate) first++;
+	const u32 fade = c.rate / 1000;
+	if (first >= c.samples) return;
+	if (first > fade) {
+		c.samples -= first - fade;
+		memmove(c.pcm, c.pcm + (first - fade), c.samples * sizeof(s16));
+	}
+	for (u32 i = 0; i < fade && i < c.samples; i++) c.pcm[i] = (s16)(c.pcm[i] * (float)i / fade);
+}
+
+// How much of its full volume a new sound may have, and notes it as playing. Sliders are not part
+// of this, so turning sound down keeps the same balance.
+static float makeRoom(Sfx s, float gain, float seconds, float minShare) {
+	float busyPeak = 0, busyPower = 0;
+	for (const Live& l : sLive) {
+		const float age = sClock - l.born;
+		if (age >= l.length) continue;
+		busyPeak += l.peak * expf(-age / kPeakFade);
+		busyPower += l.power * (1.0f - age / l.length);
+	}
+	const float peak = gain * sClipPeak[s], power = gain * gain * sClipPower[s];
+	float share = 1;
+	if (peak > 0 && busyPeak + peak > kMaxPeak) share = (kMaxPeak - busyPeak) / peak;
+	if (power > 0 && busyPower + power > kMaxPower) {
+		const float room = kMaxPower > busyPower ? sqrtf((kMaxPower - busyPower) / power) : 0.0f;
+		if (room < share) share = room;
+	}
+	if (share < minShare) share = minShare;
+	sLive[sLiveNext] = {sClock, seconds, peak * share, power * share * share, isCombo(s)};
+	sLiveNext = (sLiveNext + 1) % kLiveCount;
+	return share;
+}
+
 static const char* const kTrackFiles[kTrackCount] = {
 	"music_menu", "music_play", "music_meadow", "music_lantern", "music_zen", "music_moss", "music_bamboo", "music_clouds",
-};
-static const char* const kTrackNames[kTrackCount] = {
-	"Orchard Morning", "Picnic Stroll", "Sleepy Meadow", "Lantern Walk", "Still Water", "Moss Garden", "Bamboo Breeze", "Drifting Clouds",
 };
 // What each screen plays on Auto: menus, games, and Zen.
 static constexpr int kAutoTrack[MUSIC_COUNT] = {0, 1, 4};
@@ -39,7 +139,6 @@ static int sContext = MUSIC_NONE;
 static port::AssetFile* sLoadFile;
 static u32 sLoadDone;
 
-const char* trackName(int i) { return i >= 0 && i < kTrackCount ? kTrackNames[i] : "Auto"; }
 
 static int resolveTrack(int context) {
 	if (context == MUSIC_NONE) return -1;
@@ -64,7 +163,21 @@ static port::AssetFile* openClip(const char* name, u32 head[3]) {
 	return f;
 }
 
-static bool loadClip(Clip& c, const char* name) {
+// How far a new combo sound drops for the combo sounds still ringing, keeping their sum about level.
+static float comboStack() {
+	float ringing = 0;
+	for (const Live& l : sLive) {
+		const float age = sClock - l.born;
+		if (l.combo && age < l.length) {
+			const float left = 1.0f - age / l.length;
+			ringing += left * left;
+		}
+	}
+	const float drop = 1.0f / sqrtf(1.0f + ringing);
+	return drop < kComboMinStack ? kComboMinStack : drop;
+}
+
+static bool loadClip(Clip& c, const char* name, bool trim = false) {
 	u32 head[3];
 	port::AssetFile* f = openClip(name, head);
 	if (!f) return false;
@@ -72,8 +185,10 @@ static bool loadClip(Clip& c, const char* name) {
 	c.rate = head[2];
 	c.pcm = audioport::alloc(c.samples * 2);
 	bool ok = c.pcm && port::assetRead(c.pcm, c.samples * 2, f) == c.samples * 2;
-	if (ok) audioport::ready(c.pcm, c.samples * 2);
-	else if (c.pcm) {
+	if (ok) {
+		if (trim) trimLeadIn(c);
+		audioport::ready(c.pcm, c.samples * 2);
+	} else if (c.pcm) {
 		audioport::release(c.pcm);
 		c.pcm = nullptr;
 	}
@@ -91,7 +206,9 @@ int loadStepCount() { return SFX_COUNT + 1; }
 void loadStep(int i) {
 	if (!sReady) return;
 	// A clip that fails to load only silences that clip, never the whole game.
-	if (i < SFX_COUNT) loadClip(sSfx[i], kSfxFiles[i]);
+	if (i < SFX_COUNT) {
+		if (loadClip(sSfx[i], kSfxFiles[i], true)) measureClip(i, sSfx[i]);
+	}
 	else loadClip(sFuse, "fuse");
 }
 
@@ -122,7 +239,19 @@ static void beginPlayback() {
 	audioport::musicStart(sMusicClip);
 }
 
-void update() {
+void update(float dt) {
+	sClock += dt;
+#ifdef TEST_LOUD
+	// A worst case for measuring the mix: a big combo and a full swipe of cuts, again and again.
+	static float loudNext = 5;
+	static int loudCount;
+	if (sClock >= loudNext) {
+		loudNext += 1.2f;
+		play(++loudCount & 1 ? SFX_COMBO8 : SFX_COMBO10);
+		for (int i = 0; i < 6; i++) play((Sfx)(SFX_CRISP0 + i), 0.95f, (i - 3) * 0.2f);
+		play(SFX_SWISH0, 0.5f);
+	}
+#endif
 	if (sLoadFile) {
 		u32 left = sMusicClip.samples * 2 - sLoadDone;
 		u32 want = left < kReadPerFrame ? left : kReadPerFrame;
@@ -149,7 +278,9 @@ void play(Sfx s, float volume, float pan, float pitch) {
 	if (!sReady || gSave.sfx == 0) return;
 	const Clip& clip = sSfx[s];
 	if (!clip.pcm) return;
-	float v = volume * level(gSave.sfx) * 0.85f;  // headroom, so stacked combo sounds don't clip
+	const bool combo = isCombo(s);
+	float full = combo ? volume * comboStack() * kComboLoud / sClipLoud[s] : volume * kSfxGain * clipTrim(s);
+	float v = full * makeRoom(s, full, clip.samples / ((float)clip.rate * pitch), combo ? kComboMinShare : kMinShare) * level(gSave.sfx);
 	audioport::playSfx(clip, v * clampf(1.0f - pan, 0.0f, 1.0f), v * clampf(1.0f + pan, 0.0f, 1.0f), (float)clip.rate * pitch);
 }
 
