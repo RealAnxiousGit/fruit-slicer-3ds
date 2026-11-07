@@ -302,7 +302,9 @@ static const Row kVisualRows[] = {
 	{ROW_CHOICE, "Scenery", &gSave.scene, 0, kSceneCount - 1, kSceneNames, 0, 0, ACT_NONE, "The view on the top screen.", ""},
 #endif
 	{ROW_CHOICE, "Blade", &gSave.blade, 0, kBladeCount - 1, kBladeNames, 0, 0, ACT_NONE, "The colour of your slice.", ""},
+#if !PORT_HAS_DISPLAY
 	{ROW_CHOICE, "Effects", &gSave.effects, 0, 3, kEffectNames, 0, 0, ACT_NONE, "Juice, sparks and rings.", "Lower saves the most speed."},
+#endif
 #if PORT_3DS
 	{ROW_SLIDER, "3D Depth", &gSave.depth, 0, 100, nullptr, 0, 100, ACT_NONE, "How far things stand out,", "with the console's 3D slider."},
 #endif
@@ -310,7 +312,9 @@ static const Row kVisualRows[] = {
 #if PORT_TWO_SCREENS
 	{ROW_CHOICE, "Background", &gSave.bgDetail, 0, 1, kBgNames, 0, 0, ACT_NONE, "Simple draws fewer scenery layers", "and helps an Old 3DS."},
 #endif
+#if !PORT_HAS_DISPLAY
 	{ROW_CHOICE, "3D Detail", &gSave.detail, 0, 1, kDetailNames, 0, 0, ACT_NONE, "Polygons per fruit, 3D style only.", PORT_DETAIL_HINT},
+#endif
 	{ROW_CHOICE, "Slice Style", &gSave.sliceStyle, 0, 1, kSliceNames, 0, 0, ACT_NONE, "Exact cuts along your swipe.", "Quick uses ready-made halves."},
 	{ROW_CHOICE, "Transitions", &gSave.transitions, 0, 1, kOffOn, 0, 0, ACT_NONE, "Slides between menus.", ""},
 	{ROW_ACTION, "Reset Visuals", nullptr, 0, 0, nullptr, 0, 0, ACT_RESET_VISUALS, PORT_RESET_HINT, ""},
@@ -337,6 +341,11 @@ static const Row kDataRows[] = {
 
 #if PORT_HAS_DISPLAY
 static const char* const kWindowModeNames[] = {"Windowed", "Borderless", "Fullscreen"};
+static const char* const kPresetNames[] = {"Performance", "Quality", "Beautiful", "Custom"};
+static const char* const kQualityNames[] = {"Low", "Medium", "High"};
+static const char* const kShadowNames[] = {"Off", "Simple", "Soft"};
+static const char* const kBloomNames[] = {"Off", "Low", "High"};
+static const char* const kScaleNames[] = {"75%", "100%", "125%"};
 // Not const: the Resolution row's last choice depends on the screen and the Display Mode.
 static Row kDisplayRows[] = {
 #if !PORT_ANDROID
@@ -346,6 +355,14 @@ static Row kDisplayRows[] = {
 	{ROW_CHOICE, "V-Sync", &gSave.vsync, 0, 1, kOffOn, 0, 0, ACT_NONE, "Waits for the screen: no tearing.", "Works on 60 and 120 Hz screens."},
 #endif
 	{ROW_CHOICE, "Renderer", &gSave.renderer, 0, (u8)(kRendererCount - 1), kRendererNames, 0, 0, ACT_NONE, "How the game draws. Takes effect", "the next time the game starts."},
+	{ROW_CHOICE, "Graphics", &gSave.preset, 0, 2, kPresetNames, 0, 0, ACT_NONE, "Sets every row below at once.", "Custom: your own mix of them."},
+	{ROW_CHOICE, "Textures", &gSave.texQuality, 0, 2, kQualityNames, 0, 0, ACT_NONE, "Sharpness of the art.", "Lower uses less memory."},
+	{ROW_CHOICE, "Shadows", &gSave.shadowQuality, 0, 2, kShadowNames, 0, 0, ACT_NONE, "Shadows under 3D fruit.", ""},
+	{ROW_CHOICE, "Ambient Occlusion", &gSave.ambientOcc, 0, 1, kOffOn, 0, 0, ACT_NONE, "Shaded undersides on 3D fruit.", ""},
+	{ROW_CHOICE, "Bloom", &gSave.bloom, 0, 2, kBloomNames, 0, 0, ACT_NONE, "Glow around golden fruit", "and the last big fruit."},
+	{ROW_CHOICE, "Effects", &gSave.effects, 0, 3, kEffectNames, 0, 0, ACT_NONE, "Juice, sparks and rings.", "Lower saves the most speed."},
+	{ROW_CHOICE, "3D Detail", &gSave.detail, 0, 1, kDetailNames, 0, 0, ACT_NONE, "Polygons per fruit, 3D style only.", PORT_DETAIL_HINT},
+	{ROW_CHOICE, "Render Scale", &gSave.renderScale, 0, 2, kScaleNames, 0, 0, ACT_NONE, "Pixels drawn, against the screen's.", "125% smooths edges; 75% is faster."},
 	{ROW_ACTION, "Reset Display", nullptr, 0, 0, nullptr, 0, 0, ACT_RESET_DISPLAY, "Back to the default display.", ""},
 };
 #endif
@@ -473,6 +490,13 @@ static void changedSetting(const Row& r) {
 #if PORT_HAS_DISPLAY
 	if (r.value == &gSave.windowMode) refreshResolutions();
 	if (r.value == &gSave.vsync) port::applyVsync();
+	if (r.value == &gSave.preset) {
+		port::applyPreset(gSave.preset);
+	} else if (r.value == &gSave.texQuality || r.value == &gSave.shadowQuality || r.value == &gSave.ambientOcc || r.value == &gSave.bloom ||
+	           r.value == &gSave.effects || r.value == &gSave.detail || r.value == &gSave.renderScale) {
+		port::matchPreset();
+		port::applyGraphics();
+	}
 #endif
 }
 
@@ -536,6 +560,7 @@ static void rowAction(int index, const Row& r) {
 		refreshResolutions();
 		port::displayApply();
 		port::applyVsync();
+		port::applyPreset(1);  // then the first-start check runs again, and may pick Performance
 	}
 #endif
 	audio::refreshVolumes();

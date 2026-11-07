@@ -1349,25 +1349,35 @@ void Game::drawField(const Blade& blade) const {
 		            withAlpha(s.color, clampf(s.life, 0, 1) * 0.75f));
 	}
 	// Soft shadows on the board give solid fruit somewhere to float above.
-	if (solid && gSave.effects >= FX_MEDIUM && !sLightFrenzy) {
+	// Soft adds a wide, faint outer shadow around the simple one.
+	const int shadows = PORT_SHADOWS;
+	if (solid && shadows > 0 && !sLightFrenzy) {
 		for (const auto& o : objs) {
-			if (o.on && o.y > -20 && o.kind <= OBJ_BOMB) gfx::sprite(SHEET_SPRITES, sprites_glow_idx, o.x + 7, o.y + 10, 1.15f, 1.15f, 0, rgba(0, 0, 0, 110));
+			if (!o.on || o.y <= -20 || o.kind > OBJ_BOMB) continue;
+			if (shadows >= 2) gfx::sprite(SHEET_SPRITES, sprites_glow_idx, o.x + 10, o.y + 14, 1.6f, 1.6f, 0, rgba(0, 0, 0, 55));
+			gfx::sprite(SHEET_SPRITES, sprites_glow_idx, o.x + 7, o.y + 10, 1.15f, 1.15f, 0, rgba(0, 0, 0, shadows >= 2 ? 95 : 110));
 		}
 	}
+	// Bloom: Off keeps only the glows that warn or guide; High widens them and adds a faint outer halo.
+	const int bloom = PORT_BLOOM;
+	const float bloomSize = bloom >= 2 ? 1.25f : 1.0f;
 	// Glows sit behind the fruit. A bomb's warning glow stays on at every Effects setting.
 	for (const auto& o : objs) {
 		if (!o.on || o.y < -30) continue;
 		if (o.kind == OBJ_BOMB) {
 			float g = 1.25f + sinf(o.age * 14) * 0.25f;
 			gfx::sprite(SHEET_SPRITES, sprites_glow_idx, o.x, o.y, g * 1.5f, g * 1.5f, 0, rgba(255, 50, 40, 190));
-		} else if (o.kind == OBJ_GOLD && gSave.effects != FX_NONE) {
-			float g = 1.1f + sinf(o.age * 9) * 0.1f;
+		} else if (o.kind == OBJ_GOLD && gSave.effects != FX_NONE && bloom > 0) {
+			float g = (1.1f + sinf(o.age * 9) * 0.1f) * bloomSize;
+			if (bloom >= 2) gfx::sprite(SHEET_SPRITES, sprites_glow_idx, o.x, o.y, g * 2.4f, g * 2.4f, 0, rgba(255, 220, 90, 70));
 			gfx::sprite(SHEET_SPRITES, sprites_glow_idx, o.x, o.y, g * 1.5f, g * 1.5f, 0, rgba(255, 220, 90, 200));
 		}
 	}
 	if (finaleOn) {
 		float urgency = clampf((finaleT - kFinaleRise) / kFinaleWindow, 0, 1);
 		float g = 1.9f + finaleSwell * 3 + sinf(finaleT * (6 + urgency * 14)) * (0.12f + urgency * 0.2f);
+		g *= bloom > 0 ? bloomSize : 0.8f;
+		if (bloom >= 2) gfx::sprite(SHEET_SPRITES, sprites_glow_idx, finaleX, finaleY, g * 2.3f, g * 2.3f, 0, rgba(255, 190, 70, 60));
 		gfx::sprite(SHEET_SPRITES, sprites_glow_idx, finaleX, finaleY, g * 1.5f, g * 1.5f, 0, rgba(255, 190, 70, 170));
 	}
 

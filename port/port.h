@@ -31,6 +31,8 @@
 #define PORT_DEFAULT_SENSITIVITY 40
 #define PORT_SETTINGS_FIELDS
 #define PORT_HAS_DISPLAY 0
+#define PORT_SHADOWS (gSave.effects >= FX_MEDIUM ? 1 : 0)
+#define PORT_BLOOM 1
 
 // Filling the GPU's command list drops its closing commands and hangs the GPU, so draws stop short of that.
 inline bool gpuHasRoom() {
