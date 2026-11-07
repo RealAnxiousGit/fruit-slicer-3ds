@@ -92,6 +92,7 @@ struct Game {
 	int sliced;
 	int bestCombo;
 	bool scoreCommitted;
+	bool assisted;  // Slice Assist or a slower Game Speed was on: the score counts toward the assisted bests
 	float feverGrace;   // fruit thrown by a Frenzy is still landing: misses stay free
 	int chain;          // the running combo: fruit in a row while the meter stays alive
 	int comboCount;
@@ -135,6 +136,7 @@ struct Game {
 	void drawField(const Blade& blade) const;   // bottom screen
 	void drawFieldTop() const;                  // top screen: fruit thrown high, one eye at a time
 	void kickParticles();                       // steps particles, on the spare core when there is one
+	void drawMarks(bool top, float ox, float oy) const;  // High Contrast outlines and colour-blind bomb rings
 	void drawHud() const;                       // top screen, one eye at a time
 	int activeObjects() const;
 	int activeParticles() const;

@@ -90,6 +90,77 @@ u32 hueColor(float t) {
 	}
 }
 
+// Calm Effects: colours that cycle through the rainbow hold still instead.
+static u32 cycleColor(float t) { return gSave.calmFx ? COL_ACCENT : hueColor(t); }
+
+// ---------------------------------------------------------------- Sound Captions
+static constexpr int kCaptionLines = 3;
+static constexpr float kCaptionTime = 1.6f;
+static const char* sCaptions[kCaptionLines];
+static float sCaptionT[kCaptionLines];
+
+void showCaption(const char* words) {
+	if (!gSave.captions) return;
+	// The same words again just stay up longer.
+	if (sCaptions[0] == words) {
+		sCaptionT[0] = kCaptionTime;
+		return;
+	}
+	for (int i = kCaptionLines - 1; i > 0; i--) {
+		sCaptions[i] = sCaptions[i - 1];
+		sCaptionT[i] = sCaptionT[i - 1];
+	}
+	sCaptions[0] = words;
+	sCaptionT[0] = kCaptionTime;
+}
+
+static void tickCaptions(float dt) {
+	for (auto& t : sCaptionT) t -= dt;
+}
+
+static void clearCaptions() {
+	for (int i = 0; i < kCaptionLines; i++) {
+		sCaptions[i] = nullptr;
+		sCaptionT[i] = 0;
+	}
+}
+
+// Newest at the bottom of the field, older ones above it, each fading out.
+static void drawCaptions(float bottom, float cx) {
+	const float s = 0.36f * uiScale();
+	for (int i = 0; i < kCaptionLines; i++) {
+		if (!sCaptions[i] || sCaptionT[i] <= 0) continue;
+		float a = clampf(sCaptionT[i] * 3, 0, 1);
+		float w = gfx::textWidth(sCaptions[i], s), h = 22 * s / 0.36f;
+		float y = bottom - (i + 1) * (h + 3);
+		gfx::rect(cx - w / 2 - 6, y, w + 12, h, rgba(0, 0, 0, (u8)(170 * a)));
+		gfx::text(sCaptions[i], cx, y + 2, s, withAlpha(COL_CREAM, a), ALIGN_CENTER);
+	}
+}
+
+// ---------------------------------------------------------------- Colour-blind and High Contrast marks
+// A bomb that never relies on red: a ring of dashes that turns, and spikes all round it.
+static void drawBombMark(float x, float y, float r, float age) {
+	const int dashes = 12;
+	const float ring = r * 2.0f, thick = 3.5f, spin = age * 1.6f;  // outside the bomb's own knobs
+	const u32 light = gSave.colorBlind == 3 ? rgba(255, 255, 255) : rgba(255, 225, 40), dark = rgba(10, 10, 10);
+	for (int i = 0; i < dashes; i++) {
+		float a0 = spin + i * 6.2832f / dashes, a1 = a0 + 0.32f;
+		float c0 = cosf(a0), s0 = sinf(a0), c1 = cosf(a1), s1 = sinf(a1);
+		u32 c = (i & 1) ? dark : light;
+		float ix0 = x + c0 * (ring - thick), iy0 = y + s0 * (ring - thick), ox0 = x + c0 * (ring + thick), oy0 = y + s0 * (ring + thick);
+		float ix1 = x + c1 * (ring - thick), iy1 = y + s1 * (ring - thick), ox1 = x + c1 * (ring + thick), oy1 = y + s1 * (ring + thick);
+		gfx::tri(ix0, iy0, c, ox0, oy0, c, ox1, oy1, c);
+		gfx::tri(ix0, iy0, c, ox1, oy1, c, ix1, iy1, c);
+	}
+	const int spikes = 8;
+	for (int i = 0; i < spikes; i++) {
+		float a = -spin * 0.5f + i * 6.2832f / spikes, w = 0.12f;
+		gfx::tri(x + cosf(a - w) * r * 2.15f, y + sinf(a - w) * r * 2.15f, light, x + cosf(a) * r * 2.6f, y + sinf(a) * r * 2.6f, light,
+		         x + cosf(a + w) * r * 2.15f, y + sinf(a + w) * r * 2.15f, light);
+	}
+}
+
 // Frenzy throws more than anything else in the game. Lighter ports trim it so it can't overrun the hardware.
 static bool sLightFrenzy;
 static constexpr int kLightMaxObjs = 14;
@@ -107,13 +178,15 @@ static inline bool use3D() { return gSave.artStyle == ART_3D && m3d::ready(); }
 
 // ---------------------------------------------------------------- lifecycle
 void Game::start(Mode m) {
+	clearCaptions();
 	jobs::wait();
 	m3d::cutReleaseAll();
 	memset((void*)this, 0, sizeof(Game));
 	mode = m;
 	sLightFrenzy = PORT_LIGHT_FRENZY && m == MODE_FRENZY;
 	phase = PHASE_READY;
-	best = gSave.best[m];
+	assisted = assistedRun();
+	best = (assisted ? gSave.bestAssisted : gSave.best)[m];
 	gravity = 300;
 	waveTimer = 0.2f;
 	switch (m) {
@@ -184,6 +257,7 @@ void Game::launch(const Pending& p) {
 		o.radius = p.kind == OBJ_BOMB ? 19 : 23;
 		o.hits = (p.kind == OBJ_FRUIT && p.fruit == kCoconut) ? 2 : 1;
 		audio::play(SFX_THROW, 0.3f, fieldPan(p.x), gRng.range(0.9f, 1.15f));
+		if (p.kind == OBJ_BOMB) showCaption("Bomb!");
 #ifdef AUTOTEST
 		statThrows++;
 		if (feverT > 0) statFeverThrows++;
@@ -603,15 +677,17 @@ void Game::finishCombo() {
 // The app may be closed for good while it is away. Only the best score goes in now: the fruit count
 // waits for commitScore, or a run that carries on would count twice.
 bool Game::keepBestSoFar() {
-	if (scoreCommitted || score <= gSave.best[mode]) return false;
-	gSave.best[mode] = score;
+	u32* bests = assisted ? gSave.bestAssisted : gSave.best;
+	if (scoreCommitted || score <= bests[mode]) return false;
+	bests[mode] = score;
 	return true;
 }
 
 void Game::commitScore() {
 	if (scoreCommitted) return;
 	scoreCommitted = true;
-	if (score > gSave.best[mode]) gSave.best[mode] = score;
+	u32* bests = assisted ? gSave.bestAssisted : gSave.best;
+	if (score > bests[mode]) bests[mode] = score;
 	if (score > best) {
 		best = score;
 		newBest = score > 0;
@@ -626,6 +702,7 @@ void Game::addStrike(float x) {
 	strikes++;
 	strikePulse = 1;
 	audio::play(SFX_STRIKE, 0.9f, fieldPan(x));
+	PORT_VIBRATE(0.45f, 110);
 	addPopup("MISS", x, 214, rgba(255, 90, 90), 0.62f);
 	if (strikes >= maxStrikes) endGame();
 }
@@ -702,6 +779,7 @@ void Game::addHalves(const Obj& o, const FruitDef& def, const Blade& blade, floa
 }
 
 void Game::sliceFruit(Obj& o, const Blade& blade) {
+	PORT_VIBRATE(0.25f, 18);
 	const FruitDef& def = o.kind == OBJ_GOLD ? kGold : kFruit[o.fruit];
 	float pan = fieldPan(o.x);
 	float dx = blade.x - blade.px, dy = blade.y - blade.py;
@@ -789,6 +867,7 @@ void Game::hitBomb(Obj& o) {
 	emitSparks(o.x, o.y, rgba(255, 240, 200), juiceCount(16), 180);
 	addRing(o.x, o.y, rgba(255, 190, 90), 4, 0.45f);
 	audio::play(SFX_BOOM, 1.0f, fieldPan(o.x));
+	PORT_VIBRATE(0.8f, 260);
 	switch (mode) {
 		case MODE_ARCADE:
 		case MODE_COMBO:
@@ -855,7 +934,7 @@ void Game::testSlices(Blade& blade) {
 	if (!blade.active || blade.strokeStart) return;
 	float dx = blade.x - blade.px, dy = blade.y - blade.py;
 	// A resting stylus never cuts. Higher sensitivity lets smaller movements count.
-	if (dx * dx + dy * dy < lerpf(4.0f, 0.6f, gSave.stylus / 100.0f)) return;
+	if (dx * dx + dy * dy < lerpf(4.0f, 0.6f, gSave.stylus / 100.0f) * (gSave.sliceAssist ? 0.4f : 1.0f)) return;
 	if (blade.speed > 6 && blade.swishCooldown <= 0) {
 		float pan = fieldPan(blade.x);
 		if (blade.speed > 17) audio::play(SFX_SHING, 0.34f, pan, gRng.range(0.95f, 1.08f));
@@ -867,7 +946,7 @@ void Game::testSlices(Blade& blade) {
 	bool cutFruit = false;
 	for (auto& o : objs) {
 		if (!o.on || o.kind == OBJ_BOMB || o.hitCooldown > 0) continue;
-		if (hitTest(o, blade, o.radius * (0.7f + gSave.forgiveness * 0.006f) * kCutReach)) {
+		if (hitTest(o, blade, o.radius * (0.7f + gSave.forgiveness * 0.006f) * kCutReach * (gSave.sliceAssist ? 1.3f : 1.0f))) {
 			sliceObj(o, blade);
 			cutFruit = true;
 			if (phase != PHASE_PLAY) return;
@@ -1099,6 +1178,7 @@ static void stepParticles(void* arg) {
 void Game::kickParticles() { jobs::run(stepParticles, this); }
 
 void Game::update(Blade& blade) {
+	tickCaptions(kDt);
 	jobs::wait();
 	phaseT += kDt;
 	updateEffects(kDt);
@@ -1114,7 +1194,11 @@ void Game::update(Blade& blade) {
 
 	if (phase == PHASE_PLAY) {
 		elapsed += kDt;
-		float objDt = (freezeT > 0 ? kDt * 0.45f : kDt) * (0.7f + gSave.fruitSpeed * 0.006f);
+		if (!assisted && assistedRun()) {  // turned on from the pause menu: this run is assisted now
+			assisted = true;
+			best = gSave.bestAssisted[mode];
+		}
+		float objDt = (freezeT > 0 ? kDt * 0.45f : kDt) * (0.7f + gSave.fruitSpeed * 0.006f) * gameSpeedScale();
 		if (slowT > 0) {
 			objDt *= 0.3f;
 			slowT -= kDt;
@@ -1140,7 +1224,7 @@ void Game::update(Blade& blade) {
 		}
 
 		if (timeLeft > 0) {
-			timeLeft -= kDt;
+			timeLeft -= kDt * gameSpeedScale();
 			if (timeLeft <= 0) {
 				timeLeft = 0;
 				if (mode == MODE_ZEN) {
@@ -1335,13 +1419,26 @@ void Game::drawObjects2D(bool top, float ox, float oy) const {
 	}
 }
 
+void Game::drawMarks(bool top, float ox, float oy) const {
+	if (!gSave.highContrast && !gSave.colorBlind) return;
+	for (const auto& o : objs) {
+		if (!o.on || o.kind > OBJ_GOLD || !onThisScreen(o.y, 40, top, oy)) continue;
+		if (gSave.highContrast) {
+			int spr = o.kind == OBJ_BOMB ? fruit_bomb_idx : (o.kind == OBJ_GOLD ? kGold.whole : kFruit[o.fruit].whole);
+			gfx::sprite(SHEET_FRUIT, spr, o.x + ox, o.y + oy, 1.14f, 1.14f, o.rot, rgba(240, 240, 240, 235));  // light, on the dark board
+		}
+		if (o.kind == OBJ_BOMB) drawBombMark(o.x + ox, o.y + oy, o.radius, o.age);
+	}
+}
+
 void Game::drawField(const Blade& blade) const {
 	const bool solid = use3D();
 #if PORT_TWO_SCREENS
-	gfx::image(SHEET_BOARD, 0, -6, -6, 332, 252);  // one screen ports draw the board behind everything
+	if (gSave.highContrast) gfx::rect(-6, -6, 332, 252, rgba(16, 16, 20));
+	else gfx::image(SHEET_BOARD, 0, -6, -6, 332, 252);
 #endif
 	if (freezeT > 0) gfx::rect(kFillX, 0, kFillW, 240, rgba(120, 200, 255, 46));
-	if (feverT > 0) gfx::rect(kFillX, 0, kFillW, 240, withAlpha(hueColor(elapsed * 0.25f), 0.13f + sinf(elapsed * 7) * 0.03f));
+	if (feverT > 0) gfx::rect(kFillX, 0, kFillW, 240, gSave.calmFx ? withAlpha(COL_ACCENT, 0.08f) : withAlpha(hueColor(elapsed * 0.25f), 0.13f + sinf(elapsed * 7) * 0.03f));
 
 	for (const auto& s : splats) {
 		if (!s.on) continue;
@@ -1366,7 +1463,7 @@ void Game::drawField(const Blade& blade) const {
 		if (!o.on || o.y < -30) continue;
 		if (o.kind == OBJ_BOMB) {
 			float g = 1.25f + sinf(o.age * 14) * 0.25f;
-			gfx::sprite(SHEET_SPRITES, sprites_glow_idx, o.x, o.y, g * 1.5f, g * 1.5f, 0, rgba(255, 50, 40, 190));
+			gfx::sprite(SHEET_SPRITES, sprites_glow_idx, o.x, o.y, g * 1.5f, g * 1.5f, 0, gSave.colorBlind == 1 || gSave.colorBlind == 2 ? rgba(110, 130, 255, 200) : rgba(255, 50, 40, 190));
 		} else if (o.kind == OBJ_GOLD && gSave.effects != FX_NONE && bloom > 0) {
 			float g = (1.1f + sinf(o.age * 9) * 0.1f) * bloomSize;
 			if (bloom >= 2) gfx::sprite(SHEET_SPRITES, sprites_glow_idx, o.x, o.y, g * 2.4f, g * 2.4f, 0, rgba(255, 220, 90, 70));
@@ -1381,6 +1478,7 @@ void Game::drawField(const Blade& blade) const {
 		gfx::sprite(SHEET_SPRITES, sprites_glow_idx, finaleX, finaleY, g * 1.5f, g * 1.5f, 0, rgba(255, 190, 70, 170));
 	}
 
+	drawMarks(false, 0, 0);
 	if (solid) drawObjects3D(false, 0, 0);
 	else drawObjects2D(false, 0, 0);
 
@@ -1418,13 +1516,15 @@ void Game::drawField(const Blade& blade) const {
 	blade.draw();
 	for (const auto& p : popups) {
 		if (!p.on) continue;
-		gfx::text(p.text, p.x, p.y - 12, p.scale, withAlpha(p.color, clampf(p.life * 2.5f, 0, 1)), ALIGN_CENTER);
+		gfx::text(p.text, p.x, p.y - 12, p.scale * uiScale(), withAlpha(p.color, clampf(p.life * 2.5f, 0, 1)), ALIGN_CENTER);
 	}
-	if (flash > 0) gfx::rect(kFillX, 0, kFillW, 240, withAlpha(flashColor, clampf(flash, 0, 1)));
+	if (flash > 0) gfx::rect(kFillX, 0, kFillW, 240, withAlpha(flashColor, clampf(flash, 0, 1) * (gSave.calmFx ? 0.25f : 1.0f)));
+	drawCaptions(240 - 4, kFieldW * 0.5f);
 }
 
 #if PORT_TWO_SCREENS
 void Game::drawFieldTop() const {
+	drawMarks(true, kTopOffsetX, kTopOffsetY);
 	if (use3D()) drawObjects3D(true, kTopOffsetX, kTopOffsetY);
 	else drawObjects2D(true, kTopOffsetX, kTopOffsetY);
 	// Power-ups can fly high too; juice follows them up when Effects allows it.
@@ -1456,11 +1556,11 @@ void Game::drawHud() const {
 	gfx::setDepth(1.3f);
 	float pulse = 1.0f + clampf(scorePulse, 0, 1) * 0.16f;
 	snprintf(buf, sizeof buf, "%lu", (unsigned long)score);
-	gfx::text(buf, 24, 14 - (pulse - 1) * 20, 1.25f * pulse, feverT > 0 ? hueColor(elapsed * 0.6f) : COL_ACCENT);
+	gfx::text(buf, 24, 14 - (pulse - 1) * 20, 1.25f * pulse, feverT > 0 ? cycleColor(elapsed * 0.6f) : COL_ACCENT);
 
 	gfx::setDepth(0.9f);
 	gfx::text(kModes[mode].name, 380, 10, 0.5f, COL_CREAM, ALIGN_RIGHT);
-	snprintf(buf, sizeof buf, "BEST %lu", (unsigned long)(score > best ? score : best));
+	snprintf(buf, sizeof buf, assisted ? "ASSISTED BEST %lu" : "BEST %lu", (unsigned long)(score > best ? score : best));
 	gfx::text(buf, 380, 28, 0.42f, COL_DIM, ALIGN_RIGHT);
 
 	if (maxStrikes > 0) {
@@ -1476,7 +1576,7 @@ void Game::drawHud() const {
 		snprintf(buf, sizeof buf, "%d:%02d", secs / 60, secs % 60);
 		bool urgent = secs <= 10 && phase == PHASE_PLAY;
 		float s = urgent ? 0.62f + 0.06f * sinf(elapsed * 12) : 0.56f;
-		gfx::text(buf, 380, 46, s, urgent ? rgba(255, 110, 100) : COL_CREAM, ALIGN_RIGHT);
+		gfx::text(buf, 380, 46, s, urgent ? (gSave.colorBlind == 1 || gSave.colorBlind == 2 ? rgba(255, 200, 40) : rgba(255, 110, 100)) : COL_CREAM, ALIGN_RIGHT);
 	}
 
 	// Streak and combo sit to the right of the score, stacked so they never overlap it.
@@ -1492,7 +1592,7 @@ void Game::drawHud() const {
 	if (comboCount >= 2) {
 		char line[20];
 		snprintf(line, sizeof line, "SWIPE X%d", comboCount);
-		gfx::text(line, px, 38, 0.42f, hueColor(comboCount * 0.09f));
+		gfx::text(line, px, 38, 0.42f, cycleColor(comboCount * 0.09f));
 	}
 
 	// The Fruit Frenzy meter.
@@ -1500,8 +1600,8 @@ void Game::drawHud() const {
 	const float bx = 24, by = 80, bw = 352;
 	gfx::rect(bx - 2, by - 2, bw + 4, 11, gfx::themeBar());
 	if (feverT > 0) {
-		gfx::rect(bx, by, bw * clampf(feverT / kFrenzySeconds, 0, 1), 7, hueColor(elapsed * 0.7f));
-		gfx::text("FRUIT FRENZY X2", 200, by + 9, 0.42f, hueColor(elapsed * 0.7f), ALIGN_CENTER);
+		gfx::rect(bx, by, bw * clampf(feverT / kFrenzySeconds, 0, 1), 7, cycleColor(elapsed * 0.7f));
+		gfx::text("FRUIT FRENZY X2", 200, by + 9, 0.42f, cycleColor(elapsed * 0.7f), ALIGN_CENTER);
 	} else {
 		gfx::rect(bx, by, bw * clampf(feverMeter, 0, 1), 7, COL_ACCENT);
 	}
@@ -1522,7 +1622,7 @@ void Game::drawHud() const {
 		gfx::setDepth(1.9f);
 		snprintf(buf, sizeof buf, "%d", finaleHits);
 		float s = 1.5f + clampf(finaleHits * 0.012f, 0, 0.7f);
-		gfx::text(buf, 200, 136, s * 0.85f, hueColor(finaleHits * 0.025f), ALIGN_CENTER);
+		gfx::text(buf, 200, 136, s * 0.85f, cycleColor(finaleHits * 0.025f), ALIGN_CENTER);
 	}
 
 	if (phase == PHASE_READY) {
@@ -1543,24 +1643,26 @@ void Game::drawHud() const {
 #else
 void Game::drawFieldTop() const {}
 
-// One screen: a slim score sign across the top of the field, with the meter beneath it.
+// One screen: a slim score sign across the top of the field, with the meter beneath it. UI Scale makes
+// the sign taller and everything on it bigger.
 void Game::drawHud() const {
 	char buf[32];
+	const float u = uiScale();
 	const float right = kFieldW - (PORT_PAUSE_BUTTON ? 38 : 22);  // clear of the sign's screws
-	gfx::sign(sprites_plank_idx, 2, 1, kFieldW - 4, 29, COL_PLANK);
+	gfx::sign(sprites_plank_idx, 2, 1, kFieldW - 4, 29 * u, COL_PLANK);
 
 	float pulse = 1.0f + clampf(scorePulse, 0, 1) * 0.16f;
 	snprintf(buf, sizeof buf, "%lu", (unsigned long)score);
-	gfx::text(buf, 16, 3 - (pulse - 1) * 10, 0.58f * pulse, feverT > 0 ? hueColor(elapsed * 0.6f) : COL_ACCENT);
-	float px = 16 + gfx::textWidth(buf, 0.58f) + 10;
+	gfx::text(buf, 16, 3 * u - (pulse - 1) * 10, 0.58f * u * pulse, feverT > 0 ? cycleColor(elapsed * 0.6f) : COL_ACCENT);
+	float px = 16 + gfx::textWidth(buf, 0.58f * u) + 10;
 	if (chain >= 2 || comboFadeT > 0) {
 		snprintf(buf, sizeof buf, "COMBO %d", chain >= 2 ? chain : fadingChain);
-		gfx::text(buf, px, 9, 0.32f, chain >= 2 ? COL_CREAM : withAlpha(COL_CREAM, comboFadeT / kComboFade));
-		px += gfx::textWidth(buf, 0.32f) + 10;
+		gfx::text(buf, px, 9 * u, 0.32f * u, chain >= 2 ? COL_CREAM : withAlpha(COL_CREAM, comboFadeT / kComboFade));
+		px += gfx::textWidth(buf, 0.32f * u) + 10;
 	}
 	if (comboCount >= 2) {
 		snprintf(buf, sizeof buf, "SWIPE X%d", comboCount);
-		gfx::text(buf, px, 9, 0.32f, hueColor(comboCount * 0.09f));
+		gfx::text(buf, px, 9 * u, 0.32f * u, cycleColor(comboCount * 0.09f));
 	}
 
 	float rx = right;
@@ -1568,25 +1670,25 @@ void Game::drawHud() const {
 		int secs = (int)ceilf(timeLeft);
 		snprintf(buf, sizeof buf, "%d:%02d", secs / 60, secs % 60);
 		bool urgent = secs <= 10 && phase == PHASE_PLAY;
-		gfx::text(buf, rx, 5, 0.46f, urgent ? rgba(255, 110, 100) : COL_CREAM, ALIGN_RIGHT);
-		rx -= 62;
+		gfx::text(buf, rx, 5 * u, 0.46f * u, urgent ? (gSave.colorBlind == 1 || gSave.colorBlind == 2 ? rgba(255, 200, 40) : rgba(255, 110, 100)) : COL_CREAM, ALIGN_RIGHT);
+		rx -= 62 * u;
 	}
 	if (maxStrikes > 0) {
 		for (int i = 0; i < maxStrikes; i++) {
 			bool used = i < strikes;
-			float s = 0.5f + (used && i == strikes - 1 ? clampf(strikePulse, 0, 1) * 0.4f : 0);
-			gfx::sprite(SHEET_SPRITES, used ? sprites_pip_on_idx : sprites_pip_off_idx, rx - 8 - (maxStrikes - 1 - i) * 17, 15, s, s);
+			float s = (0.5f + (used && i == strikes - 1 ? clampf(strikePulse, 0, 1) * 0.4f : 0)) * u;
+			gfx::sprite(SHEET_SPRITES, used ? sprites_pip_on_idx : sprites_pip_off_idx, rx - 8 * u - (maxStrikes - 1 - i) * 17 * u, 15 * u, s, s);
 		}
-		rx -= maxStrikes * 17 + 6;
+		rx -= (maxStrikes * 17 + 6) * u;
 	}
-	snprintf(buf, sizeof buf, "BEST %lu", (unsigned long)(score > best ? score : best));
-	gfx::text(buf, rx, 9, 0.3f, COL_DIM, ALIGN_RIGHT);
+	snprintf(buf, sizeof buf, assisted ? "ASSISTED BEST %lu" : "BEST %lu", (unsigned long)(score > best ? score : best));
+	gfx::text(buf, rx, 9 * u, 0.3f * u, COL_DIM, ALIGN_RIGHT);
 
-	const float bx = 12, by = 28, bw = kFieldW - 24;
+	const float bx = 12, by = 28 * u, bw = kFieldW - 24;
 	gfx::rect(bx - 1, by - 1, bw + 2, 6, gfx::themeBar());
 	if (feverT > 0) {
-		gfx::rect(bx, by, bw * clampf(feverT / kFrenzySeconds, 0, 1), 4, hueColor(elapsed * 0.7f));
-		gfx::text("FRUIT FRENZY X2", kFieldW * 0.5f, by + 6, 0.3f, hueColor(elapsed * 0.7f), ALIGN_CENTER);
+		gfx::rect(bx, by, bw * clampf(feverT / kFrenzySeconds, 0, 1), 4, cycleColor(elapsed * 0.7f));
+		gfx::text("FRUIT FRENZY X2", kFieldW * 0.5f, by + 6, 0.3f, cycleColor(elapsed * 0.7f), ALIGN_CENTER);
 	} else {
 		gfx::rect(bx, by, bw * clampf(feverMeter, 0, 1), 4, COL_ACCENT);
 	}
@@ -1596,9 +1698,9 @@ void Game::drawHud() const {
 	float mx = PORT_PAUSE_BUTTON ? 44 : 12;  // the pause sign has the corner
 	for (const auto& m : meters) {
 		if (m.t <= 0) continue;
-		gfx::sprite(SHEET_SPRITES, m.spr, mx + 8, 44, 0.36f, 0.36f);
-		gfx::rect(mx + 20, 41, 50, 6, rgba(0, 0, 0, 120));
-		gfx::rect(mx + 20, 41, 50 * clampf(m.t / m.max, 0, 1), 6, COL_CREAM);
+		gfx::sprite(SHEET_SPRITES, m.spr, mx + 8, by + 16, 0.36f, 0.36f);
+		gfx::rect(mx + 20, by + 13, 50, 6, rgba(0, 0, 0, 120));
+		gfx::rect(mx + 20, by + 13, 50 * clampf(m.t / m.max, 0, 1), 6, COL_CREAM);
 		mx += 80;
 	}
 
@@ -1606,7 +1708,7 @@ void Game::drawHud() const {
 	if (phase == PHASE_FINALE && finaleHits > 0) {
 		snprintf(buf, sizeof buf, "%d", finaleHits);
 		float s = 1.1f + clampf(finaleHits * 0.01f, 0, 0.5f);
-		gfx::text(buf, cx, 48, s, hueColor(finaleHits * 0.025f), ALIGN_CENTER);
+		gfx::text(buf, cx, 48, s, cycleColor(finaleHits * 0.025f), ALIGN_CENTER);
 	}
 	if (phase == PHASE_READY) {
 		bool go = phaseT > 0.9f;

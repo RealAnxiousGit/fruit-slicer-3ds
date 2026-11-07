@@ -279,7 +279,24 @@ void update(float dt) {
 	}
 }
 
+// Sound Captions: words for the sounds that tell you something. Shown even with the sound turned off.
+static const char* captionFor(Sfx s) {
+	switch (s) {
+		case SFX_BOOM: return "Boom!";
+		case SFX_COMBO3: case SFX_COMBO4: case SFX_COMBO5: case SFX_COMBO6: case SFX_COMBO8: case SFX_COMBO10: return "Combo!";
+		case SFX_STRIKE: return "Missed!";
+		case SFX_POWER: return "Power-up!";
+		case SFX_FREEZE: return "Freeze!";
+		case SFX_FEVER: return "Frenzy!";
+		case SFX_GOLD: return "Gold!";
+		case SFX_FINALE_RISE: return "Big fruit!";
+		case SFX_FINALE_BURST: return "Burst!";
+		default: return nullptr;
+	}
+}
+
 void play(Sfx s, float volume, float pan, float pitch) {
+	if (const char* words = captionFor(s)) showCaption(words);
 	if (!sReady || gSave.sfx == 0) return;
 	const Clip& clip = sSfx[s];
 	if (!clip.pcm) return;

@@ -158,7 +158,10 @@ static void drawHeader(const char* title) {
 
 // Menus sit on the board chosen in Visuals, a little dimmed so that the signs stand out on it.
 #if PORT_TWO_SCREENS
-static void drawMenuBack() { gfx::image(SHEET_BOARD, 0, 0, 0, 320, 240, rgba(205, 205, 205)); }
+static void drawMenuBack() {
+	if (gSave.highContrast) gfx::rect(0, 0, 320, 240, rgba(16, 16, 20));
+	else gfx::image(SHEET_BOARD, 0, 0, 0, 320, 240, rgba(205, 205, 205));
+}
 #else
 static void drawMenuBack() {}  // one screen, one board: it's already behind everything
 #endif
@@ -254,7 +257,7 @@ static int menuInput(const Button* btns, int n, Screen screen, const Input& in, 
 
 // ---------------------------------------------------------------- settings rows
 enum RowKind { ROW_SLIDER, ROW_CHOICE, ROW_ACTION };
-enum RowAction { ACT_NONE, ACT_RESET_AUDIO, ACT_RESET_VISUALS, ACT_RESET_GAMEPLAY, ACT_RESET_SCORES, ACT_RESET_ALL, ACT_SPEED_TEST, ACT_APPLY_DISPLAY, ACT_RESET_DISPLAY };
+enum RowAction { ACT_NONE, ACT_RESET_AUDIO, ACT_RESET_VISUALS, ACT_RESET_GAMEPLAY, ACT_RESET_SCORES, ACT_RESET_ALL, ACT_SPEED_TEST, ACT_APPLY_DISPLAY, ACT_RESET_DISPLAY, ACT_RESET_ACCESS };
 
 struct Row {
 	RowKind kind;
@@ -308,7 +311,6 @@ static const Row kVisualRows[] = {
 #if PORT_3DS
 	{ROW_SLIDER, "3D Depth", &gSave.depth, 0, 100, nullptr, 0, 100, ACT_NONE, "How far things stand out,", "with the console's 3D slider."},
 #endif
-	{ROW_SLIDER, "Screen Shake", &gSave.shake, 0, 100, nullptr, 0, 100, ACT_NONE, "How hard big hits shake the field.", ""},
 #if PORT_TWO_SCREENS
 	{ROW_CHOICE, "Background", &gSave.bgDetail, 0, 1, kBgNames, 0, 0, ACT_NONE, "Simple draws fewer scenery layers", "and helps an Old 3DS."},
 #endif
@@ -367,7 +369,29 @@ static Row kDisplayRows[] = {
 };
 #endif
 
-enum SectionId { SID_AUDIO, SID_VISUALS, SID_GAMEPLAY, SID_DISPLAY, SID_DATA };
+static const char* const kUiScaleNames[] = {"100%", "125%", "150%"};
+static const char* const kColorBlindNames[] = {"Off", "Red-Blind", "Green-Blind", "Blue-Blind"};
+static const char* const kGameSpeedNames[] = {"100%", "85%", "70%"};
+static const Row kAccessRows[] = {
+	{ROW_CHOICE, "UI Scale", &gSave.uiScale, 0, PORT_3DS ? 1 : 2, kUiScaleNames, 0, 0, ACT_NONE, "Makes the score bar and the", "words during a game bigger."},
+	{ROW_CHOICE, "Larger Text", &gSave.largeText, 0, 1, kOffOn, 0, 0, ACT_NONE, "All text one step bigger.", ""},
+	{ROW_CHOICE, "High Contrast", &gSave.highContrast, 0, 1, kOffOn, 0, 0, ACT_NONE, "Dark board, solid signs,", "outlined text and fruit."},
+	{ROW_CHOICE, "Colour-blind Mode", &gSave.colorBlind, 0, 3, kColorBlindNames, 0, 0, ACT_NONE, "Bombs get a spiky dashed ring,", "and warning colours change."},
+	{ROW_CHOICE, "Calm Effects", &gSave.calmFx, 0, 1, kOffOn, 0, 0, ACT_NONE, "Softer flashes and no", "colour cycling."},
+	{ROW_SLIDER, "Screen Shake", &gSave.shake, 0, 100, nullptr, 0, 100, ACT_NONE, "How hard big hits shake the field.", ""},
+	{ROW_CHOICE, "Slice Assist", &gSave.sliceAssist, 0, 1, kOffOn, 0, 0, ACT_NONE, "Shorter swipes count and fruit is", "easier to hit. Bests kept apart."},
+	{ROW_CHOICE, "Game Speed", &gSave.gameSpeed, 0, 2, kGameSpeedNames, 0, 0, ACT_NONE, "Slows the whole game down.", "Bests below 100% are kept apart."},
+	{ROW_CHOICE, "Sound Captions", &gSave.captions, 0, 1, kOffOn, 0, 0, ACT_NONE, "Words for key sounds:", "bombs, misses, Frenzy and more."},
+#if PORT_MOUSE
+	{ROW_CHOICE, "Slice Without Holding", &gSave.sliceNoHold, 0, 1, kOffOn, 0, 0, ACT_NONE, "Moving the mouse slices,", "with no button held."},
+#endif
+#if PORT_ANDROID
+	{ROW_CHOICE, "Vibration", &gSave.vibration, 0, 1, kOffOn, 0, 0, ACT_NONE, "A buzz on slices and bombs.", ""},
+#endif
+	{ROW_ACTION, "Reset Accessibility", nullptr, 0, 0, nullptr, 0, 0, ACT_RESET_ACCESS, "Puts these back to their defaults.", ""},
+};
+
+enum SectionId { SID_AUDIO, SID_VISUALS, SID_GAMEPLAY, SID_DISPLAY, SID_ACCESS, SID_DATA };
 struct Section {
 	const char* title;
 	const Row* rows;
@@ -379,11 +403,16 @@ struct Section {
 };
 static const Section kSections[] = {
 	{"Audio", kAudioRows, sizeof kAudioRows / sizeof(Row), SID_AUDIO, true, "Sound, music and menu volume.", ""},
+#if PORT_HAS_DISPLAY
+	{"Visuals", kVisualRows, sizeof kVisualRows / sizeof(Row), SID_VISUALS, true, PORT_VISUALS_HINT, "slicing and menu slides."},
+#else
 	{"Visuals", kVisualRows, sizeof kVisualRows / sizeof(Row), SID_VISUALS, true, PORT_VISUALS_HINT, "effects and speed savers."},
+#endif
 	{"Gameplay", kGameplayRows, sizeof kGameplayRows / sizeof(Row), SID_GAMEPLAY, true, PORT_GAMEPLAY_HINT, "game plays."},
 #if PORT_HAS_DISPLAY
-	{"Display", kDisplayRows, sizeof kDisplayRows / sizeof(Row), SID_DISPLAY, true, PORT_DISPLAY_HINT, ""},
+	{"Display", kDisplayRows, sizeof kDisplayRows / sizeof(Row), SID_DISPLAY, true, PORT_DISPLAY_HINT, PORT_DISPLAY_HINT2},
 #endif
+	{"Accessibility", kAccessRows, sizeof kAccessRows / sizeof(Row), SID_ACCESS, true, "Bigger text, contrast, colour,", "assists and captions."},
 	// Mid-game, the data section stays out of reach: its speed test would replace the paused game.
 	{"Scores and Data", kDataRows, sizeof kDataRows / sizeof(Row), SID_DATA, false, PORT_DATA_HINT, ""},
 };
@@ -481,7 +510,22 @@ static void rowValueText(const Row& r, char* buf, size_t size) {
 	}
 }
 
+void applyAccessibility() {
+	gfx::gHighContrast = gSave.highContrast != 0;
+	gfx::gTextBoost = gSave.largeText ? 1.12f : 1.0f;
+}
+float uiScale() {
+	static const float k[] = {1, 1.25f, 1.5f};
+	return k[gSave.uiScale < 3 ? gSave.uiScale : 0];
+}
+float gameSpeedScale() {
+	static const float k[] = {1, 0.85f, 0.7f};
+	return k[gSave.gameSpeed < 3 ? gSave.gameSpeed : 0];
+}
+bool assistedRun() { return gSave.sliceAssist || gSave.gameSpeed; }
+
 static void changedSetting(const Row& r) {
+	applyAccessibility();
 	sDirty = true;
 	if (r.value == &gSave.music) audio::refreshVolumes();
 	// Hear a track as soon as it is picked. Leaving the section puts the right one back.
@@ -553,6 +597,7 @@ static void rowAction(int index, const Row& r) {
 		case ACT_RESET_SCORES: saveResetScores(); break;
 		case ACT_RESET_ALL: saveDefaults(false, SEC_ALL); break;
 		case ACT_RESET_DISPLAY: saveDefaults(true, SEC_DISPLAY); break;
+		case ACT_RESET_ACCESS: saveDefaults(true, SEC_ACCESS); break;
 		default: break;
 	}
 #if PORT_HAS_DISPLAY
@@ -565,6 +610,7 @@ static void rowAction(int index, const Row& r) {
 #endif
 	audio::refreshVolumes();
 	audio::reapply();
+	applyAccessibility();
 	audio::play(SFX_GOLD, 0.7f);
 	saveWrite();
 	sDirty = false;
@@ -981,7 +1027,8 @@ static void drawTopContent(Screen screen) {
 				gfx::text(m.name, 200, 104, 0.6f, COL_ACCENT, ALIGN_CENTER);
 				gfx::text(m.line1, 200, 134, 0.38f, COL_CREAM, ALIGN_CENTER);
 				gfx::text(m.line2, 200, 152, 0.38f, COL_CREAM, ALIGN_CENTER);
-				snprintf(buf, sizeof buf, "BEST %lu", (unsigned long)gSave.best[f - 1]);
+				if (assistedRun()) snprintf(buf, sizeof buf, "ASSISTED BEST %lu", (unsigned long)gSave.bestAssisted[f - 1]);
+				else snprintf(buf, sizeof buf, "BEST %lu", (unsigned long)gSave.best[f - 1]);
 				gfx::text(buf, 200, 184, 0.6f, COL_CREAM, ALIGN_CENTER);
 			} else {
 				gfx::text("Back to the title", 200, 150, 0.46f, COL_CREAM, ALIGN_CENTER);
@@ -1082,7 +1129,7 @@ static void drawTopContent(Screen screen) {
 			if (sGame.newBest) {
 				gfx::text("NEW BEST!", 200, 116, 0.7f + sinf(sTime * 6) * 0.04f, COL_CREAM, ALIGN_CENTER);
 			} else {
-				snprintf(buf, sizeof buf, "BEST %lu", (unsigned long)sGame.best);
+				snprintf(buf, sizeof buf, sGame.assisted ? "ASSISTED BEST %lu" : "BEST %lu", (unsigned long)sGame.best);
 				gfx::text(buf, 200, 116, 0.6f, COL_DIM, ALIGN_CENTER);
 			}
 			snprintf(buf, sizeof buf, "FRUIT SLICED %d", sGame.sliced);
@@ -1672,6 +1719,7 @@ void app::showLoading() {
 
 bool app::init() {
 	saveLoad();
+	applyAccessibility();
 #ifdef TEST_ART
 	gSave.artStyle = TEST_ART;
 #endif

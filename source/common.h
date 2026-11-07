@@ -141,3 +141,11 @@ struct Input {
 
 // Sound pans with position on the field.
 inline float fieldPan(float x) { return (x - kFieldW * 0.5f) / 200.0f; }
+
+// ---------------------------------------------------------------- accessibility
+// Read by drawing and game code. applyAccessibility() refreshes the drawing flags after a change.
+void applyAccessibility();
+float uiScale();                       // HUD and in-game text: 1, 1.25 or 1.5
+float gameSpeedScale();                // Game Speed: 1, 0.85 or 0.7
+bool assistedRun();                    // Slice Assist or a slower Game Speed: scores kept apart
+void showCaption(const char* text);    // Sound Captions: shown only when they are on

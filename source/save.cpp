@@ -66,11 +66,12 @@ void saveDefaults(bool keepScores, int section) {
 		// A New 3DS gets the full look. An Old 3DS starts on the settings it can hold 60 with.
 		gSave.artStyle = gIsNew3ds ? ART_3D : ART_2D;
 		gSave.board = gSave.scene = gSave.blade = 0;
-		gSave.effects = gIsNew3ds ? FX_FULL : FX_MEDIUM;
 		gSave.depth = 50;
-		gSave.shake = 100;
 		gSave.bgDetail = gIsNew3ds ? 1 : 0;
+#if !PORT_HAS_DISPLAY  // otherwise they belong to the Display section's graphics preset
+		gSave.effects = gIsNew3ds ? FX_FULL : FX_MEDIUM;
 		gSave.detail = gIsNew3ds ? 1 : 0;
+#endif
 		gSave.sliceStyle = gIsNew3ds ? 1 : 0;
 		gSave.transitions = 1;
 		PORT_RESET_VISUALS
@@ -88,9 +89,10 @@ void saveDefaults(bool keepScores, int section) {
 		gSave.stickStyle = 0;
 		gSave.stickSpeed = 50;
 		gSave.snapAssist = 1;
-		gSave.vibration = 1;
 	}
 	if (section == SEC_ALL || section == SEC_ACCESS) {
+		gSave.shake = 100;
+		gSave.vibration = 1;
 		gSave.uiScale = 0;
 		gSave.colorBlind = 0;
 		gSave.highContrast = gSave.largeText = gSave.calmFx = 0;

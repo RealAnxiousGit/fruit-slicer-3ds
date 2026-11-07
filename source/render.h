@@ -65,9 +65,18 @@ void tri(float x0, float y0, u32 c0, float x1, float y1, u32 c1, float x2, float
 float textWidth(const char* s, float scale);
 void text(const char* s, float x, float y, float scale, u32 color = WHITE, Align align = ALIGN_LEFT);
 
+// High Contrast draws signs as solid panels and outlines text; Larger Text makes all text a step bigger.
+extern bool gHighContrast;
+extern float gTextBoost;
+void contrastSign(int idx, float x, float y, float w, float h, u32 color);
+
 // A sign at any size: corners and screws keep their shape, the wood along the grain stretches, and
 // a tall sign repeats its middle band, mirrored so that the grain runs on with no seam.
 inline void sign(int idx, float x, float y, float w, float h, u32 color = WHITE) {
+	if (gHighContrast) {
+		contrastSign(idx, x, y, w, h, color);
+		return;
+	}
 	constexpr float kArtW = 256, kArtH = 56, kEndW = 16, kEndH = 18, kBandH = kArtH - kEndH * 2;
 	float k = 1;
 	if (w < kEndW * 2 && w / (kEndW * 2) < k) k = w / (kEndW * 2);

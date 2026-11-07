@@ -33,6 +33,7 @@
 #define PORT_HAS_DISPLAY 0
 #define PORT_SHADOWS (gSave.effects >= FX_MEDIUM ? 1 : 0)
 #define PORT_BLOOM 1
+#define PORT_VIBRATE(strength, ms) ((void)0)
 
 // Filling the GPU's command list drops its closing commands and hangs the GPU, so draws stop short of that.
 inline bool gpuHasRoom() {

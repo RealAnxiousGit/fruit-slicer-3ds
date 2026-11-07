@@ -1,6 +1,7 @@
 // The parts of drawing that look the same everywhere: board colours and the sign-painted font.
 #include "font_metrics.h"
 #include "render.h"
+#include "sprites.h"
 
 namespace gfx {
 struct BoardTheme {
@@ -36,17 +37,16 @@ static inline int glyphSlot(char c) {
 	return c - 32;
 }
 
+bool gHighContrast = false;
+float gTextBoost = 1;
+
 float textWidth(const char* s, float scale) {
 	float w = 0;
 	for (; *s; s++) w += kFontAdvance[glyphSlot(*s)];
-	return w * scale;
+	return w * scale * gTextBoost;
 }
 
-void text(const char* s, float x, float y, float scale, u32 color, Align align) {
-	if (align != ALIGN_LEFT) {
-		float w = textWidth(s, scale);
-		x -= align == ALIGN_CENTER ? w * 0.5f : w;
-	}
+static void textRun(const char* s, float x, float y, float scale, u32 color) {
 	const float cell = FONT_CELL * scale;
 	for (; *s; s++) {
 		int slot = glyphSlot(*s);
@@ -55,5 +55,36 @@ void text(const char* s, float x, float y, float scale, u32 color, Align align) 
 		if (g >= 0) image(SHEET_FONT, g, x + (adv - cell) * 0.5f, y, cell, cell, color);
 		x += adv;
 	}
+}
+
+void text(const char* s, float x, float y, float scale, u32 color, Align align) {
+	if (align != ALIGN_LEFT) {
+		float w = textWidth(s, scale);
+		x -= align == ALIGN_CENTER ? w * 0.5f : w;
+	}
+	scale *= gTextBoost;
+	if (gHighContrast) {
+		// A dark outline: the same words four times, nudged a little each way, under the real ones.
+		const float o = 1.0f + scale * 1.2f;
+		const u32 edge = C2D_Color32(0, 0, 0, (u8)(((color >> 24) & 255) * 0.9f));
+		textRun(s, x - o, y, scale, edge);
+		textRun(s, x + o, y, scale, edge);
+		textRun(s, x, y - o, scale, edge);
+		textRun(s, x, y + o, scale, edge);
+	}
+	textRun(s, x, y, scale, color);
+}
+
+// High Contrast signs: a solid dark panel with a light edge. The focus frame stays an edge only.
+void contrastSign(int idx, float x, float y, float w, float h, u32 color) {
+	const float t = 2;
+	const bool frameOnly = idx == sprites_plank_focus_idx;
+	const u32 edge = frameOnly ? color : C2D_Color32(235, 235, 235, (u8)(color >> 24));
+	if (!frameOnly) rect(x, y, w, h, C2D_Color32(14, 14, 18, (u8)((color >> 24) * 0.94f)));
+	const float k = frameOnly ? t * 1.5f : t;
+	rect(x, y, w, k, edge);
+	rect(x, y + h - k, w, k, edge);
+	rect(x, y + k, k, h - k * 2, edge);
+	rect(x + w - k, y + k, k, h - k * 2, edge);
 }
 }  // namespace gfx
