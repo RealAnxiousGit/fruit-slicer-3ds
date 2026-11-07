@@ -109,12 +109,17 @@ struct Button {
 static const Button kBack = {6, 5, 46, 34, nullptr};
 
 static const Button kTitleButtons[] = {
+#if PORT_3DS
 	{40, 14, 240, 80, "Play"},
 	{10, 102, 96, 54, "Options"},  {112, 102, 96, 54, "Journal"}, {214, 102, 96, 54, "Stats"},
 	{10, 166, 96, 46, "How to Play"}, {112, 166, 96, 46, "Shop"}, {214, 166, 96, 46, "Credits"},
-#if !PORT_3DS
-	// Link icons in the bottom-left corner: not fruit, so a swipe never opens a browser.
-	{8, 215, 24, 24, "GitHub"}, {36, 215, 24, 24, "X"}, {64, 215, 24, 24, "YouTube"},
+#else
+	// The fruit sit a little higher here, to leave the bottom-left corner to the link icons.
+	{40, 8, 240, 76, "Play"},
+	{10, 88, 96, 50, "Options"},  {112, 88, 96, 50, "Journal"}, {214, 88, 96, 50, "Stats"},
+	{10, 142, 96, 46, "How to Play"}, {112, 142, 96, 46, "Shop"}, {214, 142, 96, 46, "Credits"},
+	// Link icons: not fruit, so a swipe never opens a browser.
+	{8, 196, 38, 38, "GitHub"}, {52, 196, 38, 38, "X"}, {96, 196, 38, 38, "YouTube"},
 #endif
 };
 static constexpr int kTitleCount = sizeof kTitleButtons / sizeof kTitleButtons[0];
@@ -163,58 +168,132 @@ static void softEllipse(float cx, float cy, float rx, float ry, u32 c) {
 	softShape(xy, kSegs, cx, cy, 1, c);
 }
 
-// A rectangle with round corners, w by h around its middle.
-static void softRoundRect(float cx, float cy, float w, float h, float r, u32 c) {
-	constexpr int kArc = 7;
-	float xy[kArc * 4 * 2];
-	const float hx = w * 0.5f - r, hy = h * 0.5f - r;
-	const float ox[4] = {hx, -hx, -hx, hx}, oy[4] = {hy, hy, -hy, -hy};
-	int k = 0;
-	for (int q = 0; q < 4; q++)
-		for (int i = 0; i < kArc; i++) {
-			const float a = (q + i / (float)(kArc - 1)) * 1.5707963f;
-			xy[k++] = ox[q] + cosf(a) * r;
-			xy[k++] = oy[q] + sinf(a) * r;
-		}
-	softShape(xy, kArc * 4, cx, cy, 1, c);
+constexpr int kMaxPts = 40;  // points in one outline
+
+// Where a ray from (0, 0) leaves an outline that every such ray crosses once (in the outline's own units).
+static float rayOut(const float* xy, int n, float dx, float dy) {
+	float best = 1e9f;
+	for (int i = 0; i < n; i++) {
+		const int j = (i + 1) % n;
+		const float ax = xy[i * 2], ay = xy[i * 2 + 1], ex = xy[j * 2] - ax, ey = xy[j * 2 + 1] - ay;
+		const float den = dx * ey - dy * ex;
+		if (fabsf(den) < 1e-6f) continue;
+		const float t = (ax * ey - ay * ex) / den, u = (ax * dy - ay * dx) / den;
+		if (t > 0 && u >= -1e-4f && u <= 1 + 1e-4f && t < best) best = t;
+	}
+	return best < 1e8f ? best : 0;
 }
 
-// GitHub's cat, X's letter and YouTube's play button, in solid black on a light round plate.
+// Ink between an outer outline and a hole, both seen whole from the point (ox, oy) of the outlines' units:
+// the hole is left empty, so a see-through plate shows through it as it does around the mark. Both edges
+// fade over a fraction of a pixel to stay smooth.
+static void inkWithHole(const float* outer, int no, const float* hole, int nh, float ox, float oy, float cx, float cy, float s, u32 c) {
+	constexpr int kRays = 120;
+	float po[kMaxPts * 2], ph[kMaxPts * 2];
+	for (int i = 0; i < no; i++) {
+		po[i * 2] = outer[i * 2] - ox;
+		po[i * 2 + 1] = outer[i * 2 + 1] - oy;
+	}
+	for (int i = 0; i < nh; i++) {
+		ph[i * 2] = hole[i * 2] - ox;
+		ph[i * 2 + 1] = hole[i * 2 + 1] - oy;
+	}
+	const u32 clear = withAlpha(c, 0);
+	const float rim = 0.7f / s, mx = cx + ox * s, my = cy + oy * s;
+	float px[4], py[4], qx[4], qy[4];  // this ray: hole edge, hole fade, outer edge, outer fade
+	for (int i = 0; i <= kRays; i++) {
+		const float a = i * 6.2831853f / kRays, dx = cosf(a), dy = sinf(a);
+		const float tOut = rayOut(po, no, dx, dy), tIn = nh ? rayOut(ph, nh, dx, dy) : 0;
+		const float ts[4] = {tIn, tIn > rim ? tIn - rim : 0, tOut, tOut + rim};
+		for (int k = 0; k < 4; k++) {
+			qx[k] = mx + dx * ts[k] * s;
+			qy[k] = my + dy * ts[k] * s;
+		}
+		if (i > 0) {
+			gfx::tri(px[0], py[0], c, px[2], py[2], c, qx[2], qy[2], c);
+			gfx::tri(px[0], py[0], c, qx[2], qy[2], c, qx[0], qy[0], c);
+			gfx::tri(px[2], py[2], c, px[3], py[3], clear, qx[3], qy[3], clear);
+			gfx::tri(px[2], py[2], c, qx[3], qy[3], clear, qx[2], qy[2], c);
+			if (nh) {
+				gfx::tri(px[1], py[1], clear, px[0], py[0], c, qx[0], qy[0], c);
+				gfx::tri(px[1], py[1], clear, qx[0], qy[0], c, qx[1], qy[1], clear);
+			}
+		}
+		for (int k = 0; k < 4; k++) {
+			px[k] = qx[k];
+			py[k] = qy[k];
+		}
+	}
+}
+
+// GitHub's cat, X's letter and YouTube's play button in black, on a light round plate. Both are see-through
+// until the icon is pointed at or selected.
 static void drawLinkIcon(const Button& b, int which, bool focused) {
 	const float cx = b.x + b.w * 0.5f, cy = b.y + b.h * 0.5f, r = b.w * 0.5f;
-	const u32 ink = rgba(16, 16, 18), plate = COL_CREAM;
-	if (focused) softEllipse(cx, cy, r + 2.2f, r + 2.2f, COL_ACCENT);
+	const float a = focused ? 1.0f : 0.55f;
+	const u32 ink = withAlpha(rgba(16, 16, 18), focused ? 1.0f : 0.8f), plate = withAlpha(COL_CREAM, a);
+	if (focused) softEllipse(cx, cy, r + 2.5f, r + 2.5f, COL_ACCENT);
 	softEllipse(cx, cy, r, r, plate);
-	const float s = r * 0.68f;  // the mark's own radius
+	const float s = r * 0.7f;  // the mark's own radius
 	if (which == 0) {
-		// A black circle with the cat standing out of it in the plate's colour.
-		softEllipse(cx, cy, s, s, ink);
-		softEllipse(cx, cy - s * 0.1f, s * 0.5f, s * 0.42f, plate);
-		static const float kEarL[] = {-0.48f, -0.24f, -0.42f, -0.66f, -0.16f, -0.44f};
-		static const float kEarR[] = {0.48f, -0.24f, 0.16f, -0.44f, 0.42f, -0.66f};
-		static const float kBody[] = {-0.22f, 0.2f, 0.22f, 0.2f, 0.24f, 0.84f, -0.24f, 0.84f};
-		static const float kTail1[] = {-0.24f, 0.62f, -0.24f, 0.5f, -0.48f, 0.4f, -0.54f, 0.5f};
-		static const float kTail2[] = {-0.54f, 0.5f, -0.48f, 0.4f, -0.6f, 0.26f, -0.68f, 0.3f};
-		softShape(kEarL, 3, cx, cy, s, plate);
-		softShape(kEarR, 3, cx, cy, s, plate);
-		softShape(kBody, 4, cx, cy, s, plate);
-		softShape(kTail1, 4, cx, cy, s, plate);
-		softShape(kTail2, 4, cx, cy, s, plate);
+		// A black circle with the cat standing out of it: head, two ears, a body down to the circle's foot.
+		static float cat[kMaxPts * 2], ring[kMaxPts * 2];
+		static int nCat;
+		if (!nCat) {
+			const auto head = [&](float deg) {
+				const float t = deg * 0.017453293f;
+				cat[nCat * 2] = cosf(t) * 0.5f;
+				cat[nCat * 2 + 1] = -0.1f + sinf(t) * 0.42f;
+				nCat++;
+			};
+			const auto pt = [&](float x, float y) {
+				cat[nCat * 2] = x;
+				cat[nCat * 2 + 1] = y;
+				nCat++;
+			};
+			pt(-0.25f, 0.86f);
+			pt(-0.23f, 0.28f);
+			for (int d = 120; d <= 210; d += 15) head((float)d);
+			pt(-0.44f, -0.7f);
+			head(245);
+			for (int d = 260; d <= 280; d += 10) head((float)d);
+			head(295);
+			pt(0.44f, -0.7f);
+			for (int d = 330; d <= 420; d += 15) head((float)d);
+			pt(0.23f, 0.28f);
+			pt(0.25f, 0.86f);
+			for (int i = 0; i < 32; i++) {
+				ring[i * 2] = cosf(i * 6.2831853f / 32);
+				ring[i * 2 + 1] = sinf(i * 6.2831853f / 32);
+			}
+		}
+		inkWithHole(ring, 32, cat, nCat, 0, -0.1f, cx, cy, s, ink);
 	} else if (which == 1) {
-		// The X: a broad stroke falling left to right, hollowed down its middle, crossed by a thin one.
+		// The X: a broad stroke falling left to right, hollow down its middle, crossed by a thin one.
 		static const float kBroad[] = {-0.78f, -0.78f, -0.32f, -0.78f, 0.78f, 0.78f, 0.32f, 0.78f};
-		static const float kHollow[] = {-0.56f, -0.66f, -0.44f, -0.66f, 0.56f, 0.66f, 0.44f, 0.66f};
-		static const float kThinTop[] = {0.6f, -0.78f, 0.76f, -0.78f, 0.12f, -0.04f, 0.0f, -0.16f};
-		static const float kThinLow[] = {-0.12f, 0.06f, 0.0f, 0.18f, -0.62f, 0.78f, -0.78f, 0.78f};
-		softShape(kBroad, 4, cx, cy, s, ink);
-		softShape(kHollow, 4, cx, cy, s, plate);
+		static const float kHollow[] = {-0.58f, -0.68f, -0.46f, -0.68f, 0.58f, 0.68f, 0.46f, 0.68f};
+		static const float kThinTop[] = {0.6f, -0.78f, 0.76f, -0.78f, 0.29f, -0.24f, 0.13f, -0.24f};
+		static const float kThinLow[] = {-0.6f, 0.78f, -0.76f, 0.78f, -0.29f, 0.24f, -0.13f, 0.24f};
+		inkWithHole(kBroad, 4, kHollow, 4, 0, 0, cx, cy, s, ink);
 		softShape(kThinTop, 4, cx, cy, s, ink);
 		softShape(kThinLow, 4, cx, cy, s, ink);
 	} else {
 		// A wide rounded box with the play arrow cut out of it.
-		softRoundRect(cx, cy, s * 2.0f, s * 1.4f, s * 0.36f, ink);
+		static float box[kMaxPts * 2];
 		static const float kPlay[] = {-0.26f, -0.34f, 0.38f, 0.0f, -0.26f, 0.34f};
-		softShape(kPlay, 3, cx, cy, s, plate);
+		constexpr int kArc = 7;
+		if (box[0] == 0) {
+			const float hx = 1.0f - 0.36f, hy = 0.7f - 0.36f;
+			const float ox[4] = {hx, -hx, -hx, hx}, oy[4] = {hy, hy, -hy, -hy};
+			int k = 0;
+			for (int q = 0; q < 4; q++)
+				for (int i = 0; i < kArc; i++) {
+					const float t = (q + i / (float)(kArc - 1)) * 1.5707963f;
+					box[k++] = ox[q] + cosf(t) * 0.36f;
+					box[k++] = oy[q] + sinf(t) * 0.36f;
+				}
+		}
+		inkWithHole(box, kArc * 4, kPlay, 3, -0.04f, 0, cx, cy, s, ink);
 	}
 }
 #endif
@@ -2577,6 +2656,7 @@ static void skipPractice() {
 
 static void drawTopContent(Screen screen) {
 	char buf[48];
+	gfx::clearPanels();
 	switch (screen) {
 		case SCREEN_LOADING:
 			break;
@@ -2885,6 +2965,7 @@ static void drawRows() {
 static void drawBottomContent(Screen screen) {
 	static const int kIcons[MODE_COUNT] = {sprites_pip_on_idx, sprites_ic_clock_idx, sprites_ic_leaf_idx, sprites_ic_fast_idx, sprites_ic_one_idx, sprites_ic_mine_idx, sprites_ic_chain_idx, sprites_coin_idx, sprites_ic_note_idx};
 	sDrawing = screen;
+	gfx::clearPanels();
 	switch (screen) {
 		case SCREEN_LOADING:
 			break;

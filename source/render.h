@@ -73,7 +73,13 @@ void contrastSign(int idx, float x, float y, float w, float h, u32 color);
 
 // A sign at any size: corners and screws keep their shape, the wood along the grain stretches, and
 // a tall sign repeats its middle band, mirrored so that the grain runs on with no seam.
+// Text that starts inside a panel is kept inside it (text() shrinks a line that would run over). Each screen's
+// drawing starts with clearPanels(); every sign notes itself.
+void clearPanels();
+void notePanel(float x, float y, float w, float h);
+
 inline void sign(int idx, float x, float y, float w, float h, u32 color = WHITE) {
+	notePanel(x, y, w, h);
 	if (gHighContrast) {
 		contrastSign(idx, x, y, w, h, color);
 		return;

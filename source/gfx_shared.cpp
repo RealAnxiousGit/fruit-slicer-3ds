@@ -67,7 +67,51 @@ static void textRun(const char* s, float x, float y, float scale, u32 color) {
 	}
 }
 
+// Panels drawn so far on this screen. A line of text that starts inside one but would run past its edges
+// is made smaller until it fits (long translations of a line, Larger Text, a long version name).
+namespace {
+struct Panel {
+	float x, y, w, h, ox, oy;
+};
+constexpr int kMaxPanels = 64;
+Panel sPanels[kMaxPanels];
+int sPanelCount;
+}  // namespace
+
+void clearPanels() { sPanelCount = 0; }
+
+void notePanel(float x, float y, float w, float h) {
+	if (sPanelCount >= kMaxPanels) return;
+	Panel& p = sPanels[sPanelCount++];
+	p.x = x;
+	p.y = y;
+	p.w = w;
+	p.h = h;
+	getOffset(&p.ox, &p.oy);  // a sliding screen's panels never squeeze the other screen's text
+}
+
+static float fitScale(const char* s, float x, float y, float scale, Align align) {
+	const float w = textWidth(s, scale);
+	const float midY = y + 16 * scale * gTextBoost;
+	float ox, oy;
+	getOffset(&ox, &oy);
+	for (int i = sPanelCount - 1; i >= 0; i--) {
+		const Panel& p = sPanels[i];
+		if (p.ox != ox || p.oy != oy || x < p.x || x > p.x + p.w || midY < p.y || midY > p.y + p.h) continue;
+		const float pad = p.w > 60 ? 7 : 3, lo = p.x + pad, hi = p.x + p.w - pad;
+		float room = align == ALIGN_LEFT ? hi - x : (align == ALIGN_RIGHT ? x - lo : 2 * (x - lo < hi - x ? x - lo : hi - x));
+		if (w > room && room > 8) return scale * room / w;
+		return scale;
+	}
+	return scale;
+}
+
 void text(const char* s, float x, float y, float scale, u32 color, Align align) {
+	if (sPanelCount) {
+		const float fit = fitScale(s, x, y, scale, align);
+		y += (scale - fit) * gTextBoost * 16;  // a shrunk line keeps its middle where it was
+		scale = fit;
+	}
 	if (align != ALIGN_LEFT) {
 		float w = textWidth(s, scale);
 		x -= align == ALIGN_CENTER ? w * 0.5f : w;
