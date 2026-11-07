@@ -16,6 +16,7 @@
 #define PORT_DETAIL_HINT "Low suits an Old 3DS."
 #define PORT_RESET_HINT "Back to the best settings for this console."
 #define PORT_HOWTO_PAUSE "START pauses. B goes back."
+#define PORT_PRACTICE_SKIP "START to skip the lessons"
 #define PORT_CONFIRM_TEXT "Tap again to confirm"
 #define PORT_RESET_VISUALS
 #define PORT_CREDITS_TOOLS_1 "devkitARM, libctru, citro2d, citro3d"

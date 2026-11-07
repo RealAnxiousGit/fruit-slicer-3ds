@@ -54,6 +54,10 @@ struct Pending {
 	bool on;
 };
 
+// The Practice run's lessons, in order (practice.cpp).
+enum PracticeStep { PS_SLICE, PS_THREE, PS_COCONUT, PS_BOMB, PS_COIN, PS_FRENZY, PS_DONE };
+extern bool gStickInUse;  // set by the menus: a controller is steering the blade, so lessons say so
+
 enum GamePhase { PHASE_READY, PHASE_PLAY, PHASE_FINALE, PHASE_DYING, PHASE_OVER };
 
 struct Game {
@@ -64,6 +68,7 @@ struct Game {
 	static constexpr int kMaxPopups = 14;
 	static constexpr int kMaxRings = 8;
 	static constexpr int kMaxPending = 28;
+	static constexpr float kThrowY = 262.0f;  // where thrown things start, below the field
 
 	Obj objs[kMaxObjs];
 	Half halves[kMaxHalves];
@@ -130,12 +135,36 @@ struct Game {
 	int coinsCaught;
 	int coinsBonus;     // for a new best, paid when the run ends
 	u32 coinsEarned;    // what the run paid in total, for the result screen
+	float coinPulse;    // the HUD's coin count swells for a moment when a coin is caught
+	// Coins the run has made so far, as the HUD shows them: 5 a caught coin and 1 every 100 points.
+	// End-of-run bonuses (new best, Daily, Journal) come on top and show on the result screen.
+	u32 runCoins() const { return mode == MODE_PRACTICE ? 0 : (u32)coinsCaught * 5 + score / 100; }
+	u32 journalCoins;   // part of it from Fruit Journal milestones
+	u32 dailyCoins;     // part of it from the day's first Daily Fruit
+	u32 day;            // Daily Fruit: the day this run belongs to, taken when it starts
+	u32 dailyWave;      // Daily Fruit: waves thrown so far
+	u32 journalStart[kMaxFruitKinds];  // Journal counts when the run started, to pay milestones crossed
+	// The biggest swipe of the run, replayed on the result screen after a new best.
+	static constexpr int kSwipePoints = 32;
+	float swipeX[kSwipePoints], swipeY[kSwipePoints];
+	int swipeLen, swipeBest;
+	float strokeX[kSwipePoints], strokeY[kSwipePoints];  // the stroke in progress
+	int strokeLen;
+	u32 strokeOf;
+	// Practice run.
+	int practiceStep;
+	float practiceT;      // seconds since the step began or last retried
+	int practiceGot;      // what the step has seen so far (slices, a big enough swipe, ...)
+	bool practiceFail;    // the step went wrong: try it again
+	bool practiceThrown;  // this attempt's fruit is out
 #ifdef AUTOTEST
 	// Measures how often a fruit is actually drawn on top of a bomb.
 	u32 statBombFrames, statOverlapFrames, statWaves, statFrenzies, statResets;
 	u32 statThrows, statFeverThrows, statBombHits, statDropped, statPeakObjs;
 	float statFeverTime;
 	u32 statFruitAt[3], statBombsAt[3];  // thrown outside a Frenzy, by minute and a half of play: 0-30 s, 30-60 s, after
+	u32 statPendingMask;  // queue slots already taken when a wave began
+	void logWave() const;  // Daily Fruit: what this wave threw, to prove every run gets the same
 #endif
 
 	void start(Mode m);
@@ -153,8 +182,20 @@ struct Game {
 	int activeParticles() const;
 	// First live object the AUTOTEST bot should aim for (or avoid).
 	const Obj* botTarget(bool wantBomb) const;
+	bool timed() const { return timeLeft > 0 || mode == MODE_ARCADE || mode == MODE_ZEN || mode == MODE_FRENZY || mode == MODE_COMBO || mode == MODE_DAILY; }
+	const char* practicePrompt(int line) const;  // the current lesson, two lines
+	void drawPractice() const;
+	void drawSwipeReplay() const;
 
 private:
+	int diffIndex() const;            // Daily Fruit always plays on Normal
+	float slider(u8 value) const;     // a Gameplay slider, 0-100; Daily Fruit holds them at the middle
+	void practiceStart();
+	void practiceUpdate();
+	void practiceSliced(const Obj& o);
+	void practiceSwipe(int n);
+	void practiceBomb();
+	void recordStroke(const Blade& blade);
 	void spawnWave();
 	bool spawnPattern(float d);
 	void maybeCoin(float d);
@@ -199,3 +240,4 @@ public:
 };
 
 u32 hueColor(float t);
+int fruitSprite(int fruit);  // the 2D sticker of a fruit kind, on SHEET_FRUIT

@@ -3,6 +3,7 @@
 #   make             -> FruitSlicer3DS.3dsx
 #   make cia         -> FruitSlicer3DS.cia (needs makerom and bannertool on PATH)
 #   make AUTOTEST=1  -> a build that plays itself for emulator test runs
+#   make DEV=1       -> developer tools in Options (coins on demand); never for releases
 #---------------------------------------------------------------------------------
 .SUFFIXES:
 
@@ -33,6 +34,9 @@ CFLAGS	:=	-g -Wall -O2 -mword-relocations -ffunction-sections -fdata-sections $(
 CFLAGS	+=	$(INCLUDE) -D__3DS__
 ifneq ($(strip $(AUTOTEST)),)
 CFLAGS	+=	-DAUTOTEST $(TESTDEFS)
+endif
+ifneq ($(strip $(DEV)),)
+CFLAGS	+=	-DDEV_TOOLS
 endif
 
 CXXFLAGS	:= $(CFLAGS) -fno-rtti -fno-exceptions -std=gnu++17

@@ -33,6 +33,8 @@ struct SettingsV4 {
 	u8 stylus, difficulty, fruitSpeed, bombs, forgiveness, frenzyDrain, misses;
 };
 static_assert(sizeof(SettingsV4) == 60, "0.4 save layout changed");
+// Fields never move once shipped: these pin the 1.0 layout.
+static_assert(offsetof(Settings, trail) == 486 && offsetof(Settings, modePlays) == 488 && offsetof(Settings, portBlock) == 552, "a saved field moved");
 static_assert(sizeof(Settings) == offsetof(Settings, portBlock) + 32, "the port block must start 4-byte aligned and hold 32 bytes: resize reserved[] or the port fields");
 
 static u32 checksum(const void* data, size_t size) {
@@ -135,6 +137,7 @@ static void upgradeFrom04(const u8* data, size_t size) {
 	gSave.forgiveness = v.forgiveness;
 	gSave.frenzyDrain = v.frenzyDrain;
 	gSave.misses = v.misses;
+	gSave.practiceDone = 1;  // a 0.4 player already knows how to slice
 	(void)size;
 	PORT_UPGRADE_V4(data, size)
 }

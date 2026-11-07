@@ -59,9 +59,9 @@ static void autotestMenus(Input& in) {
 	sBotPhaseFrames = 0;
 	const float firstRowY = kListTop + kRowH * 0.5f;
 	switch (sBotMenuStep++) {
-		case 0: botTap(kTitleButtons[3]); return;   // How to Play
+		case 0: botTap(kTitleButtons[4]); return;   // How to Play
 		case 1: botTap(kBack); return;
-		case 2: botTap(kTitleButtons[2]); return;   // Credits
+		case 2: botTap(kTitleButtons[2]); return;   // Fruit Journal
 		case 3: botTap(kBack); return;
 		case 4: botTap(kTitleButtons[1]); return;   // Options
 		case 5: botTap(optionButtonFor(SID_AUDIO)); return;  // Audio
@@ -166,7 +166,12 @@ static void autotestInput(Input& in) {
 		case SCREEN_RESULT:
 			if (sBotPhaseFrames < 80) return;
 			sBotPhaseFrames = 0;
-			fprintf(stderr, "[bot] result mode=%s score=%lu sliced=%d combo=%d best=%lu newBest=%d strikes=%d waves=%lu bombFrames=%lu overlapFrames=%lu finaleHits=%d frenzies=%lu\n", kModes[sGame.mode].name,
+			if (sGame.mode == MODE_PRACTICE) {
+				fprintf(stderr, "[bot] practice finished, slicing Let's Play\n");
+				botTap(kPracticeEndButtons[1]);
+				return;
+			}
+			fprintf(stderr, "[bot] result mode=%s score=%lu sliced=%d combo=%d best=%lu newBest=%d strikes=%d waves=%lu bombFrames=%lu overlapFrames=%lu finaleHits=%d frenzies=%lu\n", modeName(sGame.mode),
 			        (unsigned long)sGame.score, sGame.sliced, sGame.bestCombo, (unsigned long)sGame.best, sGame.newBest, sGame.strikes,
 			        (unsigned long)sGame.statWaves, (unsigned long)sGame.statBombFrames, (unsigned long)sGame.statOverlapFrames, sGame.finaleHits, (unsigned long)sGame.statFrenzies);
 			{
@@ -175,12 +180,12 @@ static void autotestInput(Input& in) {
 				port::dataPath(botPath, sizeof botPath, "bot.txt");
 				FILE* f = fopen(botPath, "a");
 				if (f) {
-					fprintf(f, "%s score=%lu sliced=%d combo=%d waves=%lu bombFrames=%lu overlapFrames=%lu frenzies=%lu resets=%lu finale=%d\n", kModes[sGame.mode].name, (unsigned long)sGame.score, sGame.sliced, sGame.bestCombo, (unsigned long)sGame.statWaves,
+					fprintf(f, "%s score=%lu sliced=%d combo=%d waves=%lu bombFrames=%lu overlapFrames=%lu frenzies=%lu resets=%lu finale=%d\n", modeName(sGame.mode), (unsigned long)sGame.score, sGame.sliced, sGame.bestCombo, (unsigned long)sGame.statWaves,
 					        (unsigned long)sGame.statBombFrames, (unsigned long)sGame.statOverlapFrames, (unsigned long)sGame.statFrenzies, (unsigned long)sGame.statResets, sGame.finaleHits);
 					fprintf(f, "  elapsed=%.1f throws=%lu feverThrows=%lu feverTime=%.1f bombHits=%lu dropped=%lu peakObjs=%lu\n", sGame.elapsed, (unsigned long)sGame.statThrows, (unsigned long)sGame.statFeverThrows, sGame.statFeverTime,
 					        (unsigned long)sGame.statBombHits, (unsigned long)sGame.statDropped, (unsigned long)sGame.statPeakObjs);
 #ifdef TEST_BALANCE
-					fprintf(f, "BAL %s diff=%d t=%.0f fruit=%lu,%lu,%lu bombs=%lu,%lu,%lu fever=%lu sliced=%d hits=%lu score=%lu combo=%d frenzies=%lu resets=%lu gravity=%.0f\n", kModes[sGame.mode].name, gSave.difficulty, sGame.elapsed,
+					fprintf(f, "BAL %s diff=%d t=%.0f fruit=%lu,%lu,%lu bombs=%lu,%lu,%lu fever=%lu sliced=%d hits=%lu score=%lu combo=%d frenzies=%lu resets=%lu gravity=%.0f\n", modeName(sGame.mode), gSave.difficulty, sGame.elapsed,
 					        (unsigned long)sGame.statFruitAt[0], (unsigned long)sGame.statFruitAt[1], (unsigned long)sGame.statFruitAt[2], (unsigned long)sGame.statBombsAt[0], (unsigned long)sGame.statBombsAt[1], (unsigned long)sGame.statBombsAt[2],
 					        (unsigned long)sGame.statFeverThrows, sGame.sliced, (unsigned long)sGame.statBombHits, (unsigned long)sGame.score, sGame.bestCombo, (unsigned long)sGame.statFrenzies, (unsigned long)sGame.statResets, sGame.gravity);
 #endif
@@ -254,7 +259,7 @@ static void autotestInput(Input& in) {
 #ifdef TEST_LATEBOMB
 	bool suicide = sGame.timeLeft > 0 && sGame.timeLeft <= 5;
 #else
-	bool suicide = sBotModeFrames > 1500 && sGame.timeLeft <= 0;
+	bool suicide = sBotModeFrames > 1500 && sGame.timeLeft <= 0 && sGame.mode != MODE_PRACTICE;  // lessons want bombs left alone
 #endif
 #endif
 	if (sBotStroke > 0) {

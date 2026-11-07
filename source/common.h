@@ -34,8 +34,12 @@ struct Rng {
 	int below(int n) { return (int)(next() % (u32)n); }
 };
 extern Rng gRng;
+// Decides what each wave throws (fruit, bombs, coins), apart from where it flies. Daily Fruit seeds it
+// from the date, so everyone gets the same run whatever their screen layout or effects.
+extern Rng gSpawn;
 
-enum Mode { MODE_CLASSIC, MODE_ARCADE, MODE_ZEN, MODE_FRENZY, MODE_SUDDEN, MODE_MINEFIELD, MODE_COMBO, MODE_COUNT };
+// Daily Fruit is the last mode on the list. The Practice run comes after the list: it keeps no score.
+enum Mode { MODE_CLASSIC, MODE_ARCADE, MODE_ZEN, MODE_FRENZY, MODE_SUDDEN, MODE_MINEFIELD, MODE_COMBO, MODE_DAILY, MODE_COUNT, MODE_PRACTICE = MODE_COUNT };
 
 struct ModeInfo {
 	const char* name;
@@ -43,6 +47,7 @@ struct ModeInfo {
 	const char* line2;
 };
 extern const ModeInfo kModes[MODE_COUNT];
+const char* modeName(Mode m);  // also names the Practice run
 
 constexpr int kBaseBoards = 6;   // free; the rest are Shop themes
 constexpr int kBoardCount = 11;
@@ -75,7 +80,7 @@ struct Settings {
 	u32 fruitSliced[kMaxFruitKinds];  // Fruit Journal, by mesh kind
 	u32 ownedThemes, ownedTrails, ownedTracks, ownedExtras;  // Shop: bit n = item n
 	u32 dailyDay;                 // days since 2000-01-01 of the newest Daily Fruit played, 0 = never
-	u32 dailyScore[kDailyDays];   // [0] is dailyDay, [1] the day before, ...
+	u32 dailyScore[kDailyDays];   // best score + 1 (0: not played); [0] is dailyDay, [1] the day before, ...
 	u16 dailyStreak, dailyBestStreak;
 	u32 beatBest[kMaxTracks];     // Beat Slice, by track
 	u32 updLastDay;               // day of the last update check
@@ -114,14 +119,16 @@ struct Settings {
 	u8 updConsent;   // 0 not asked, 1 check, 2 don't
 	u8 practiceDone;
 	u8 trail;        // Shop blade trail, 0 none
-	u8 reserved[65];  // sized so the port block starts on a 4-byte boundary
+	u8 pad0;
+	u16 modePlays[kMaxModes];  // runs started, for the Stats page's favourite mode
+	u8 reserved[40];  // sized so the port block starts on a 4-byte boundary
 	// The port's own settings, in a fixed-size block so shared fields never move.
 	union {
 		struct { u8 portRev; PORT_SETTINGS_FIELDS };
 		u8 portBlock[32];
 	};
 };
-static_assert(MODE_COUNT <= kMaxModes, "more modes than the save holds");
+static_assert(MODE_COUNT + 1 <= kMaxModes, "more modes than the save holds");
 static_assert(kTrackCount <= kMaxTracks, "more tracks than the save holds");
 extern Settings gSave;
 enum SaveSection { SEC_ALL = -1, SEC_AUDIO, SEC_VISUALS, SEC_GAMEPLAY, SEC_CONTROLS, SEC_ACCESS, SEC_DISPLAY };

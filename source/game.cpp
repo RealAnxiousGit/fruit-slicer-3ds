@@ -7,10 +7,13 @@
 #include "fruit.h"
 #include "jobs.h"
 #include "model3d.h"
+#include "progress.h"
 #include "render.h"
 #include "sprites.h"
 
 Rng gRng;
+Rng gSpawn;
+bool gStickInUse = false;
 
 const ModeInfo kModes[MODE_COUNT] = {
 	{"Classic", "Three misses and you are out.", "A bomb ends the run."},
@@ -20,7 +23,9 @@ const ModeInfo kModes[MODE_COUNT] = {
 	{"Sudden Death", "One miss or one bomb.", "Fruit is worth double."},
 	{"Minefield", "Bombs everywhere. Misses are free.", "How long can you last?"},
 	{"Combo Rush", "45 seconds. Doubled combo bonus.", "Finish on the big finale fruit!"},
+	{"Daily Fruit", "60 seconds, the same run for everyone.", "A new one every day. Bombs cost 10."},
 };
+const char* modeName(Mode m) { return m < MODE_COUNT ? kModes[m].name : "Practice"; }
 
 enum CutClass { CUT_CRISP, CUT_JUICY, CUT_SOFT, CUT_MELON, CUT_SHELL };
 
@@ -57,6 +62,7 @@ static const FruitDef kFruit[] = {
 };
 static constexpr int kFruitKinds = sizeof(kFruit) / sizeof(kFruit[0]);
 static_assert(kFruitKinds <= kMaxFruitKinds, "the Fruit Journal needs a count for every fruit");
+static_assert(kFruitKinds == progress::kNamedFruit, "every fruit needs a name in progress.cpp");
 static constexpr int kCoconut = 10;
 static constexpr int kFirstNew = 11, kNewNormal = 4;  // banana to dragon fruit
 enum { kSpiky = 15, kGrapes, kGrape, kHoney, kJelly, kChili };
@@ -66,20 +72,20 @@ enum { kSpiky = 15, kGrapes, kGrape, kHoney, kJelly, kChili };
 static const ObjKind kPowers[] = {OBJ_FREEZE, OBJ_DOUBLE, OBJ_FRENZY, OBJ_MAGNET, OBJ_WIDE, OBJ_SHIELD, OBJ_TIME};
 static constexpr int kPowerCount = sizeof kPowers / sizeof kPowers[0];
 static constexpr float kTrickChance = 0.05f;
-static int pickTrick(Mode mode) {
+static int pickTrick(Mode mode, Rng& rng) {
 	static const int kTricks[] = {kSpiky, kGrapes, kHoney, kJelly, kChili};
 	int n = mode == MODE_ZEN ? 4 : 5;
-	return kTricks[(mode == MODE_ZEN ? 1 : 0) + gRng.below(n)];
+	return kTricks[(mode == MODE_ZEN ? 1 : 0) + rng.below(n)];
 }
 
 // Any everyday fruit but the coconut, which has its own odds.
-static int normalFruit() {
-	int i = gRng.below(kCoconut + kNewNormal);
+static int normalFruit(Rng& rng) {
+	int i = rng.below(kCoconut + kNewNormal);
 	return i < kCoconut ? i : kFirstNew + (i - kCoconut);
 }
 static const FruitDef kGold = {fruit_gold_idx, fruit_gold_l_idx, fruit_gold_r_idx, 0xFF40D8FFu, CUT_JUICY, m3d::MESH_GOLD};
 
-static constexpr float kSpawnY = 262.0f;
+static constexpr float kSpawnY = Game::kThrowY;
 static constexpr float kKillY = 276.0f;
 // Bomb and fruit radii are 19 and 23, so paths this far apart never visually touch.
 static constexpr float kWantClearance = 62.0f;
@@ -106,6 +112,8 @@ static const DifficultyInfo kDifficulty[DIFF_COUNT] = {
 	{1.12f, 0.85f, 1.25f, 1, 1.5f, 0.65f, 2},
 	{1.25f, 0.7f, 1.6f, 2, 2.0f, 0.5f, 2},
 };
+
+int fruitSprite(int fruit) { return kFruit[fruit >= 0 && fruit < kFruitKinds ? fruit : 0].whole; }
 
 u32 hueColor(float t) {
 	t = t - floorf(t);
@@ -228,15 +236,28 @@ void Game::start(Mode m) {
 		case MODE_FRENZY: timeLeft = 30; break;
 		case MODE_SUDDEN: maxStrikes = 1; break;
 		case MODE_COMBO: timeLeft = 45; break;
+		case MODE_DAILY: timeLeft = 60; break;
 		default: break;
 	}
+	// Daily Fruit throws the day's sequence; every other run gets a fresh one.
+	gSpawn.s = gRng.next() | 1;
+	if (m == MODE_DAILY) {
+		day = progress::today();
+		gSpawn.s = progress::dailySeed(day);
+	}
+	memcpy(journalStart, gSave.fruitSliced, sizeof journalStart);
+	if (m < MODE_COUNT && gSave.modePlays[m] < 0xFFFF) gSave.modePlays[m]++;
+	if (m == MODE_PRACTICE) practiceStart();
 #ifdef TEST_BALANCE
 	// Measures what each mode throws, so nothing ends a game early.
-	if (timeLeft <= 0) timeLeft = 120;
+	if (timeLeft <= 0 && m != MODE_PRACTICE) timeLeft = 120;
 	maxStrikes = 0;
 #endif
 	audio::music(m == MODE_ZEN ? MUSIC_ZEN : MUSIC_PLAY);
 }
+
+int Game::diffIndex() const { return mode == MODE_DAILY ? DIFF_NORMAL : gSave.difficulty % DIFF_COUNT; }
+float Game::slider(u8 value) const { return mode == MODE_DAILY ? 50.0f : (float)value; }
 
 float Game::difficulty() const {
 	// Skill and time both push difficulty; each mode ramps at its own pace.
@@ -248,6 +269,7 @@ float Game::difficulty() const {
 		case MODE_SUDDEN: rampTime = 120; rampScore = 300; break;
 		case MODE_MINEFIELD: rampTime = 90; rampScore = 200; break;
 		case MODE_COMBO: rampTime = 45; rampScore = 600; break;
+		case MODE_DAILY: return clampf(dailyWave / 27.0f, 0, 1);  // by wave, so nothing the player does changes what is thrown
 		default: break;
 	}
 	return clampf(elapsed / rampTime + score / rampScore, 0, 1);
@@ -380,19 +402,19 @@ bool Game::spawnPattern(float d) {
 	if (bombAround()) return false;
 	const float rise = 200;
 	const float vy = -sqrtf(2.0f * gravity * rise);
-	switch (gRng.below(4)) {
+	switch (gSpawn.below(4)) {
 		case 0: {  // Row: rises level, so one straight swipe can take them all.
-			int n = 4 + (int)(d * 3) + gRng.below(2);
+			int n = 4 + (int)(d * 3) + gSpawn.below(2);
 			float gap = n > 1 ? (kFieldW - 60.0f) / (n - 1) : 0;
 			float wobble = gRng.range(-14, 14);
-			for (int i = 0; i < n; i++) queue(0, 30 + gap * i, wobble, vy, OBJ_FRUIT, normalFruit());
+			for (int i = 0; i < n; i++) queue(0, 30 + gap * i, wobble, vy, OBJ_FRUIT, normalFruit(gSpawn));
 			break;
 		}
 		case 1: {  // Fountain: a fan from the middle.
 			int n = 5 + (int)(d * 3);
 			for (int i = 0; i < n; i++) {
 				float t = n > 1 ? (float)i / (n - 1) : 0.5f;
-				queue(0.07f * i, kFieldW * 0.5f + (t - 0.5f) * 40, lerpf(-85, 85, t), vy * gRng.range(0.92f, 1.0f), OBJ_FRUIT, normalFruit());
+				queue(0.07f * i, kFieldW * 0.5f + (t - 0.5f) * 40, lerpf(-85, 85, t), vy * gRng.range(0.92f, 1.0f), OBJ_FRUIT, normalFruit(gSpawn));
 			}
 			break;
 		}
@@ -400,13 +422,13 @@ bool Game::spawnPattern(float d) {
 			int n = 6 + (int)(d * 2);
 			for (int i = 0; i < n; i++) {
 				bool left = i % 2 == 0;
-				queue(0.13f * i, left ? -14.0f : kFieldW + 14.0f, (left ? 1 : -1) * gRng.range(95, 130), vy * gRng.range(0.86f, 0.98f), OBJ_FRUIT, normalFruit());
+				queue(0.13f * i, left ? -14.0f : kFieldW + 14.0f, (left ? 1 : -1) * gRng.range(95, 130), vy * gRng.range(0.86f, 0.98f), OBJ_FRUIT, normalFruit(gSpawn));
 			}
 			break;
 		}
 		default: {  // Staircase: rising row, easy to catch with a diagonal stroke.
 			int n = 5 + (int)(d * 2);
-			for (int i = 0; i < n; i++) queue(0.1f * i, 34 + (kFieldW - 68.0f) * i / (n - 1), 0, vy, OBJ_FRUIT, normalFruit());
+			for (int i = 0; i < n; i++) queue(0.1f * i, 34 + (kFieldW - 68.0f) * i / (n - 1), 0, vy, OBJ_FRUIT, normalFruit(gSpawn));
 			break;
 		}
 	}
@@ -414,21 +436,38 @@ bool Game::spawnPattern(float d) {
 }
 
 void Game::spawnWave() {
+	// Daily Fruit seeds every wave from the day and its number, so whatever happened in earlier waves
+	// (a pattern held back by a bomb, say), wave n throws the same for everyone.
+	if (mode == MODE_DAILY) gSpawn.s = progress::dailySeed(day + 0x10000u * ++dailyWave);
 	float d = difficulty();
 #ifdef AUTOTEST
 	statWaves++;
+	statPendingMask = 0;
+	for (int i = 0; i < kMaxPending; i++) statPendingMask |= (u32)pending[i].on << i;
 #endif
 	// Low gravity gives long, floaty arcs with plenty of hang time near the top.
-	const DifficultyInfo& level = kDifficulty[gSave.difficulty % DIFF_COUNT];
+	const DifficultyInfo& level = kDifficulty[diffIndex()];
 	gravity = lerpf(300, 430, d) * (mode == MODE_ZEN ? 0.9f : 1.0f) * level.gravity;
 
 	float patternChance = lerpf(0.10f, 0.28f, d);
 	if (mode == MODE_COMBO) patternChance = 0.7f;
 	if (mode == MODE_MINEFIELD || mode == MODE_SUDDEN) patternChance = 0.0f;
 	if (mode == MODE_FRENZY) patternChance = 0.06f;  // waves are so frequent that this is still one every few seconds
-	if (elapsed > 6 && gRng.unit() < patternChance && spawnPattern(d)) {
+	// Daily Fruit counts its time in waves, so slow motion or a chili rush never changes what comes.
+	const float t = mode == MODE_DAILY ? dailyWave * 2.2f : elapsed;
+	const bool pattern = t > 6 && gSpawn.unit() < patternChance;
+	if (pattern && mode == MODE_DAILY && bombAround()) {
+		// Patterns wait for bombs to clear. Daily Fruit holds the same wave back a moment instead of swapping it.
+		dailyWave--;
+		waveTimer = 0.4f;
+		return;
+	}
+	if (pattern && spawnPattern(d)) {
 		waveTimer = (mode == MODE_FRENZY ? 0.7f : lerpf(3.1f, 2.1f, d)) * level.interval;
 		maybeCoin(d);
+#ifdef AUTOTEST
+		logWave();
+#endif
 		return;
 	}
 
@@ -441,9 +480,10 @@ void Game::spawnWave() {
 		case MODE_SUDDEN: bombChance = lerpf(0.05f, 0.18f, d); maxExtra = (int)lerpf(0, 3, d); break;
 		case MODE_MINEFIELD: bombChance = lerpf(0.26f, 0.45f, d); maxExtra = (int)lerpf(1, 4, d); break;
 		case MODE_COMBO: bombChance = lerpf(0.12f, 0.20f, d); maxExtra += 2; break;
+		case MODE_DAILY: bombChance = lerpf(0.08f, 0.20f, d); maxExtra += 1; break;
 		default: break;
 	}
-	float bombSetting = gSave.bombs / 50.0f;
+	float bombSetting = slider(gSave.bombs) / 50.0f;
 	if (mode == MODE_MINEFIELD && bombSetting < 0.5f) bombSetting = 0.5f;  // with no bombs, this mode could never end
 	// Even a minefield has to leave some fruit worth going for.
 	const float bombLimit = mode == MODE_MINEFIELD ? (bombSetting > 1 ? 0.65f * bombSetting : 0.65f) : 0.9f;
@@ -452,8 +492,8 @@ void Game::spawnWave() {
 	if (mode == MODE_MINEFIELD && maxExtra > 4) maxExtra = 4;
 	// One touch ends Sudden Death, so it never throws two at once.
 	const int bombsAllowed = mode == MODE_MINEFIELD ? 8 : (mode == MODE_SUDDEN ? 1 : level.bombsPerWave);
-	int count = 1 + gRng.below(maxExtra + 1);
-	float stagger = gRng.below(3) == 0 ? lerpf(0.22f, 0.11f, d) : 0.0f;
+	int count = 1 + gSpawn.below(maxExtra + 1);
+	float stagger = gSpawn.below(3) == 0 ? lerpf(0.22f, 0.11f, d) : 0.0f;
 	int bombsUsed = 0;
 
 	// Decide the types first, so fruit can route around bombs from the same wave.
@@ -461,20 +501,20 @@ void Game::spawnWave() {
 	if (count > 8) count = 8;
 	for (int i = 0; i < count; i++) {
 		ObjKind kind = OBJ_FRUIT;
-		if (gRng.unit() < bombChance && bombsUsed < bombsAllowed) {
+		if (gSpawn.unit() < bombChance && bombsUsed < bombsAllowed) {
 			kind = OBJ_BOMB;
 			bombsUsed++;
 #ifdef AUTOTEST
-		} else if (mode == MODE_ARCADE && gRng.unit() < 0.3f) {
+		} else if (mode == MODE_ARCADE && gSpawn.unit() < 0.3f) {
 			// Test builds cycle the power-ups so that every one gets exercised.
 			static int nextPower = 0;
 			kind = kPowers[nextPower];
 			nextPower = (nextPower + 1) % kPowerCount;
 #else
-		} else if (mode == MODE_ARCADE && gRng.unit() < 0.09f) {
-			kind = kPowers[gRng.below(kPowerCount)];
+		} else if (mode == MODE_ARCADE && gSpawn.unit() < 0.09f) {
+			kind = kPowers[gSpawn.below(kPowerCount)];
 #endif
-		} else if (gRng.unit() < 0.035f) {
+		} else if (gSpawn.unit() < 0.035f) {
 			kind = OBJ_GOLD;
 		}
 		kinds[i] = kind;
@@ -486,8 +526,8 @@ void Game::spawnWave() {
 			if ((pass == 0) != isBomb) continue;
 			float x = 160, vx = 0, vy = -300;
 			pickThrow(isBomb, stagger * i, x, vx, vy);
-			int fruit = gRng.unit() < 0.09f ? kCoconut : normalFruit();
-			if (kinds[i] == OBJ_FRUIT && elapsed > 30 && gRng.unit() < kTrickChance) fruit = pickTrick(mode);
+			int fruit = gSpawn.unit() < 0.09f ? kCoconut : normalFruit(gSpawn);
+			if (kinds[i] == OBJ_FRUIT && t > 30 && gSpawn.unit() < kTrickChance) fruit = pickTrick(mode, gSpawn);
 			queue(stagger * i, x, vx, vy, kinds[i], fruit);
 		}
 	}
@@ -497,6 +537,9 @@ void Game::spawnWave() {
 	if (mode == MODE_SUDDEN) interval *= 0.85f;
 	waveTimer = interval * level.interval + stagger * count;
 	maybeCoin(d);
+#ifdef AUTOTEST
+	logWave();
+#endif
 }
 
 // Now and then a coin flies up with a wave: a few more on harder settings, never beside a bomb, and only
@@ -505,16 +548,37 @@ void Game::maybeCoin(float d) {
 	static constexpr int kCoinCap = 24;
 	if (coinsThrown >= kCoinCap || phase != PHASE_PLAY) return;
 	float chance = mode == MODE_FRENZY ? 0.03f : 0.075f;
-	chance *= 1 + 0.15f * gSave.difficulty + 0.3f * d;
+	chance *= 1 + 0.15f * diffIndex() + 0.3f * d;
 #ifdef TEST_COINS
 	chance = 1;  // test builds: a coin with every wave, to see and hear them
 #endif
-	if (gRng.unit() >= chance) return;
+	if (gSpawn.unit() >= chance) return;
 	float x = 160, vx = 0, vy = -300;
 	pickThrow(false, 0.35f, x, vx, vy);
 	queue(0.35f, x, vx, vy, OBJ_COIN, 0);
 	coinsThrown++;
 }
+
+#ifdef AUTOTEST
+void Game::logWave() const {
+	if (mode != MODE_DAILY) return;
+	char s[kMaxPending + 1];
+	int n = 0;
+	for (int i = 0; i < kMaxPending; i++) {
+		const Pending& p = pending[i];
+		if (!p.on || (statPendingMask >> i & 1)) continue;
+		char c = p.kind == OBJ_BOMB ? '*' : (p.kind == OBJ_COIN ? '$' : (p.kind == OBJ_GOLD ? '+' : (char)('a' + p.fruit)));
+		int j = n++;
+		while (j > 0 && s[j - 1] > c) {  // sorted: queue slots fill in any order
+			s[j] = s[j - 1];
+			j--;
+		}
+		s[j] = c;
+	}
+	s[n] = 0;
+	DLOG("[daily] wave %lu %s\n", (unsigned long)dailyWave, s);
+}
+#endif
 
 #ifdef TEST_SPAWN
 // Runs the real wave code many times for each mode, difficulty and stage of a game, and prints what it throws.
@@ -651,7 +715,7 @@ void Game::award(int points) {
 
 void Game::addFever(float amount) {
 	if (feverT > 0 || phase != PHASE_PLAY) return;
-	feverMeter += amount * kDifficulty[gSave.difficulty % DIFF_COUNT].feverGain;
+	feverMeter += amount * kDifficulty[diffIndex()].feverGain * (mode == MODE_PRACTICE ? 3.0f : 1.0f);  // a lesson fills it fast
 	if (feverMeter >= 1) {
 		feverMeter = 0;
 		feverT = kFrenzySeconds;
@@ -683,12 +747,19 @@ void Game::finishCombo() {
 	int n = comboCount;
 	comboCount = 0;
 	comboTimer = 0;
+	if (mode == MODE_PRACTICE) practiceSwipe(n);
 	if (n < 3) return;
+	if (n > swipeBest && strokeLen > 1) {  // kept for the replay after a new best
+		swipeBest = n;
+		swipeLen = strokeLen;
+		memcpy(swipeX, strokeX, sizeof swipeX);
+		memcpy(swipeY, strokeY, sizeof swipeY);
+	}
 
 	// Every tier is louder, bigger and longer than the one before.
 	struct Tier { int at; const char* name; Sfx sfx; int mult; u32 color; float size, slow, shakeAmount; int sparks, rings; };
 	static const Tier kTiers[] = {
-		{10, "LEGENDARY", SFX_COMBO10, 4, 0xFF40E0FFu, 1.0f, 0.9f, 0.55f, 80, 5},
+		{10, "LEGENDARY", SFX_COMBO10, 4, 0xFF40E0FFu, 1.0f, 0.5f, 0.55f, 80, 5},
 		{8, "INSANE", SFX_COMBO8, 3, 0xFFE070FFu, 0.92f, 0.7f, 0.42f, 60, 4},
 		{6, "SUPER", SFX_COMBO6, 2, 0xFFFFD060u, 0.84f, 0.4f, 0.25f, 40, 3},
 		{5, "AWESOME", SFX_COMBO5, 2, 0xFF70F090u, 0.78f, 0.22f, 0.12f, 26, 2},
@@ -710,7 +781,7 @@ void Game::finishCombo() {
 	snprintf(buf, sizeof buf, "%s! %d COMBO +%d", t->name, n, bonus);
 	setCallout(buf, t->color, t->size);
 	audio::play(t->sfx);
-	if (t->slow > 0) slowT = t->slow;
+	if (t->slow > 0 && !gSave.calmFx) slowT = t->slow;  // slow motion; a 10-fruit swipe gets half a second
 	if (t->shakeAmount > shake) shake = t->shakeAmount;
 	for (int i = 0; i < t->rings; i++) addRing(comboX, comboY, hueColor(i * 0.18f), 2.0f + i * 1.3f, 0.35f + i * 0.12f);
 	for (int i = 0; i < juiceCount(t->sparks); i++) {
@@ -735,7 +806,7 @@ void Game::finishCombo() {
 // waits for commitScore, or a run that carries on would count twice.
 bool Game::keepBestSoFar() {
 	u32* bests = assisted ? gSave.bestAssisted : gSave.best;
-	if (scoreCommitted || score <= bests[mode]) return false;
+	if (mode >= MODE_COUNT || scoreCommitted || score <= bests[mode]) return false;
 	bests[mode] = score;
 	return true;
 }
@@ -743,6 +814,17 @@ bool Game::keepBestSoFar() {
 void Game::commitScore() {
 	if (scoreCommitted) return;
 	scoreCommitted = true;
+	journalCoins = progress::journalPay(journalStart, gSave.fruitSliced);
+	gSave.playSeconds += (u32)elapsed;
+	if (mode == MODE_PRACTICE) {
+		// No score to keep. Journal milestones still pay, and the lessons are marked done.
+		coinsEarned = journalCoins;
+		gSave.coins += journalCoins;
+		gSave.coinsLifetime += journalCoins;
+		gSave.practiceDone = 1;
+		saveWrite();
+		return;
+	}
 	u32* bests = assisted ? gSave.bestAssisted : gSave.best;
 	if (score > bests[mode]) bests[mode] = score;
 	if (score > best) {
@@ -752,7 +834,8 @@ void Game::commitScore() {
 	}
 	gSave.totalFruit += sliced;
 	// Each coin caught is worth 5, and every 100 points adds one more.
-	coinsEarned = (u32)(coinsCaught * 5 + coinsBonus) + score / 100;
+	if (mode == MODE_DAILY) dailyCoins = progress::dailyRecord(day, score);
+	coinsEarned = runCoins() + (u32)coinsBonus + journalCoins + dailyCoins;
 	u32 earned = coinsEarned;
 	gSave.coins = gSave.coins + earned < gSave.coins ? 0xFFFFFFFFu : gSave.coins + earned;
 	gSave.coinsLifetime += earned;
@@ -884,6 +967,11 @@ void Game::sliceFruit(Obj& o, const Blade& blade) {
 	}
 	audio::play(cut, 0.95f, pan, gRng.range(0.92f, 1.09f));
 
+	if (o.kind == OBJ_FRUIT) {
+		u32& count = gSave.fruitSliced[progress::journalKind(o.fruit)];
+		if (count < 0xFFFFFFFFu) count++;
+		if (mode == MODE_PRACTICE) practiceSliced(o);
+	}
 	if (o.kind == OBJ_FRUIT && o.fruit >= kSpiky) {
 		trickEffect(o, dx, dy);
 		if (o.fruit == kSpiky) {  // no points and no combo: it only gets in the way
@@ -950,6 +1038,7 @@ void Game::hitBomb(Obj& o) {
 	switch (mode) {
 		case MODE_ARCADE:
 		case MODE_COMBO:
+		case MODE_DAILY:
 			score = score > 10 ? score - 10 : 0;
 			addPopup("-10", o.x, o.y, rgba(255, 90, 90), 0.9f);
 			setCallout("BOMB! -10", rgba(255, 110, 90));
@@ -963,6 +1052,9 @@ void Game::hitBomb(Obj& o) {
 				timeLeft = 0;
 				startFinale();  // the clock has run out, and only a running clock would bring it in
 			}
+			break;
+		case MODE_PRACTICE:
+			practiceBomb();
 			break;
 		default:
 			setCallout("BOOM!", rgba(255, 110, 90));
@@ -982,6 +1074,8 @@ void Game::sliceObj(Obj& o, const Blade& blade) {
 		case OBJ_COIN:
 			// One coin and five points. It bursts into sparkles instead of splitting.
 			coinsCaught++;
+			coinPulse = 1;
+			if (mode == MODE_PRACTICE) practiceSliced(o);
 			award(5);
 			addPopup("+5", o.x, o.y - 18, rgba(255, 220, 90), 0.8f);
 			audio::play(SFX_PLINK, 0.85f, pan);
@@ -1144,7 +1238,7 @@ void Game::testSlices(Blade& blade) {
 	bool cutFruit = false;
 	for (auto& o : objs) {
 		if (!o.on || o.kind == OBJ_BOMB || o.hitCooldown > 0) continue;
-		if (hitTest(o, blade, o.radius * (0.7f + gSave.forgiveness * 0.006f) * kCutReach * (gSave.sliceAssist ? 1.3f : 1.0f) * (wideT > 0 ? 1.6f : 1.0f))) {
+		if (hitTest(o, blade, o.radius * (0.7f + slider(gSave.forgiveness) * 0.006f) * kCutReach * (gSave.sliceAssist ? 1.3f : 1.0f) * (wideT > 0 ? 1.6f : 1.0f))) {
 			if (o.kind == OBJ_FRUIT && o.fruit == kJelly && blade.speed < kJellySpeed) {
 				bounceJelly(o, blade);
 				continue;
@@ -1300,6 +1394,45 @@ void Game::updateFinale(Blade& blade) {
 	if (finaleT >= kFinaleRise + kFinaleWindow) finaleBurst();
 }
 
+// The path of the stroke in progress, a point a step, so the run's biggest swipe can be replayed.
+void Game::recordStroke(const Blade& blade) {
+	if (!blade.active) return;
+	if (blade.strokeId != strokeOf) {
+		strokeOf = blade.strokeId;
+		strokeLen = 0;
+	}
+	if (strokeLen == kSwipePoints) {
+		memmove(strokeX, strokeX + 1, sizeof(float) * (kSwipePoints - 1));
+		memmove(strokeY, strokeY + 1, sizeof(float) * (kSwipePoints - 1));
+		strokeLen--;
+	}
+	strokeX[strokeLen] = blade.x;
+	strokeY[strokeLen] = blade.y;
+	strokeLen++;
+}
+
+// After a new best, the run's biggest swipe plays again slowly across the field, over and over.
+void Game::drawSwipeReplay() const {
+	if (phase != PHASE_OVER || !newBest || swipeLen < 2 || gSave.calmFx) return;
+	static constexpr float kDraw = 1.3f, kPause = 0.9f;
+	float t = fmodf(phaseT, kDraw + kPause);
+	float headF = clampf(t / kDraw, 0, 1) * (swipeLen - 1);
+	int headI = (int)headF;
+	Blade b;
+	b.strokeId = 7;
+	b.count = 0;
+	b.head = 0;
+	const float after = t > kDraw ? t - kDraw : 0;  // once drawn, the trail fades as a real one does
+	for (int i = headI - 10 < 0 ? 0 : headI - 10; i <= headI && b.count < Blade::kTrail; i++) {
+		float age = (headF - i) * 0.012f + after;
+		if (age > 0.16f) continue;
+		b.trail[b.head] = {swipeX[i], swipeY[i], age};
+		b.head = (b.head + 1) % Blade::kTrail;
+		b.count++;
+	}
+	b.draw();
+}
+
 void Game::endGame() {
 	if (phase != PHASE_PLAY && phase != PHASE_FINALE) return;
 	phase = PHASE_DYING;
@@ -1362,6 +1495,7 @@ void Game::updateEffects(float dt) {
 	if (shake > 0) shake -= dt;
 	if (calloutT > 0) calloutT -= dt;
 	if (scorePulse > 0) scorePulse -= dt * 4;
+	if (coinPulse > 0) coinPulse -= dt * 4;
 	if (strikePulse > 0) strikePulse -= dt * 2.5f;
 	float s = shake > 0 ? shake * 9 * (gSave.shake / 100.0f) : 0;
 	gfx::setShake(s > 0 ? gRng.range(-s, s) : 0, s > 0 ? gRng.range(-s, s) : 0);
@@ -1402,7 +1536,7 @@ void Game::update(Blade& blade) {
 			assisted = true;
 			best = gSave.bestAssisted[mode];
 		}
-		float objDt = (freezeT > 0 ? kDt * 0.45f : kDt) * (0.7f + gSave.fruitSpeed * 0.006f) * gameSpeedScale();
+		float objDt = (freezeT > 0 ? kDt * 0.45f : kDt) * (0.7f + slider(gSave.fruitSpeed) * 0.006f) * gameSpeedScale();
 		if (chiliT > 0) objDt *= 1.3f;  // the chili rush
 		updateTricks(blade);
 		if (slowT > 0) {
@@ -1415,7 +1549,7 @@ void Game::update(Blade& blade) {
 		// The meter never stops draining, in step with the fruit. The combo only lives while it has some left.
 		if (comboFadeT > 0) comboFadeT -= kDt;
 		if (feverT <= 0 && feverMeter > 0) {
-			feverMeter -= kFeverDrain * kDifficulty[gSave.difficulty % DIFF_COUNT].feverDrain * (0.4f + gSave.frenzyDrain * 0.012f) * objDt;
+			feverMeter -= kFeverDrain * kDifficulty[diffIndex()].feverDrain * (0.4f + slider(gSave.frenzyDrain) * 0.012f) * objDt;
 			if (feverMeter <= 0) {
 				feverMeter = 0;
 				if (chain >= 2) {
@@ -1444,6 +1578,7 @@ void Game::update(Blade& blade) {
 
 		if (phase == PHASE_PLAY) {
 			if (feverGrace > 0) feverGrace -= objDt;
+			if (mode == MODE_PRACTICE) practiceUpdate();
 			if (feverT > 0) {
 				// Frenzy: a shower of bomb-free fruit, routed around anything already airborne.
 				feverT -= kDt;
@@ -1460,7 +1595,7 @@ void Game::update(Blade& blade) {
 					feverTimer = mode == MODE_FRENZY && !sLightFrenzy ? 0.12f : 0.2f;
 					float x = 160, vx = 0, vy = -300;
 					pickThrow(false, 0, x, vx, vy);
-					queue(0, x, vx, vy, OBJ_FRUIT, normalFruit());
+					queue(0, x, vx, vy, OBJ_FRUIT, normalFruit(gRng));
 				}
 			} else if (frenzyT > 0) {
 				frenzyT -= kDt;
@@ -1476,9 +1611,9 @@ void Game::update(Blade& blade) {
 						x = kFieldW - x;
 						vx = -vx;
 					}
-					queue(0, x, vx, vy, OBJ_FRUIT, normalFruit());
+					queue(0, x, vx, vy, OBJ_FRUIT, normalFruit(gRng));
 				}
-			} else {
+			} else if (mode != MODE_PRACTICE) {
 				waveTimer -= objDt;
 				if (waveTimer <= 0) spawnWave();
 			}
@@ -1492,7 +1627,10 @@ void Game::update(Blade& blade) {
 			}
 		}
 		updateObjects(objDt);
-		if (phase == PHASE_PLAY) testSlices(blade);
+		if (phase == PHASE_PLAY) {
+			recordStroke(blade);
+			testSlices(blade);
+		}
 		if (comboCount > 0) {
 			comboTimer -= kDt;
 			if (comboTimer <= 0 || !blade.active) finishCombo();
@@ -1747,6 +1885,8 @@ void Game::drawField(const Blade& blade) const {
 		if (!p.on) continue;
 		gfx::text(p.text, p.x, p.y - 12, p.scale * uiScale(), withAlpha(p.color, clampf(p.life * 2.5f, 0, 1)), ALIGN_CENTER);
 	}
+	drawSwipeReplay();
+	if (mode == MODE_PRACTICE) drawPractice();
 	if (flash > 0) gfx::rect(kFillX, 0, kFillW, 240, withAlpha(flashColor, clampf(flash, 0, 1) * (gSave.calmFx ? 0.25f : 1.0f)));
 	drawCaptions(240 - 4, kFieldW * 0.5f);
 }
@@ -1793,7 +1933,7 @@ void Game::drawHud() const {
 	gfx::text(buf, 24, 14 - (pulse - 1) * 20, 1.25f * pulse, feverT > 0 ? cycleColor(elapsed * 0.6f) : COL_ACCENT);
 
 	gfx::setDepth(0.9f);
-	gfx::text(kModes[mode].name, 380, 10, 0.5f, COL_CREAM, ALIGN_RIGHT);
+	gfx::text(modeName(mode), 380, 10, 0.5f, COL_CREAM, ALIGN_RIGHT);
 	snprintf(buf, sizeof buf, assisted ? "ASSISTED BEST %lu" : "BEST %lu", (unsigned long)(score > best ? score : best));
 	gfx::text(buf, 380, 28, 0.42f, COL_DIM, ALIGN_RIGHT);
 
@@ -1805,7 +1945,7 @@ void Game::drawHud() const {
 			            368 - (maxStrikes - 1 - i) * 24, 57, s, s);
 		}
 	}
-	if (timeLeft > 0 || mode == MODE_ARCADE || mode == MODE_ZEN || mode == MODE_FRENZY || mode == MODE_COMBO) {
+	if (timed()) {
 		int secs = (int)ceilf(timeLeft);
 		snprintf(buf, sizeof buf, "%d:%02d", secs / 60, secs % 60);
 		bool urgent = secs <= 10 && phase == PHASE_PLAY;
@@ -1827,6 +1967,13 @@ void Game::drawHud() const {
 		char line[20];
 		snprintf(line, sizeof line, "SWIPE X%d", comboCount);
 		gfx::text(line, px, 38, 0.42f, cycleColor(comboCount * 0.09f));
+	}
+	// Coins made this run, under the score.
+	if (mode != MODE_PRACTICE) {
+		float cp = 1.0f + clampf(coinPulse, 0, 1) * 0.3f;
+		snprintf(buf, sizeof buf, "%lu", (unsigned long)runCoins());
+		gfx::sprite(SHEET_SPRITES, sprites_coin_idx, 33, 61, 0.42f * cp, 0.42f * cp);
+		gfx::text(buf, 46, 54, 0.44f, COL_CREAM);
 	}
 
 	// The Fruit Frenzy meter.
@@ -1900,7 +2047,7 @@ void Game::drawHud() const {
 	}
 
 	float rx = right;
-	if (timeLeft > 0 || mode == MODE_ARCADE || mode == MODE_ZEN || mode == MODE_FRENZY || mode == MODE_COMBO) {
+	if (timed()) {
 		int secs = (int)ceilf(timeLeft);
 		snprintf(buf, sizeof buf, "%d:%02d", secs / 60, secs % 60);
 		bool urgent = secs <= 10 && phase == PHASE_PLAY;
@@ -1930,6 +2077,14 @@ void Game::drawHud() const {
 	struct Meter { float t, max; int spr; };
 	const Meter meters[] = {{freezeT, 6, sprites_pw_freeze_idx}, {doubleT, 8, sprites_pw_double_idx}, {frenzyT, 5, sprites_pw_frenzy_idx}, {magnetT, 6, sprites_pw_magnet_idx}, {wideT, 8, sprites_pw_wide_idx}, {shield ? 1.0f : 0.0f, 1, sprites_pw_shield_idx}};
 	float mx = PORT_PAUSE_BUTTON ? 44 : 12;  // the pause sign has the corner
+	// Coins made this run, just under the score, ahead of any power-up meters.
+	if (mode != MODE_PRACTICE) {
+		float cp = 1.0f + clampf(coinPulse, 0, 1) * 0.3f;
+		snprintf(buf, sizeof buf, "%lu", (unsigned long)runCoins());
+		gfx::sprite(SHEET_SPRITES, sprites_coin_idx, mx + 7, by + 16, 0.36f * cp, 0.36f * cp);
+		gfx::text(buf, mx + 17, by + 10, 0.34f, COL_CREAM);
+		mx += 17 + gfx::textWidth(buf, 0.34f) + 14;
+	}
 	for (const auto& m : meters) {
 		if (m.t <= 0) continue;
 		gfx::sprite(SHEET_SPRITES, m.spr, mx + 8, by + 16, 0.36f, 0.36f);
