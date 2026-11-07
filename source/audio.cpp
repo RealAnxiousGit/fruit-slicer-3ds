@@ -140,11 +140,15 @@ static float makeRoom(Sfx s, float gain, float seconds, float minShare) {
 static const char* const kTrackFiles[kTrackCount] = {
 	"music_menu", "music_play", "music_meadow", "music_lantern", "music_zen", "music_moss", "music_bamboo", "music_clouds", "music_summer", "music_hero", "music_trap", "music_unruly", "music_vengeance", "music_explorer",
 };
+// Beats per minute. The made tracks are composed at these; the recorded ones were measured from the
+// files and loop on whole bars. Every track starts on the first beat of a bar.
+static constexpr float kTrackBpm[kTrackCount] = {62, 84, 56, 68, 50, 44, 48, 40, 128, 130, 70, 82, 128, 130};
 // What each screen plays on Auto: menus, games, and Zen.
 static constexpr int kAutoTrack[MUSIC_COUNT] = {0, 1, 4};
 static constexpr u32 kReadPerFrame = 24 * 1024;  // whole tracks arrive in under a second
 
 static int sContext = MUSIC_NONE;
+static int sForced = -1;  // Beat Slice's track, in place of the Game Music choice
 static port::AssetFile* sLoadFile;
 static u32 sLoadDone;
 
@@ -188,6 +192,7 @@ static void oggStartDecode() {
 
 static int resolveTrack(int context) {
 	if (context == MUSIC_NONE) return -1;
+	if (context == MUSIC_PLAY && sForced >= 0) return sForced;
 	u8 choice = context == MUSIC_MENU ? gSave.menuTrack : gSave.gameTrack;
 	return choice > 0 ? choice - 1 : kAutoTrack[context];
 }
@@ -453,10 +458,39 @@ static void startTrack(int track) {
 
 void music(Music m) {
 	sContext = m;
+	sForced = -1;
 	startTrack(resolveTrack(m));
 }
 
 void preview(Music m) { startTrack(resolveTrack(m)); }
+
+void musicBeat(int track) {
+	if (track < 0 || track >= kTrackCount) return;
+	sContext = MUSIC_PLAY;
+	sForced = track;
+	if (!sReady) return;
+	bool loading = sLoadFile != nullptr;
+#if FS_OGG
+	loading = loading || sOgg || sOggDec;
+#endif
+	if (track == sCurrent && sMusicClip.pcm && !loading) {
+		// Already here: back to its first beat.
+		audioport::musicStop();
+		audioport::musicStart(sMusicClip);
+		return;
+	}
+	startTrack(track);  // it starts from the top once it has arrived
+}
+
+float musicTime() {
+	if (!sReady || !sMusicClip.pcm || sLoadFile) return -1;
+#if FS_OGG
+	if (sOgg || sOggDec) return -1;
+#endif
+	return audioport::musicTime();
+}
+
+float trackBeat(int track) { return 60.0f / kTrackBpm[track >= 0 && track < kTrackCount ? track : 1]; }
 
 void reapply() { startTrack(resolveTrack(sContext)); }
 

@@ -39,7 +39,7 @@ extern Rng gRng;
 extern Rng gSpawn;
 
 // Daily Fruit is the last mode on the list. The Practice run comes after the list: it keeps no score.
-enum Mode { MODE_CLASSIC, MODE_ARCADE, MODE_ZEN, MODE_FRENZY, MODE_SUDDEN, MODE_MINEFIELD, MODE_COMBO, MODE_DAILY, MODE_COUNT, MODE_PRACTICE = MODE_COUNT };
+enum Mode { MODE_CLASSIC, MODE_ARCADE, MODE_ZEN, MODE_FRENZY, MODE_SUDDEN, MODE_MINEFIELD, MODE_COMBO, MODE_DAILY, MODE_BEAT, MODE_COUNT, MODE_PRACTICE = MODE_COUNT };
 
 struct ModeInfo {
 	const char* name;
@@ -119,7 +119,7 @@ struct Settings {
 	u8 updConsent;   // 0 not asked, 1 check, 2 don't
 	u8 practiceDone;
 	u8 trail;        // Shop blade trail, 0 none
-	u8 pad0;
+	u8 beatTrack;     // Beat Slice: 0 picks Picnic Stroll, otherwise the track number + 1
 	u16 modePlays[kMaxModes];  // runs started, for the Stats page's favourite mode
 	u8 reserved[40];  // sized so the port block starts on a 4-byte boundary
 	// The port's own settings, in a fixed-size block so shared fields never move.

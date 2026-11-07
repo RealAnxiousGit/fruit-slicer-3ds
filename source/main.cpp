@@ -32,7 +32,7 @@ static constexpr float kSlideTop = 900, kSlideBottom = 900;
 
 enum Screen {
 	SCREEN_LOADING, SCREEN_TITLE, SCREEN_MODES, SCREEN_OPTIONS, SCREEN_SECTION, SCREEN_CREDITS, SCREEN_HOWTO, SCREEN_SHOP,
-	SCREEN_JOURNAL, SCREEN_STATS,
+	SCREEN_JOURNAL, SCREEN_STATS, SCREEN_BEAT,
 	SCREEN_GAME, SCREEN_PAUSE, SCREEN_RESULT, SCREEN_BENCH, SCREEN_COUNT
 };
 
@@ -113,15 +113,19 @@ static constexpr int kTitleCount = sizeof kTitleButtons / sizeof kTitleButtons[0
 // Index 0 of every list below is its back arrow, so D-pad and touch treat it like any other sign.
 static const Button kModeButtons[] = {
 	kBack,
-	{8, 46, 148, 44, "Classic"},        {164, 46, 148, 44, "Arcade"},
-	{8, 94, 148, 44, "Zen"},            {164, 94, 148, 44, "Frenzy"},
-	{8, 142, 148, 44, "Sudden Death"},  {164, 142, 148, 44, "Minefield"},
-	{8, 190, 148, 44, "Combo Rush"},    {164, 190, 148, 44, "Daily Fruit"},
+	{8, 42, 148, 36, "Classic"},        {164, 42, 148, 36, "Arcade"},
+	{8, 81, 148, 36, "Zen"},            {164, 81, 148, 36, "Frenzy"},
+	{8, 120, 148, 36, "Sudden Death"},  {164, 120, 148, 36, "Minefield"},
+	{8, 159, 148, 36, "Combo Rush"},    {164, 159, 148, 36, "Daily Fruit"},
+	{86, 198, 148, 36, "Beat Slice"},
 };
 static_assert(sizeof kModeButtons / sizeof kModeButtons[0] == MODE_COUNT + 1, "a sign for every mode");
 static const Button kOnlyBack[] = {kBack};
 static const Button kHowtoButtons[] = {kBack, {90, 188, 140, 48, "Practice"}};
 static const Button kPracticeEndButtons[] = {kBack, {90, 170, 140, 52, "Let's Play"}};
+// Beat Slice's track choice: the arrows are taps (or Left and Right), and Play is a fruit like any other.
+static const Button kBeatButtons[] = {kBack, {90, 154, 140, 60, "Play"}};
+static const Button kBeatPrev = {8, 60, 46, 62, nullptr}, kBeatNextSign = {266, 60, 46, 62, nullptr};
 static const Button kResultButtons[] = {kBack, {20, 170, 134, 52, "Again"}, {166, 170, 134, 52, "Modes"}};
 #if PORT_PAUSE_BUTTON
 static const Button kPauseSign = {2, kFieldTop + 2, 36, 36, nullptr};  // in field units: top-left, just under the score sign
@@ -213,7 +217,7 @@ static struct {
 static Screen sDrawing = SCREEN_LOADING;  // the screen whose signs are being drawn, during a slide too
 static Blade sMenuBlade;                  // the trail a swipe leaves across the menus
 static bool menuBladeShown() {
-	return sScreen == SCREEN_TITLE || sScreen == SCREEN_MODES || sScreen == SCREEN_OPTIONS || sScreen == SCREEN_CREDITS || sScreen == SCREEN_HOWTO || sScreen == SCREEN_JOURNAL || sScreen == SCREEN_STATS || sScreen == SCREEN_PAUSE || sScreen == SCREEN_RESULT;
+	return sScreen == SCREEN_TITLE || sScreen == SCREEN_MODES || sScreen == SCREEN_OPTIONS || sScreen == SCREEN_CREDITS || sScreen == SCREEN_HOWTO || sScreen == SCREEN_JOURNAL || sScreen == SCREEN_STATS || sScreen == SCREEN_BEAT || sScreen == SCREEN_PAUSE || sScreen == SCREEN_RESULT;
 }
 
 static bool fruit3D() { return gSave.artStyle == ART_3D && m3d::ready(); }
@@ -1885,11 +1889,59 @@ static void drawStatsTop() {
 	gfx::setDepth(0.7f);
 	gfx::text("BEST SCORES", 200, 92, 0.4f, COL_ACCENT, ALIGN_CENTER);
 	for (int m = 0; m < MODE_COUNT; m++) {
-		const float x = m < 4 ? 46 : 214, y = 118 + (m % 4) * 26;
+		const float x = m < 5 ? 46 : 214, y = 114 + (m % 5) * 22;
 		gfx::text(kModes[m].name, x, y, 0.34f, COL_DIM);
 		snprintf(buf, sizeof buf, "%lu", (unsigned long)gSave.best[m]);
 		gfx::text(buf, x + 140, y - 1, 0.38f, COL_CREAM, ALIGN_RIGHT);
 	}
+}
+
+// ---------------------------------------------------------------- Beat Slice track choice
+static int beatSong() {
+	int t = gSave.beatTrack ? gSave.beatTrack - 1 : 1;
+	return t < kTrackCount && trackUnlocked(t) ? t : 1;
+}
+
+// The next track you have, either way round. Each one plays from its start as you land on it.
+static void beatPick(int dir) {
+	int t = beatSong();
+	for (int i = 0; i < kTrackCount; i++) {
+		t = (t + dir + kTrackCount) % kTrackCount;
+		if (trackUnlocked(t)) break;
+	}
+	gSave.beatTrack = (u8)(t + 1);
+	audio::click();
+	audio::musicBeat(t);
+}
+
+static void drawBeatScreen() {
+	char buf[32];
+	const int f = sFocus[SCREEN_BEAT];
+	drawHeader("Beat Slice");
+	drawBackArrow(f == 0, sPressed == 0);
+	const int t = beatSong();
+	int n = 0, at = 0;
+	for (int i = 0; i < kTrackCount; i++) {
+		if (!trackUnlocked(i)) continue;
+		if (i == t) at = n;
+		n++;
+	}
+	gfx::sign(sprites_plank_idx, 60, 56, 200, 70, COL_PLANK);
+	snprintf(buf, sizeof buf, "TRACK %d OF %d", at + 1, n);
+	gfx::text(buf, 160, 64, 0.3f, COL_DIM, ALIGN_CENTER);
+	const char* name = kTrackRowNames[t + 1];
+	float s = 0.5f, w = gfx::textWidth(name, s);
+	if (w > 176) s *= 176 / w;
+	gfx::text(name, 160, 80, s, COL_ACCENT, ALIGN_CENTER);
+	snprintf(buf, sizeof buf, "%d BPM", (int)(60 / audio::trackBeat(t) + 0.5f));
+	gfx::text(buf, 160, 104, 0.34f, COL_CREAM, ALIGN_CENTER);
+	for (int side = 0; side < 2; side++) {
+		const Button& b = side ? kBeatNextSign : kBeatPrev;
+		drawPlank(b.x, b.y, b.w, b.h, false, false);
+		gfx::sprite(SHEET_SPRITES, sprites_arrow_idx, b.x + b.w * 0.5f, b.y + b.h * 0.5f, 0.6f, 0.6f, side ? 3.14159265f : 0, COL_ACCENT);
+	}
+	drawSign(kBeatButtons[1], kBeatButtons[1].label, f == 1, sPressed == 1, 0.56f, -1, fruitFor("Play"));
+	gfx::text(n < kTrackCount ? "Tracks from the Shop play here too." : "Every track is yours.", 160, 224, 0.3f, COL_DIM, ALIGN_CENTER);
 }
 
 static void skipPractice() {
@@ -2004,6 +2056,20 @@ static void drawTopContent(Screen screen) {
 		case SCREEN_STATS:
 			drawStatsTop();
 			break;
+		case SCREEN_BEAT: {
+			topPanel(30, 96, 340, 134);
+			gfx::setDepth(1.0f);
+			gfx::sprite(SHEET_LOGO, logo_logo_idx, 200, 50, 0.62f, 0.62f);
+			gfx::setDepth(0.7f);
+			const ModeInfo& m = kModes[MODE_BEAT];
+			gfx::text(m.name, 200, 104, 0.6f, COL_ACCENT, ALIGN_CENTER);
+			gfx::text(m.line1, 200, 134, 0.38f, COL_CREAM, ALIGN_CENTER);
+			gfx::text(m.line2, 200, 152, 0.38f, COL_CREAM, ALIGN_CENTER);
+			if (assistedRun()) snprintf(buf, sizeof buf, "ASSISTED BEST %lu", (unsigned long)gSave.bestAssisted[MODE_BEAT]);
+			else snprintf(buf, sizeof buf, "BEST %lu", (unsigned long)gSave.best[MODE_BEAT]);
+			gfx::text(buf, 200, 184, 0.6f, COL_CREAM, ALIGN_CENTER);
+			break;
+		}
 		case SCREEN_CREDITS:
 			gfx::setDepth(1.0f);
 			gfx::sprite(SHEET_LOGO, logo_logo_idx, 200, 54, 0.72f, 0.72f);
@@ -2072,7 +2138,8 @@ static void drawTopContent(Screen screen) {
 				snprintf(buf, sizeof buf, sGame.assisted ? "ASSISTED BEST %lu" : "BEST %lu", (unsigned long)sGame.best);
 				gfx::text(buf, 200, 116, 0.6f, COL_DIM, ALIGN_CENTER);
 			}
-			snprintf(buf, sizeof buf, "SLICED %d   BEST COMBO %d", sGame.sliced, sGame.bestCombo);
+			if (sGame.mode == MODE_BEAT) snprintf(buf, sizeof buf, "SLICED %d   ON THE BEAT %d", sGame.sliced, sGame.beatHits);
+			else snprintf(buf, sizeof buf, "SLICED %d   BEST COMBO %d", sGame.sliced, sGame.bestCombo);
 			gfx::text(buf, 200, 152, 0.42f, COL_CREAM, ALIGN_CENTER);
 			if (sGame.scoreCommitted) {
 				snprintf(buf, sizeof buf, "+%lu COINS", (unsigned long)sGame.coinsEarned);
@@ -2114,7 +2181,7 @@ static void drawTopContent(Screen screen) {
 	}
 	// Every main menu shows the coins saved, top left: the logo leaves it free, and on one screen
 	// it stays well away from the menu's back arrow.
-	if (screen == SCREEN_TITLE || screen == SCREEN_MODES || screen == SCREEN_OPTIONS || screen == SCREEN_JOURNAL || screen == SCREEN_STATS || screen == SCREEN_HOWTO) {
+	if (screen == SCREEN_TITLE || screen == SCREEN_MODES || screen == SCREEN_OPTIONS || screen == SCREEN_JOURNAL || screen == SCREEN_STATS || screen == SCREEN_HOWTO || screen == SCREEN_BEAT) {
 		gfx::setDepth(0.8f);
 		drawPurse(12, 10, 0.5f, false);
 	}
@@ -2171,7 +2238,7 @@ static void drawRows() {
 }
 
 static void drawBottomContent(Screen screen) {
-	static const int kIcons[MODE_COUNT] = {sprites_pip_on_idx, sprites_ic_clock_idx, sprites_ic_leaf_idx, sprites_ic_fast_idx, sprites_ic_one_idx, sprites_ic_mine_idx, sprites_ic_chain_idx, sprites_coin_idx};
+	static const int kIcons[MODE_COUNT] = {sprites_pip_on_idx, sprites_ic_clock_idx, sprites_ic_leaf_idx, sprites_ic_fast_idx, sprites_ic_one_idx, sprites_ic_mine_idx, sprites_ic_chain_idx, sprites_coin_idx, sprites_ic_note_idx};
 	sDrawing = screen;
 	switch (screen) {
 		case SCREEN_LOADING:
@@ -2226,6 +2293,10 @@ static void drawBottomContent(Screen screen) {
 		case SCREEN_JOURNAL:
 			drawMenuBack();
 			drawJournal();
+			break;
+		case SCREEN_BEAT:
+			drawMenuBack();
+			drawBeatScreen();
 			break;
 		case SCREEN_STATS:
 			drawMenuBack();
@@ -2457,8 +2528,36 @@ static void updateFrame(const Input& in, bool wasTouching) {
 				t = 0;
 			}
 			if (t == 0) goTo(SCREEN_TITLE, -1);
-			else if (t > 0) {
+			else if (t - 1 == MODE_BEAT) {
+				// Beat Slice picks its track first, playing each one as it is chosen.
+				sFocus[SCREEN_BEAT] = 1;
+				audio::musicBeat(beatSong());
+				goTo(SCREEN_BEAT, 1);
+			} else if (t > 0) {
 				sStartMode = (Mode)(t - 1);
+				fadeThen(startGame);
+			}
+			break;
+		}
+		case SCREEN_BEAT: {
+			if (blocked) break;
+			if (in.repeat & KEY_LEFT) beatPick(-1);
+			else if (in.repeat & KEY_RIGHT) beatPick(1);
+			if (in.touching && !wasTouching) {
+				if (hit(kBeatPrev, in.tx, in.ty)) beatPick(-1);
+				else if (hit(kBeatNextSign, in.tx, in.ty)) beatPick(1);
+			}
+			int t = menuInput(kBeatButtons, 2, SCREEN_BEAT, in, wasTouching);
+			if (in.down & KEY_B) {
+				audio::click();
+				t = 0;
+			}
+			if (t == 0) {
+				audio::music(MUSIC_MENU);
+				goTo(SCREEN_MODES, -1);
+			} else if (t == 1) {
+				saveWrite();  // keeps the chosen track
+				sStartMode = MODE_BEAT;
 				fadeThen(startGame);
 			}
 			break;

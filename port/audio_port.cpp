@@ -92,6 +92,11 @@ void musicRate(float factor) {
 
 void musicStop() { ndspChnWaveBufClear(kMusicChannel); }
 
+float musicTime() {
+	if (!ndspChnIsPlaying(kMusicChannel) || sMusicRate <= 0) return -1;
+	return ndspChnGetSamplePos(kMusicChannel) / sMusicRate;
+}
+
 void fuseStart(const Clip& c) {
 	ndspChnSetInterp(kFuseChannel, NDSP_INTERP_LINEAR);
 	ndspChnSetRate(kFuseChannel, (float)c.rate);

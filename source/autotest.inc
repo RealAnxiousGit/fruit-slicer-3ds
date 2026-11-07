@@ -163,6 +163,12 @@ static void autotestInput(Input& in) {
 			botTap(kModeButtons[sBotMode + 1]);
 			return;
 
+		case SCREEN_BEAT:
+			if (sBotPhaseFrames < 45 || sSliding || sFade > 0) return;
+			sBotPhaseFrames = 0;
+			botTap(kBeatButtons[1]);
+			return;
+
 		case SCREEN_RESULT:
 			if (sBotPhaseFrames < 80) return;
 			sBotPhaseFrames = 0;

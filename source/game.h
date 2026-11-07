@@ -157,6 +157,17 @@ struct Game {
 	int practiceGot;      // what the step has seen so far (slices, a big enough swipe, ...)
 	bool practiceFail;    // the step went wrong: try it again
 	bool practiceThrown;  // this attempt's fruit is out
+	// Beat Slice. Song time follows the music where it can, so fruit peaks right on the beat.
+	int beatSong;         // the track
+	float songT;          // seconds since the track began, never wrapping
+	float beatLen;        // seconds per beat
+	float beatStepLen;    // seconds between throw slots: a beat, or half of one on slow tracks
+	int beatNext;         // the next throw slot not yet planned
+	int beatStreak;       // slices on the beat in a row
+	int beatHits;         // slices on the beat this run
+	float beatSpeed;      // how fast fruit flies against the clock, so flight times can be planned
+	int beatRunBar;       // a bar that throws one fruit on every slot, left to right; -1 for none
+	float beatDt;         // this frame's step for fruit, taken from the song clock so flights keep the music's time
 #ifdef AUTOTEST
 	// Measures how often a fruit is actually drawn on top of a bomb.
 	u32 statBombFrames, statOverlapFrames, statWaves, statFrenzies, statResets;
@@ -182,10 +193,12 @@ struct Game {
 	int activeParticles() const;
 	// First live object the AUTOTEST bot should aim for (or avoid).
 	const Obj* botTarget(bool wantBomb) const;
-	bool timed() const { return timeLeft > 0 || mode == MODE_ARCADE || mode == MODE_ZEN || mode == MODE_FRENZY || mode == MODE_COMBO || mode == MODE_DAILY; }
+	bool timed() const { return timeLeft > 0 || mode == MODE_ARCADE || mode == MODE_ZEN || mode == MODE_FRENZY || mode == MODE_COMBO || mode == MODE_DAILY || mode == MODE_BEAT; }
 	const char* practicePrompt(int line) const;  // the current lesson, two lines
 	void drawPractice() const;
 	void drawSwipeReplay() const;
+	void drawBeat(float x, float y, float s) const;  // Beat Slice: four lights for the beats of the bar
+	float beatOffset() const;  // seconds from the nearest throw slot, negative when early
 
 private:
 	int diffIndex() const;            // Daily Fruit always plays on Normal
@@ -196,6 +209,10 @@ private:
 	void practiceSwipe(int n);
 	void practiceBomb();
 	void recordStroke(const Blade& blade);
+	void beatStart();
+	void beatUpdate();
+	void beatPlan(int k, float lead);
+	int beatSlice(const Obj& o);  // the on-beat bonus for a slice, with its popup
 	void spawnWave();
 	bool spawnPattern(float d);
 	void maybeCoin(float d);
@@ -241,3 +258,6 @@ public:
 
 u32 hueColor(float t);
 int fruitSprite(int fruit);  // the 2D sticker of a fruit kind, on SHEET_FRUIT
+int everydayFruit(Rng& rng);   // any everyday fruit but the coconut
+float levelGravity(int diff);  // the difficulty's gravity, against Normal
+float levelBombs(int diff);    // and how many bombs it throws, against Normal

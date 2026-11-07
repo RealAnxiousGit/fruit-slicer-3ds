@@ -20,7 +20,8 @@ void playSfx(const Clip& c, float left, float right, float rate);
 void musicStart(const Clip& c);
 void musicStop();
 void musicVolume(float v);
-void musicRate(float factor);  // 1 is normal; a little above 1 plays the track faster and higher
+void musicRate(float factor);
+float musicTime();  // seconds into the music, wrapping with its loop; -1 when none is playing  // 1 is normal; a little above 1 plays the track faster and higher
 void fuseStart(const Clip& c);
 void fuseMix(float left, float right);
 void fuseStop();

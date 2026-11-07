@@ -34,4 +34,8 @@ void refreshVolumes();
 // The sizzle that plays while a bomb is in the air.
 void fuse(bool on, float pan = 0.0f);
 void musicSpeed(float factor);  // the chili pepper plays the music a little faster for a while
+// Beat Slice: plays this track from its very start, whatever the Game Music choice, until the next music().
+void musicBeat(int track);
+float musicTime();           // seconds into the playing track, or -1 while it is still loading or silent
+float trackBeat(int track);  // seconds per beat; every track starts on the first beat of a bar
 }  // namespace audio

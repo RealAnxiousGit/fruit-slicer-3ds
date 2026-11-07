@@ -1030,6 +1030,12 @@ def spr_icon(kind):
     elif kind == "chain":
         for x in (10, 22):
             d.ellipse([(x - 6) * SS, 10 * SS, (x + 6) * SS, 22 * SS], outline=cream, width=3 * SS)
+    elif kind == "note":
+        # Two beamed notes, for Beat Slice.
+        for x in (11, 24):
+            d.ellipse([(x - 6) * SS, 20 * SS, (x + 1) * SS, 27 * SS], fill=cream)
+            d.line([x * SS, 23 * SS, x * SS, 7 * SS], fill=cream, width=3 * SS)
+        d.polygon([(10 * SS, 5 * SS), (25.5 * SS, 3 * SS), (25.5 * SS, 8 * SS), (10 * SS, 10 * SS)], fill=cream)
     return shrink(img)
 
 
@@ -1287,6 +1293,7 @@ def build_graphics():
         ("pw_wide", spr_power("wide")),
         ("pw_shield", spr_power("shield")),
         ("pw_time", spr_power("time")),
+        ("ic_note", spr_icon("note")),
     ]
     write_sheet("sprites", sprites)
     write_sheet("logo", [("logo", spr_logo())])

@@ -24,6 +24,7 @@ const ModeInfo kModes[MODE_COUNT] = {
 	{"Minefield", "Bombs everywhere. Misses are free.", "How long can you last?"},
 	{"Combo Rush", "45 seconds. Doubled combo bonus.", "Finish on the big finale fruit!"},
 	{"Daily Fruit", "60 seconds, the same run for everyone.", "A new one every day. Bombs cost 10."},
+	{"Beat Slice", "Fruit flies to the music. 60 seconds.", "Slice on the beat for extra points!"},
 };
 const char* modeName(Mode m) { return m < MODE_COUNT ? kModes[m].name : "Practice"; }
 
@@ -114,6 +115,11 @@ static const DifficultyInfo kDifficulty[DIFF_COUNT] = {
 };
 
 int fruitSprite(int fruit) { return kFruit[fruit >= 0 && fruit < kFruitKinds ? fruit : 0].whole; }
+
+// For Beat Slice (beat.cpp), which plans its own throws.
+int everydayFruit(Rng& rng) { return normalFruit(rng); }
+float levelGravity(int diff) { return kDifficulty[diff % DIFF_COUNT].gravity; }
+float levelBombs(int diff) { return kDifficulty[diff % DIFF_COUNT].bombs; }
 
 u32 hueColor(float t) {
 	t = t - floorf(t);
@@ -253,7 +259,8 @@ void Game::start(Mode m) {
 	if (timeLeft <= 0 && m != MODE_PRACTICE) timeLeft = 120;
 	maxStrikes = 0;
 #endif
-	audio::music(m == MODE_ZEN ? MUSIC_ZEN : MUSIC_PLAY);
+	if (m == MODE_BEAT) beatStart();  // plays its own track, from the first beat
+	else audio::music(m == MODE_ZEN ? MUSIC_ZEN : MUSIC_PLAY);
 }
 
 int Game::diffIndex() const { return mode == MODE_DAILY ? DIFF_NORMAL : gSave.difficulty % DIFF_COUNT; }
@@ -781,7 +788,7 @@ void Game::finishCombo() {
 	snprintf(buf, sizeof buf, "%s! %d COMBO +%d", t->name, n, bonus);
 	setCallout(buf, t->color, t->size);
 	audio::play(t->sfx);
-	if (t->slow > 0 && !gSave.calmFx) slowT = t->slow;  // slow motion; a 10-fruit swipe gets half a second
+	if (t->slow > 0 && !gSave.calmFx && mode != MODE_BEAT) slowT = t->slow;  // Beat Slice stays on the beat  // slow motion; a 10-fruit swipe gets half a second
 	if (t->shakeAmount > shake) shake = t->shakeAmount;
 	for (int i = 0; i < t->rings; i++) addRing(comboX, comboY, hueColor(i * 0.18f), 2.0f + i * 1.3f, 0.35f + i * 0.12f);
 	for (int i = 0; i < juiceCount(t->sparks); i++) {
@@ -981,6 +988,7 @@ void Game::sliceFruit(Obj& o, const Blade& blade) {
 	}
 	int pts = o.kind == OBJ_GOLD ? 5 : (def.cut == CUT_SHELL ? 3 : (o.kind == OBJ_FRUIT && o.fruit == kJelly ? 2 : 1));
 	award(pts);
+	if (mode == MODE_BEAT && phase == PHASE_PLAY) beatSlice(o);
 	sliced++;
 	chain++;
 	if (chain > bestCombo) bestCombo = chain;
@@ -1039,6 +1047,8 @@ void Game::hitBomb(Obj& o) {
 		case MODE_ARCADE:
 		case MODE_COMBO:
 		case MODE_DAILY:
+		case MODE_BEAT:
+			if (mode == MODE_BEAT) beatStreak = 0;
 			score = score > 10 ? score - 10 : 0;
 			addPopup("-10", o.x, o.y, rgba(255, 90, 90), 0.9f);
 			setCallout("BOMB! -10", rgba(255, 110, 90));
@@ -1520,6 +1530,7 @@ void Game::update(Blade& blade) {
 	jobs::wait();
 	phaseT += kDt;
 	updateEffects(kDt);
+	if (mode == MODE_BEAT) beatUpdate();  // keeps time from the very start, and plans throws once playing
 
 	if (phase == PHASE_READY) {
 		if (phaseT >= 1.3f) {
@@ -1538,6 +1549,7 @@ void Game::update(Blade& blade) {
 		}
 		float objDt = (freezeT > 0 ? kDt * 0.45f : kDt) * (0.7f + slider(gSave.fruitSpeed) * 0.006f) * gameSpeedScale();
 		if (chiliT > 0) objDt *= 1.3f;  // the chili rush
+		if (mode == MODE_BEAT) objDt = beatDt;  // fruit keeps the music's time (beat.cpp)
 		updateTricks(blade);
 		if (slowT > 0) {
 			objDt *= 0.3f;
@@ -1591,7 +1603,7 @@ void Game::update(Blade& blade) {
 					feverMeter = kAfterFrenzy;
 				}
 				feverTimer -= kDt;
-				if (feverTimer <= 0) {
+				if (feverTimer <= 0 && mode != MODE_BEAT) {  // Beat Slice throws its Frenzy on the beat
 					feverTimer = mode == MODE_FRENZY && !sLightFrenzy ? 0.12f : 0.2f;
 					float x = 160, vx = 0, vy = -300;
 					pickThrow(false, 0, x, vx, vy);
@@ -1613,7 +1625,7 @@ void Game::update(Blade& blade) {
 					}
 					queue(0, x, vx, vy, OBJ_FRUIT, normalFruit(gRng));
 				}
-			} else if (mode != MODE_PRACTICE) {
+			} else if (mode != MODE_PRACTICE && mode != MODE_BEAT) {
 				waveTimer -= objDt;
 				if (waveTimer <= 0) spawnWave();
 			}
@@ -1945,6 +1957,7 @@ void Game::drawHud() const {
 			            368 - (maxStrikes - 1 - i) * 24, 57, s, s);
 		}
 	}
+	if (mode == MODE_BEAT) drawBeat(326, 60, 1.0f);
 	if (timed()) {
 		int secs = (int)ceilf(timeLeft);
 		snprintf(buf, sizeof buf, "%d:%02d", secs / 60, secs % 60);
@@ -2061,6 +2074,10 @@ void Game::drawHud() const {
 			gfx::sprite(SHEET_SPRITES, used ? sprites_pip_on_idx : sprites_pip_off_idx, rx - 8 * u - (maxStrikes - 1 - i) * 17 * u, 15 * u, s, s);
 		}
 		rx -= (maxStrikes * 17 + 6) * u;
+	}
+	if (mode == MODE_BEAT) {
+		drawBeat(rx - 50 * u, 14 * u, u);
+		rx -= 60 * u;
 	}
 	snprintf(buf, sizeof buf, assisted ? "ASSISTED BEST %lu" : "BEST %lu", (unsigned long)(score > best ? score : best));
 	gfx::text(buf, rx, 9 * u, 0.3f * u, COL_DIM, ALIGN_RIGHT);
