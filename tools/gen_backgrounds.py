@@ -169,8 +169,315 @@ def board_starlight():
     return img
 
 
+def _glow(arr, cx, cy, radius, color, strength):
+    """Adds a soft round light to a float board array; position and radius in game units."""
+    K = BOARD_K
+    h, w = arr.shape[:2]
+    x0, x1 = max(0, int((cx - radius * 3) * K)), min(w, int((cx + radius * 3) * K) + 1)
+    y0, y1 = max(0, int((cy - radius * 3) * K)), min(h, int((cy + radius * 3) * K) + 1)
+    if x0 >= x1 or y0 >= y1:
+        return
+    yy, xx = np.mgrid[y0:y1, x0:x1].astype(np.float32) / K
+    g = np.exp(-((xx - cx) ** 2 + (yy - cy) ** 2) / (2 * radius * radius)) * strength
+    arr[y0:y1, x0:x1] += g[..., None] * np.asarray(color, np.float32)
+
+
+def board_night_picnic():
+    """Gingham picnic blanket at night: moonlit folds and a few fireflies."""
+    W, H = BOARD_W, BOARD_H
+    y, x = board_grid()
+    xs = x + (board_fractal(70, 101, 3) - 0.5) * 7
+    ys = y + (board_fractal(70, 102, 3) - 0.5) * 7
+    size = 22
+    a = np.clip(0.5 + np.sin(xs * math.pi / size) * 5, 0, 1)
+    b = np.clip(0.5 + np.sin(ys * math.pi / size) * 5, 0, 1)
+    pale, band, cross = (np.array(c, np.float32) for c in ((64, 78, 138), (38, 46, 100), (18, 22, 60)))
+    arr = (((1 - a) * (1 - b))[..., None] * pale + (a * (1 - b) + (1 - a) * b)[..., None] * band
+           + (a * b)[..., None] * cross)
+    # Over-under threads.
+    over = ((np.floor(xs / 1.6) + np.floor(ys / 1.6)) % 2)[..., None]
+    arr += (over * np.sin(xs * math.pi / 0.8)[..., None] + (1 - over) * np.sin(ys * math.pi / 0.8)[..., None]) * 3.5
+    # Soft folds catch the moonlight from the top right.
+    folds = board_fractal(85, 104, 3, stretch=2.2)
+    moon = np.exp(-(((x - W * 0.86) / (W * 0.7)) ** 2 + ((y + H * 0.15) / (H * 0.85)) ** 2))
+    arr *= (0.78 + (folds - 0.5) * 0.7)[..., None]
+    arr += (moon * (0.45 + np.clip(folds - 0.45, 0, 1) * 1.6))[..., None] * np.array([58, 76, 118], np.float32)
+    arr += np.random.default_rng(105).normal(0, 1.6, x.shape + (1,))
+    arr = vignette(arr, 0.85, 0.35)
+    rng = random.Random(107)
+    placed = 0
+    while placed < 11 * W // 320:
+        cx, cy = rng.uniform(8, W - 8), rng.uniform(8, H - 8)
+        if ((cx - W / 2) / (W * 0.34)) ** 2 + ((cy - H / 2) / (H * 0.34)) ** 2 < 1:
+            continue
+        placed += 1
+        s = rng.uniform(0.7, 1.0)
+        _glow(arr, cx, cy, 6 * s, (255, 190, 80), 0.13 * s)
+        _glow(arr, cx, cy, 1.8 * s, (255, 214, 120), 0.45 * s)
+        _glow(arr, cx, cy, 0.6, (255, 250, 210), 0.65 * s)
+    return finish(arr)
+
+
+def board_beach_towel():
+    """Striped terry-cloth beach towel with a dusting of sand."""
+    W, H, K = BOARD_W, BOARD_H, BOARD_K
+    y, x = board_grid()
+    coral, cream, sun, teal, navy = (np.array(c, np.float32) for c in
+                                     ((206, 86, 74), (222, 206, 176), (226, 170, 58), (38, 140, 152), (38, 66, 128)))
+    stripes = [(40, coral), (5, cream), (12, sun), (5, cream), (40, teal), (4, navy), (4, cream), (4, navy), (5, cream)]
+    period = sum(w for w, _ in stripes)
+    res = 10
+    table = np.concatenate([np.repeat(c[None, :], w * res, 0) for w, c in stripes])
+    # Soft dye edges: a circular blur of the stripe table.
+    kern = np.exp(-np.linspace(-3, 3, 9 * res // 2) ** 2)
+    kern /= kern.sum()
+    pad = len(kern)
+    wrapped = np.concatenate([table[-pad:], table, table[:pad]])
+    table = np.stack([np.convolve(wrapped[:, i], kern, "same") for i in range(3)], 1)[pad:-pad]
+    xs = x + (board_fractal(90, 201, 3) - 0.5) * 6 + (period - W / 2) % period + 20
+    arr = table[((xs % period) * res).astype(np.int32) % len(table)].astype(np.float32)
+    # Woven hems at the top and bottom, terry loops everywhere else: rows of small soft bumps.
+    hem = np.clip(np.minimum(np.abs(y - 13), np.abs(y - (H - 13))) * -0.9 + 5.5, 0, 1)
+    loops = board_fractal(1.0, 203, 2)
+    loops = np.clip((loops - 0.5) * 2.6 + 0.5, 0, 1)
+    rows = 0.5 + 0.5 * np.sin(y * math.pi / 1.1 + np.sin(x * 1.7) * 0.8)
+    ribs = 0.5 + 0.5 * np.sin(y * math.pi / 0.75)
+    tex = (1 - hem) * (0.8 + loops * 0.2 + rows * 0.08) + hem * (0.84 + ribs * 0.1)
+    arr *= tex[..., None]
+    arr *= (0.86 + (board_fractal(80, 205, 3, stretch=1.8) - 0.5) * 0.3)[..., None]
+    # Sand: a light haze and loose grains, gathered toward two corners.
+    sand = np.array([214, 184, 128], np.float32)
+    clusters = [(W * 0.92, H * 0.88, 46), (W * 0.06, H * 0.1, 30)]
+    haze = np.zeros(x.shape, np.float32)
+    for cx, cy, r in clusters:
+        haze += np.exp(-((x - cx) ** 2 + (y - cy) ** 2) / (2 * r * r))
+    haze = np.clip(haze * (0.4 + board_fractal(6, 209, 2) * 0.6), 0, 1) * 0.45
+    arr = arr * (1 - haze[..., None]) + sand * haze[..., None]
+    img = finish(vignette(arr, 0.65, 0.42))
+    S = K * 2
+    grains = Image.new("RGBA", (W * S, H * S), (0, 0, 0, 0))
+    d = ImageDraw.Draw(grains)
+    rng = random.Random(207)
+    for i in range(420 * W // 320):
+        if i % 12 == 0:
+            px, py = rng.uniform(0, W), rng.uniform(0, H)
+        else:
+            cx, cy, r = clusters[i % 2]
+            px, py = rng.gauss(cx, r * 0.8), rng.gauss(cy, r * 0.8)
+        g, shade = rng.uniform(0.35, 0.8), rng.uniform(0.75, 1.1)
+        d.ellipse([(px - g) * S, (py - g) * S, (px + g) * S, (py + g) * S],
+                  fill=(int(min(255, 232 * shade)), int(min(255, 204 * shade)), int(min(255, 150 * shade)), rng.randint(150, 235)))
+    img.alpha_composite(grains.resize((W * K, H * K), Image.LANCZOS))
+    return img
+
+
+def board_kitchen_counter():
+    """Speckled terrazzo countertop with a tiled backsplash along the top and soft window glare."""
+    W, H, K = BOARD_W, BOARD_H, BOARD_K
+    y, x = board_grid()
+    base = 142 + (board_fractal(70, 302, 4) - 0.5) * 24
+    arr = np.dstack([base * 1.02, base * 0.98, base * 0.93]).astype(np.float32)
+    arr += np.random.default_rng(301).normal(0, 2.2, x.shape + (1,))
+    for scale, seed, cut, color, amt in ((1.6, 303, 0.7, (70, 66, 64), 0.6), (1.4, 305, 0.71, (220, 214, 204), 0.5),
+                                         (2.0, 307, 0.73, (164, 110, 82), 0.5), (1.1, 309, 0.69, (120, 116, 112), 0.35)):
+        m = np.clip((board_fractal(scale, seed, 2) - cut) * 14, 0, 1)[..., None] * amt
+        arr = arr * (1 - m) + np.array(color, np.float32) * m
+    img = finish(arr)
+    # A few larger polished chips.
+    S = K * 2
+    chips = Image.new("RGBA", (W * S, H * S), (0, 0, 0, 0))
+    d = ImageDraw.Draw(chips)
+    rng = random.Random(311)
+    tones = [(224, 218, 206), (92, 88, 86), (176, 116, 84), (142, 150, 132), (204, 190, 166)]
+    for _ in range(46 * W // 320):
+        cx, cy, r = rng.uniform(0, W), rng.uniform(26, H), rng.uniform(1.4, 3.4)
+        n = rng.randint(4, 7)
+        a0 = rng.uniform(0, math.tau)
+        pts = [((cx + math.cos(a0 + i * math.tau / n) * r * rng.uniform(0.6, 1.1)) * S,
+                (cy + math.sin(a0 + i * math.tau / n) * r * rng.uniform(0.6, 1.1)) * S) for i in range(n)]
+        d.polygon(pts, fill=rng.choice(tones) + (rng.randint(190, 240),))
+    img.alpha_composite(chips.resize((W * K, H * K), Image.LANCZOS))
+    arr = np.asarray(img.convert("RGB"), np.float32)
+    # Window glare: two slanted soft bands.
+    u = x + y * 0.55
+    glare = np.exp(-((u - W * 0.78) / 26) ** 2) * 0.9 + np.exp(-((u - W * 0.92) / 9) ** 2) * 0.6
+    glare *= np.clip(1 - np.abs(y - H * 0.5) / (H * 0.62), 0, 1)
+    arr += (glare * 30)[..., None]
+    # Backsplash tiles and the shadow they cast on the counter.
+    top, th, tw = 26, 12, 28
+    yt = y + (th - top % th)
+    row = np.floor(yt / th)
+    tx = (x + (row % 2) * tw / 2) % tw
+    ty = yt % th
+    grout = np.clip(1.2 - np.minimum(np.minimum(tx, tw - tx), np.minimum(ty, th - ty)) * 1.4, 0, 1)
+    gloss = 0.92 + 0.12 * np.exp(-((ty - 2.5) / 1.6) ** 2)
+    tile = np.array([150, 166, 168], np.float32) * gloss[..., None]
+    tile = tile * (1 - grout[..., None]) + np.array([92, 88, 84], np.float32) * grout[..., None]
+    arr = np.where((y < top)[..., None], tile, arr)
+    lip = np.exp(-((y - top) / 0.6) ** 2)[..., None]
+    arr = arr * (1 - lip * 0.6) + np.array([210, 204, 196], np.float32) * lip * 0.6
+    arr *= (1 - 0.38 * np.exp(-np.clip(y - top, 0, None) / 5) * (y >= top))[..., None]
+    return finish(vignette(arr, 0.55, 0.5))
+
+
+def board_snowfall():
+    """Fresh snow: wind-shaped drifts, a trail of footprints, sparkle and a few falling flakes."""
+    W, H, K = BOARD_W, BOARD_H, BOARD_K
+    y, x = board_grid()
+    h = board_fractal(120, 401, 4, stretch=2.2) * 12
+    phase = (x * 0.012 + y * 0.03 + board_fractal(110, 403, 3, stretch=2.0) * 3.2) % 1.0
+    # Wind ripples: a long gentle windward slope, then a short steep lee side.
+    h += np.where(phase < 0.75, phase / 0.75, (1 - phase) / 0.25) ** 1.5 * 1.7
+    # Footprints walking up the left side, and a short hopping trail at the right.
+    prints = []
+    for i in range(15):
+        t = i / 14
+        px = W * 0.08 + math.sin(t * 2.6) * W * 0.12
+        py = H * 1.04 - t * H * 1.1
+        ang = math.atan2(-H * 1.1, math.cos(t * 2.6) * 2.6 * W * 0.12)
+        side = 1 if i % 2 else -1
+        prints.append((px - math.sin(ang) * 3.4 * side, py + math.cos(ang) * 3.4 * side, ang, 2.0, 4.2, 3.0))
+    for i in range(6):
+        px, py = W * 0.8 + i * 9, H * 0.22 + i * 4.5
+        for ox, oy in ((-1.6, 0), (1.6, 0), (0, 4.5)):
+            prints.append((px + ox, py + oy, 0.45, 1.1, 1.6 if oy == 0 else 1.1, 1.6))
+    for px, py, ang, rw, rl, depth in prints:
+        ca, sa = math.cos(ang), math.sin(ang)
+        x0, x1 = max(0, int((px - 9) * K)), min(x.shape[1], int((px + 9) * K) + 1)
+        y0, y1 = max(0, int((py - 9) * K)), min(x.shape[0], int((py + 9) * K) + 1)
+        if x0 >= x1 or y0 >= y1:
+            continue
+        dx, dy = x[y0:y1, x0:x1] - px, y[y0:y1, x0:x1] - py
+        u, v = dx * ca + dy * sa, -dx * sa + dy * ca
+        r = np.sqrt((u / rl) ** 2 + (v / rw) ** 2)
+        h[y0:y1, x0:x1] += -depth * np.exp(-(r ** 4)) + depth * 0.25 * np.exp(-((r - 1.25) / 0.3) ** 2)
+    gy, gx = np.gradient(h)
+    gx, gy = gx * K, gy * K
+    lx, ly, lz = -0.55, -0.6, 0.58
+    shade = (-gx * lx - gy * ly + lz) / np.sqrt(gx * gx + gy * gy + 1)
+    t = np.clip((shade - 0.25) * 1.25, 0, 1)
+    arr = mix(np.array([92, 118, 172], np.float32), np.array([214, 226, 244], np.float32), t)
+    arr += np.random.default_rng(405).normal(0, 1.5, x.shape + (1,))
+    arr = vignette(arr, 0.7, 0.42) * np.array([0.94, 0.97, 1.0], np.float32)
+    rng = random.Random(407)
+    for _ in range(260 * W // 320):
+        px, py = rng.uniform(0, W), rng.uniform(0, H)
+        if t[min(int(py * K), x.shape[0] - 1), min(int(px * K), x.shape[1] - 1)] < 0.55:
+            continue
+        _glow(arr, px, py, rng.uniform(0.3, 0.55), (255, 255, 255), rng.uniform(0.25, 0.55))
+    img = finish(arr)
+    S = K * 2
+    glints = Image.new("RGBA", (W * S, H * S), (0, 0, 0, 0))
+    d = ImageDraw.Draw(glints)
+    for _ in range(7 * W // 320):
+        px, py, ln = rng.uniform(0, W), rng.uniform(0, H), rng.uniform(1.8, 3.2)
+        for ddx, ddy in ((ln, 0), (0, ln)):
+            d.line([(px - ddx) * S, (py - ddy) * S, (px + ddx) * S, (py + ddy) * S], fill=(255, 255, 255, 150), width=max(1, S // 2))
+    flakes = Image.new("RGBA", (W * K, H * K), (0, 0, 0, 0))
+    fd = ImageDraw.Draw(flakes)
+    for _ in range(34 * W // 320):
+        px, py, r = rng.uniform(0, W), rng.uniform(0, H), rng.uniform(0.8, 2.2)
+        if ((px - W / 2) / (W * 0.3)) ** 2 + ((py - H / 2) / (H * 0.3)) ** 2 < 1:
+            continue
+        fd.ellipse([(px - r) * K, (py - r) * K, (px + r) * K, (py + r) * K], fill=(250, 252, 255, rng.randint(90, 170)))
+    img.alpha_composite(glints.resize((W * K, H * K), Image.LANCZOS))
+    img.alpha_composite(flakes.filter(ImageFilter.GaussianBlur(0.7 * K)))
+    return img
+
+
+def _maple_points(cx, cy, size, rot):
+    pts = []
+    for i in range(120):
+        th = math.tau * i / 120 - math.pi
+        s = th * 5 / math.tau
+        lobe = 1 - 2 * abs(s - round(s))
+        s3 = s * 3
+        teeth = 1 - 2 * abs(s3 - round(s3))
+        r = size * (0.42 + 0.58 * lobe ** 0.5 + 0.07 * teeth) * (1 + 0.14 * math.cos(th))
+        r *= 1 - 0.35 * math.exp(-((abs(th) - math.pi) / 0.22) ** 2)
+        pts.append((cx + r * math.cos(th + rot), cy + r * math.sin(th + rot)))
+    return pts
+
+
+def _oval_points(cx, cy, length, width, rot):
+    ca, sa = math.cos(rot), math.sin(rot)
+    upper, lower = [], []
+    for i in range(25):
+        t = i / 24
+        u = (t - 0.5) * length
+        v = width * 0.5 * math.sin(math.pi * t) ** 0.8 * (1 + 0.15 * math.sin(math.pi * t * 2 - 0.5))
+        upper.append((cx + u * ca - v * sa, cy + u * sa + v * ca))
+        lower.append((cx + u * ca + v * sa, cy + u * sa - v * ca))
+    return upper + lower[::-1]
+
+
+def board_autumn_leaves():
+    """Plank table scattered with fallen leaves, thickest toward the edges."""
+    W, H, K = BOARD_W, BOARD_H, BOARD_K
+    y, x = board_grid()
+    plank_h = 48
+    yp = y + 10
+    plank = np.floor(yp / plank_h)
+    warp = board_fractal(70, 501, 3, stretch=4.0)
+    grain = np.sin((yp + warp * 40 + plank * 17) * 0.55 + board_fractal(30, 503, 3, stretch=6.0) * 6)
+    t = np.clip(0.5 + grain * 0.3 + (board_fractal(6, 505, 2, stretch=10.0) - 0.5) * 0.7, 0, 1)
+    tone = 1 + ((plank * 0.37) % 1 - 0.5) * 0.18
+    arr = mix(np.array([66, 40, 26], np.float32), np.array([120, 78, 48], np.float32), t) * tone[..., None]
+    edge = np.abs(yp - (plank + 0.5) * plank_h) - plank_h / 2
+    arr *= (1 - 0.7 * np.clip(edge + 1.4, 0, 1) - 0.18 * np.exp(-((edge + 3) / 1.6) ** 2))[..., None]
+    img = finish(arr)
+    S = K * 2
+    shadow = Image.new("RGBA", (W * S, H * S), (0, 0, 0, 0))
+    leaves = Image.new("RGBA", (W * S, H * S), (0, 0, 0, 0))
+    sd, ld = ImageDraw.Draw(shadow), ImageDraw.Draw(leaves)
+    rng = random.Random(507)
+    palette = [(214, 104, 34), (186, 52, 34), (226, 168, 48), (138, 78, 36), (200, 76, 28), (160, 40, 40), (210, 140, 40)]
+    placed = 0
+    while placed < 40 * W // 320:
+        cx, cy = rng.uniform(-8, W + 8), rng.uniform(-8, H + 8)
+        if ((cx - W / 2) / (W * 0.38)) ** 2 + ((cy - H / 2) / (H * 0.38)) ** 2 < 1 and rng.random() < 0.92:
+            continue
+        placed += 1
+        rot = rng.uniform(0, math.tau)
+        jit = rng.uniform(0.9, 1.12)
+        fill = tuple(int(min(255, c * jit)) for c in rng.choice(palette))
+        vein = tuple(int(c * 0.7) for c in fill)
+        if rng.random() < 0.5:
+            size = rng.uniform(8, 16)
+            pts = _maple_points(cx, cy, size, rot)
+            ends = [(cx + size * 0.85 * math.cos(rot + a), cy + size * 0.85 * math.sin(rot + a))
+                    for a in (0, 1.257, -1.257, 2.513, -2.513)]
+            ends.append((cx - size * 0.75 * math.cos(rot), cy - size * 0.75 * math.sin(rot)))
+            veins = [((cx, cy), p) for p in ends]
+        else:
+            ln = rng.uniform(12, 22)
+            pts = _oval_points(cx, cy, ln, ln * rng.uniform(0.38, 0.5), rot)
+            ca, sa = math.cos(rot), math.sin(rot)
+            veins = [((cx - ca * ln * 0.72, cy - sa * ln * 0.72), (cx + ca * ln * 0.5, cy + sa * ln * 0.5))]
+            for k in range(1, 5):
+                u = -ln * 0.35 + k * ln * 0.15
+                bx, by = cx + ca * u, cy + sa * u
+                for s in (1, -1):
+                    veins.append(((bx, by), (bx + ca * ln * 0.12 - s * sa * ln * 0.17, by + sa * ln * 0.12 + s * ca * ln * 0.17)))
+        lift = rng.uniform(1.5, 3.0)
+        sd.polygon([((px + lift) * S, (py + lift * 1.3) * S) for px, py in pts], fill=(0, 0, 0, 120))
+        ld.polygon([(px * S, py * S) for px, py in pts], fill=fill + (255,))
+        for (ax, ay), (bx, by) in veins:
+            ld.line([ax * S, ay * S, bx * S, by * S], fill=vein + (200,), width=max(1, S // 2))
+    # Mottle the leaves so each one has dry spots and colour shifts.
+    lv = np.asarray(leaves, np.float32).copy()
+    sh, sw = lv.shape[:2]
+    lv[..., :3] *= (0.8 + fractal(sw, sh, 10 * S, 509, 3) * 0.4)[..., None]
+    lv[..., 1] *= 0.9 + fractal(sw, sh, 24 * S, 511, 2) * 0.2
+    leaves = Image.fromarray(np.clip(lv, 0, 255).astype(np.uint8), "RGBA")
+    img.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(2.2 * S)).resize((W * K, H * K), Image.LANCZOS))
+    img.alpha_composite(leaves.resize((W * K, H * K), Image.LANCZOS))
+    return finish(vignette(np.asarray(img.convert("RGB"), np.float32), 0.6, 0.45))
+
+
 def bg_boards():
-    return [board_blanket(), board_wood(), board_plate(), board_marble(), board_sand(), board_starlight()]
+    return [board_blanket(), board_wood(), board_plate(), board_marble(), board_sand(), board_starlight(),
+            board_night_picnic(), board_beach_towel(), board_kitchen_counter(), board_snowfall(), board_autumn_leaves()]
 
 
 def add_stars(img, rng, n, limit):

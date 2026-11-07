@@ -58,6 +58,7 @@ void Blade::update(const Input& in) {
 	const float sensitivity = gSave.stylus / 100.0f;
 	const float floorAlpha = 0.2f + 0.6f * sensitivity;
 	float alpha = clampf(floorAlpha + dist / 20.0f, floorAlpha, 1.0f);
+	alpha *= 1.0f - 0.75f * gBladeDrag;
 	x += dx * alpha;
 	y += dy * alpha;
 	float mx = x - px, my = y - py;
@@ -84,13 +85,36 @@ void Blade::update(const Input& in) {
 	pushPoint(x, y);
 }
 
+float gBladeDull = 0, gBladeDrag = 0;
+
 u32 hueColor(float t);
+
+static u32 mixCol(u32 a, u32 b, float t) {
+	auto ch = [&](int sh) { return (u8)(((a >> sh) & 255) + ((((b >> sh) & 255) - (int)((a >> sh) & 255)) * t)); };
+	return rgba(ch(0), ch(8), ch(16));
+}
+
+// The Shop trails (gSave.trail): 1 Ink, 2 Flame, 3 Rainbow, 4 Ribbon, 5 Sparkle, 6 Comet.
+enum { TR_PLAIN, TR_INK, TR_FLAME, TR_RAINBOW, TR_RIBBON, TR_SPARKLE, TR_COMET };
+
+u32 trailSwatch(int trail, float t) {
+	switch (trail) {
+		case TR_INK: return rgba(34, 32, 52);
+		case TR_FLAME: return mixCol(rgba(220, 40, 20), rgba(255, 220, 70), t);
+		case TR_RAINBOW: return hueColor(t);
+		case TR_RIBBON: return ((int)(t * 6)) & 1 ? rgba(255, 240, 246) : rgba(255, 110, 170);
+		case TR_SPARKLE: return rgba(255, 236, 150);
+		case TR_COMET: return mixCol(rgba(90, 150, 255), rgba(225, 245, 255), t * t);
+		default: return rgba(255, 140, 58);
+	}
+}
 
 void Blade::draw() const {
 	if (count < 2) return;
 	static const u32 kColors[kBladeCount] = {0xFF3A8CFFu, 0xFFFFD060u, 0xFFA070FFu, 0xFF70F090u, 0xFF30C0FFu, 0};
-	const bool rainbow = gSave.blade == kBladeCount - 1;
-	const u32 baseColor = kColors[gSave.blade % kBladeCount];
+	const bool rainbow = gSave.blade == kBladeCount - 1 && gBladeDull <= 0;
+	const u32 baseColor = gBladeDull > 0 ? rgba(130, 130, 140) : kColors[gSave.blade % kBladeCount];
+	const int style = gBladeDull > 0 || gSave.trail >= kTrailCount ? TR_PLAIN : gSave.trail;
 	// Rebuilt every frame as a tapered triangle strip in citro2D's dynamic vertex buffer.
 	float prevLx = 0, prevLy = 0, prevRx = 0, prevRy = 0;
 	u32 prevCol = 0, prevCore = 0;
@@ -105,11 +129,29 @@ void Blade::draw() const {
 		float t = (float)i / (count - 1);  // 0 tail, 1 head
 		float fade = 1.0f - p.age / kTrailLife;
 		float w = kMaxHalfWidth * sinf(clampf(t, 0.02f, 1.0f) * kPi * 0.62f) * clampf(fade + 0.2f, 0, 1);
+		switch (style) {
+			case TR_INK: w *= 1.5f + 0.2f * sinf(i * 1.7f + strokeId); break;
+			case TR_FLAME: w *= 1.25f * (0.85f + 0.15f * sinf(p.age * 90 + i * 2.1f)); break;
+			case TR_RAINBOW: w *= 1.3f; break;
+			case TR_RIBBON: w *= 0.35f + 0.85f * fabsf(sinf(t * 9 + strokeId)); break;
+			case TR_COMET: w = kMaxHalfWidth * 1.5f * t * t * t * clampf(fade + 0.2f, 0, 1); break;
+			default: break;
+		}
 		float lx = p.x + nx * w, ly = p.y + ny * w;
 		float rx = p.x - nx * w, ry = p.y - ny * w;
 		u32 color = rainbow ? hueColor(t * 0.8f + (float)strokeId * 0.13f) : baseColor;
-		u32 col = withAlpha(color, fade * 0.75f);
-		u32 core = withAlpha(WHITE, fade);
+		u32 coreColor = WHITE;
+		switch (style) {
+			case TR_INK: color = trailSwatch(TR_INK, t); coreColor = rgba(80, 76, 120); break;
+			case TR_FLAME: color = trailSwatch(TR_FLAME, t); coreColor = rgba(255, 246, 200); break;
+			case TR_RAINBOW: color = hueColor(t * 1.4f + (float)strokeId * 0.13f); break;
+			case TR_RIBBON: color = trailSwatch(TR_RIBBON, t + strokeId * 0.05f); coreColor = color; break;
+			case TR_SPARKLE: color = baseColor; break;
+			case TR_COMET: color = trailSwatch(TR_COMET, t); break;
+			default: break;
+		}
+		u32 col = withAlpha(color, fade * (style == TR_INK ? 0.92f : 0.75f));
+		u32 core = withAlpha(coreColor, fade);
 		if (i > 0) {
 			gfx::tri(prevLx, prevLy, prevCol, prevRx, prevRy, prevCol, lx, ly, col);
 			gfx::tri(lx, ly, col, prevRx, prevRy, prevCol, rx, ry, col);
@@ -137,4 +179,33 @@ void Blade::draw() const {
 	float tipX = last.x + dx / len * reach, tipY = last.y + dy / len * reach;
 	gfx::tri(prevLx, prevLy, prevCol, prevRx, prevRy, prevCol, tipX, tipY, prevCol);
 	gfx::tri(last.x + wx * 0.45f, last.y + wy * 0.45f, prevCore, last.x - wx * 0.45f, last.y - wy * 0.45f, prevCore, tipX, tipY, prevCore);
+	if (style == TR_SPARKLE || style == TR_COMET) drawExtras(style);
+}
+
+// Sparkle leaves little four-point stars along the stroke; Comet gets a bright glowing head.
+void Blade::drawExtras(int style) const {
+	if (style == TR_COMET) {
+		const Point& h = trail[(head - 1 + kTrail) % kTrail];
+		u32 glow = withAlpha(rgba(200, 230, 255), 0.55f), clear = withAlpha(rgba(200, 230, 255), 0);
+		const int kSides = 10;
+		for (int k = 0; k < kSides; k++) {
+			float a0 = k * 2 * kPi / kSides, a1 = (k + 1) * 2 * kPi / kSides;
+			gfx::tri(h.x, h.y, glow, h.x + cosf(a0) * 9, h.y + sinf(a0) * 9, clear, h.x + cosf(a1) * 9, h.y + sinf(a1) * 9, clear);
+		}
+		return;
+	}
+	for (int i = 0; i < count; i += 3) {
+		const Point& p = trail[(head - count + i + kTrail) % kTrail];
+		float fade = 1.0f - p.age / kTrailLife;
+		float tw = 0.5f + 0.5f * sinf(i * 7.3f + p.age * 60 + strokeId);
+		float r = (1.5f + 2.5f * tw) * fade;
+		if (r < 0.4f) continue;
+		float ox = sinf(i * 3.1f + strokeId) * 5, oy = cosf(i * 2.3f + strokeId) * 5;
+		u32 c = withAlpha(WHITE, fade), e = withAlpha(rgba(255, 230, 140), 0);
+		float x = p.x + ox, y = p.y + oy;
+		gfx::tri(x - r, y, c, x + r, y, c, x, y - r * 0.25f, e);
+		gfx::tri(x - r, y, c, x + r, y, c, x, y + r * 0.25f, e);
+		gfx::tri(x, y - r, c, x, y + r, c, x - r * 0.25f, y, e);
+		gfx::tri(x, y - r, c, x, y + r, c, x + r * 0.25f, y, e);
+	}
 }

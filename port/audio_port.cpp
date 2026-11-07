@@ -15,6 +15,7 @@ static ndspWaveBuf sMusicBuf;
 static ndspWaveBuf sFuseBuf;
 static int sNext;
 static float sMusicVolume;
+static float sMusicRate = 32000, sMusicSpeed = 1;
 
 bool init() {
 	Result rc = ndspInit();
@@ -73,7 +74,8 @@ void musicVolume(float v) {
 
 void musicStart(const Clip& c) {
 	ndspChnSetInterp(kMusicChannel, NDSP_INTERP_LINEAR);
-	ndspChnSetRate(kMusicChannel, (float)c.rate);
+	sMusicRate = (float)c.rate;
+	ndspChnSetRate(kMusicChannel, sMusicRate * sMusicSpeed);
 	ndspChnSetFormat(kMusicChannel, NDSP_FORMAT_MONO_PCM16);
 	musicVolume(sMusicVolume);
 	memset(&sMusicBuf, 0, sizeof sMusicBuf);
@@ -81,6 +83,11 @@ void musicStart(const Clip& c) {
 	sMusicBuf.nsamples = c.samples;
 	sMusicBuf.looping = true;
 	ndspChnWaveBufAdd(kMusicChannel, &sMusicBuf);
+}
+
+void musicRate(float factor) {
+	sMusicSpeed = factor;
+	ndspChnSetRate(kMusicChannel, sMusicRate * factor);
 }
 
 void musicStop() { ndspChnWaveBufClear(kMusicChannel); }

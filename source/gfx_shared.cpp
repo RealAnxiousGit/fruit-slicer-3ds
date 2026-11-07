@@ -15,6 +15,11 @@ static const BoardTheme kThemes[kBoardCount] = {
 	{{78, 82, 100}, {130, 214, 240}, {52, 54, 68}},
 	{{24, 100, 108}, {255, 214, 110}, {16, 70, 76}},
 	{{66, 46, 118}, {255, 200, 120}, {24, 18, 54}},
+	{{40, 48, 110}, {255, 214, 120}, {16, 20, 54}},
+	{{30, 110, 120}, {255, 206, 80}, {120, 40, 36}},
+	{{96, 92, 88}, {255, 170, 90}, {58, 56, 54}},
+	{{70, 100, 150}, {200, 230, 255}, {36, 52, 86}},
+	{{110, 60, 30}, {255, 170, 60}, {56, 30, 16}},
 };
 u32 themePlank() {
 	const u8* c = kThemes[gSave.board % kBoardCount].plank;
@@ -24,6 +29,11 @@ u32 themePlank() {
 }
 u32 themeAccent() {
 	const u8* c = kThemes[gSave.board % kBoardCount].accent;
+	return C2D_Color32(c[0], c[1], c[2], 255);
+}
+u32 boardColor(int board, int part) {
+	const BoardTheme& t = kThemes[board % kBoardCount];
+	const u8* c = part == 0 ? t.plank : (part == 1 ? t.accent : t.bar);
 	return C2D_Color32(c[0], c[1], c[2], 255);
 }
 u32 themeBar() {

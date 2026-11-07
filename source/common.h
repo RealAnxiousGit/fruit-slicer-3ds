@@ -44,7 +44,8 @@ struct ModeInfo {
 };
 extern const ModeInfo kModes[MODE_COUNT];
 
-constexpr int kBoardCount = 6;
+constexpr int kBaseBoards = 6;   // free; the rest are Shop themes
+constexpr int kBoardCount = 11;
 constexpr int kSceneCount = 3;
 constexpr int kBladeCount = 6;
 
@@ -52,13 +53,15 @@ enum ArtStyle { ART_2D, ART_3D };
 enum Effects { FX_NONE, FX_LOW, FX_MEDIUM, FX_FULL };
 enum Difficulty { DIFF_EASY, DIFF_NORMAL, DIFF_HARD, DIFF_INSANE, DIFF_COUNT };
 
-static constexpr int kTrackCount = 8;
+static constexpr int kBaseTracks = 8;  // free; the rest come from the Shop
+static constexpr int kTrackCount = 13;
+constexpr int kTrailCount = 7;  // 0 is the plain blade colour, 1.. are Shop trails
 
 // Save data (save.cpp). Sliders hold 0..100.
 // From 1.0 ("FLS5") the file records its own size, so this struct only ever grows:
 // new shared fields take bytes from `reserved`, and older saves load with the rest at defaults.
 constexpr int kMaxModes = 12;
-constexpr int kMaxFruitKinds = 16;
+constexpr int kMaxFruitKinds = 24;
 constexpr int kMaxTracks = 16;
 constexpr int kDailyDays = 32;
 struct Settings {
@@ -110,7 +113,8 @@ struct Settings {
 	// Updates and first-start flags
 	u8 updConsent;   // 0 not asked, 1 check, 2 don't
 	u8 practiceDone;
-	u8 reserved[66];  // sized so the port block starts on a 4-byte boundary
+	u8 trail;        // Shop blade trail, 0 none
+	u8 reserved[65];  // sized so the port block starts on a 4-byte boundary
 	// The port's own settings, in a fixed-size block so shared fields never move.
 	union {
 		struct { u8 portRev; PORT_SETTINGS_FIELDS };

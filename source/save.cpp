@@ -7,6 +7,7 @@
 
 #include "common.h"
 #include "port_api.h"
+#include "shop.h"
 
 Settings gSave;
 bool gIsNew3ds = false;
@@ -210,6 +211,7 @@ void saveLoad() {
 	if (gSave.gameSpeed > 2) gSave.gameSpeed = 0;
 	if (gSave.updConsent > 2) gSave.updConsent = 0;
 	gSave.practiceDone &= 1;
+	if (gSave.trail >= kTrailCount) gSave.trail = 0;
 	gSave.updSkipped[sizeof gSave.updSkipped - 1] = 0;
 	gSave.ownedThemes |= 1;  // the first of each is always owned
 	gSave.ownedTrails |= 1;
@@ -217,6 +219,7 @@ void saveLoad() {
 	PORT_CHECK_SETTINGS
 	gSave.menuTrack %= kTrackCount + 1;
 	gSave.gameTrack %= kTrackCount + 1;
+	shopCheckSave();
 	u8* const sliders[] = {&gSave.sfx, &gSave.music, &gSave.menuSfx, &gSave.depth, &gSave.shake, &gSave.stylus, &gSave.fruitSpeed, &gSave.bombs, &gSave.forgiveness, &gSave.frenzyDrain, &gSave.stickSpeed};
 	for (u8* v : sliders)
 		if (*v > 100) *v = 100;

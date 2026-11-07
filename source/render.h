@@ -26,6 +26,7 @@ void shutdown();
 u32 themePlank();   // sign colour for the chosen board
 u32 themeAccent();  // highlight colour for the chosen board
 u32 themeBar();     // dark strip colour for the chosen board
+u32 boardColor(int board, int part);  // part 0 plank, 1 accent, 2 bar: a board's colours without choosing it
 
 // Keeps the chosen scenery and board loaded, and the 2D fruit sheet only while the 2D art style
 // needs it. Replaced textures are freed a few frames later, once the GPU is done with them.

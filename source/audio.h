@@ -33,4 +33,5 @@ void reapply();             // back to the current screen's track after a previe
 void refreshVolumes();
 // The sizzle that plays while a bomb is in the air.
 void fuse(bool on, float pan = 0.0f);
+void musicSpeed(float factor);  // the chili pepper plays the music a little faster for a while
 }  // namespace audio

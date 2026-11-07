@@ -42,9 +42,41 @@ static const FruitDef kFruit[] = {
 	{fruit_peach_idx, fruit_peach_l_idx, fruit_peach_r_idx, 0xFF80B0FFu, CUT_SOFT, m3d::MESH_PEACH},
 	{fruit_pineapple_idx, fruit_pineapple_l_idx, fruit_pineapple_r_idx, 0xFF50E0FFu, CUT_JUICY, m3d::MESH_PINEAPPLE},
 	{fruit_coconut_idx, fruit_coconut_l_idx, fruit_coconut_r_idx, 0xFFF0F5FFu, CUT_SHELL, m3d::MESH_COCONUT},
+	// 1.0: more everyday fruit.
+	{fruit_banana_idx, fruit_banana_l_idx, fruit_banana_r_idx, 0xFF8AF0FFu, CUT_SOFT, m3d::MESH_BANANA},
+	{fruit_mango_idx, fruit_mango_l_idx, fruit_mango_r_idx, 0xFF28AAFFu, CUT_JUICY, m3d::MESH_MANGO},
+	{fruit_cherry_idx, fruit_cherry_l_idx, fruit_cherry_r_idx, 0xFF3214C8u, CUT_JUICY, m3d::MESH_CHERRY},
+	{fruit_dragon_idx, fruit_dragon_l_idx, fruit_dragon_r_idx, 0xFFA03CE6u, CUT_SOFT, m3d::MESH_DRAGON},
+	// 1.0: trick fruit, each with its own rule. Rarer than the rest.
+	{fruit_spiky_idx, fruit_spiky_l_idx, fruit_spiky_r_idx, 0xFF78E6DCu, CUT_SHELL, m3d::MESH_SPIKY},
+	{fruit_grapes_idx, fruit_grapes_l_idx, fruit_grapes_r_idx, 0xFFAA3C82u, CUT_JUICY, m3d::MESH_GRAPES},
+	{fruit_grape_idx, fruit_grape_l_idx, fruit_grape_r_idx, 0xFFAA3C82u, CUT_JUICY, m3d::MESH_GRAPE},
+	{fruit_honey_idx, fruit_honey_l_idx, fruit_honey_r_idx, 0xFF28B4FAu, CUT_MELON, m3d::MESH_HONEY},
+	{fruit_jelly_idx, fruit_jelly_l_idx, fruit_jelly_r_idx, 0xFFC88CFFu, CUT_SOFT, m3d::MESH_JELLY},
+	{fruit_chili_idx, fruit_chili_l_idx, fruit_chili_r_idx, 0xFF1E3CF0u, CUT_CRISP, m3d::MESH_CHILI},
 };
 static constexpr int kFruitKinds = sizeof(kFruit) / sizeof(kFruit[0]);
-static constexpr int kCoconut = kFruitKinds - 1;
+static_assert(kFruitKinds <= kMaxFruitKinds, "the Fruit Journal needs a count for every fruit");
+static constexpr int kCoconut = 10;
+static constexpr int kFirstNew = 11, kNewNormal = 4;  // banana to dragon fruit
+enum { kSpiky = 15, kGrapes, kGrape, kHoney, kJelly, kChili };
+
+// Trick fruit start after the first half minute, about one fruit in twenty. Zen never throws the spiky one.
+// Arcade's power-ups, picked evenly.
+static const ObjKind kPowers[] = {OBJ_FREEZE, OBJ_DOUBLE, OBJ_FRENZY, OBJ_MAGNET, OBJ_WIDE, OBJ_SHIELD, OBJ_TIME};
+static constexpr int kPowerCount = sizeof kPowers / sizeof kPowers[0];
+static constexpr float kTrickChance = 0.05f;
+static int pickTrick(Mode mode) {
+	static const int kTricks[] = {kSpiky, kGrapes, kHoney, kJelly, kChili};
+	int n = mode == MODE_ZEN ? 4 : 5;
+	return kTricks[(mode == MODE_ZEN ? 1 : 0) + gRng.below(n)];
+}
+
+// Any everyday fruit but the coconut, which has its own odds.
+static int normalFruit() {
+	int i = gRng.below(kCoconut + kNewNormal);
+	return i < kCoconut ? i : kFirstNew + (i - kCoconut);
+}
 static const FruitDef kGold = {fruit_gold_idx, fruit_gold_l_idx, fruit_gold_r_idx, 0xFF40D8FFu, CUT_JUICY, m3d::MESH_GOLD};
 
 static constexpr float kSpawnY = 262.0f;
@@ -254,7 +286,7 @@ void Game::launch(const Pending& p) {
 		o.ry = gRng.range(0, 6.28f);
 		o.rxv = gRng.range(-1.6f, 1.6f);
 		o.ryv = gRng.range(-2.4f, 2.4f);
-		o.radius = p.kind == OBJ_BOMB ? 19 : (p.kind == OBJ_COIN ? 18 : 23);
+		o.radius = p.kind == OBJ_BOMB ? 19 : (p.kind == OBJ_COIN ? 18 : (p.kind == OBJ_FRUIT && p.fruit == kGrape ? 13 : 23));
 		if (p.kind == OBJ_COIN) {
 			o.rotv = (p.vx >= 0 ? 1.0f : -1.0f) * gRng.range(6.5f, 8.5f);  // end over end, as a flipped coin
 			audio::play(SFX_COIN, 0.75f, fieldPan(p.x), gRng.range(0.96f, 1.06f));
@@ -353,14 +385,14 @@ bool Game::spawnPattern(float d) {
 			int n = 4 + (int)(d * 3) + gRng.below(2);
 			float gap = n > 1 ? (kFieldW - 60.0f) / (n - 1) : 0;
 			float wobble = gRng.range(-14, 14);
-			for (int i = 0; i < n; i++) queue(0, 30 + gap * i, wobble, vy, OBJ_FRUIT, gRng.below(kCoconut));
+			for (int i = 0; i < n; i++) queue(0, 30 + gap * i, wobble, vy, OBJ_FRUIT, normalFruit());
 			break;
 		}
 		case 1: {  // Fountain: a fan from the middle.
 			int n = 5 + (int)(d * 3);
 			for (int i = 0; i < n; i++) {
 				float t = n > 1 ? (float)i / (n - 1) : 0.5f;
-				queue(0.07f * i, kFieldW * 0.5f + (t - 0.5f) * 40, lerpf(-85, 85, t), vy * gRng.range(0.92f, 1.0f), OBJ_FRUIT, gRng.below(kCoconut));
+				queue(0.07f * i, kFieldW * 0.5f + (t - 0.5f) * 40, lerpf(-85, 85, t), vy * gRng.range(0.92f, 1.0f), OBJ_FRUIT, normalFruit());
 			}
 			break;
 		}
@@ -368,13 +400,13 @@ bool Game::spawnPattern(float d) {
 			int n = 6 + (int)(d * 2);
 			for (int i = 0; i < n; i++) {
 				bool left = i % 2 == 0;
-				queue(0.13f * i, left ? -14.0f : kFieldW + 14.0f, (left ? 1 : -1) * gRng.range(95, 130), vy * gRng.range(0.86f, 0.98f), OBJ_FRUIT, gRng.below(kCoconut));
+				queue(0.13f * i, left ? -14.0f : kFieldW + 14.0f, (left ? 1 : -1) * gRng.range(95, 130), vy * gRng.range(0.86f, 0.98f), OBJ_FRUIT, normalFruit());
 			}
 			break;
 		}
 		default: {  // Staircase: rising row, easy to catch with a diagonal stroke.
 			int n = 5 + (int)(d * 2);
-			for (int i = 0; i < n; i++) queue(0.1f * i, 34 + (kFieldW - 68.0f) * i / (n - 1), 0, vy, OBJ_FRUIT, gRng.below(kCoconut));
+			for (int i = 0; i < n; i++) queue(0.1f * i, 34 + (kFieldW - 68.0f) * i / (n - 1), 0, vy, OBJ_FRUIT, normalFruit());
 			break;
 		}
 	}
@@ -436,11 +468,11 @@ void Game::spawnWave() {
 		} else if (mode == MODE_ARCADE && gRng.unit() < 0.3f) {
 			// Test builds cycle the power-ups so that every one gets exercised.
 			static int nextPower = 0;
-			kind = (ObjKind)(OBJ_FREEZE + nextPower);
-			nextPower = (nextPower + 1) % 3;
+			kind = kPowers[nextPower];
+			nextPower = (nextPower + 1) % kPowerCount;
 #else
-		} else if (mode == MODE_ARCADE && gRng.unit() < 0.075f) {
-			kind = (ObjKind)(OBJ_FREEZE + gRng.below(3));
+		} else if (mode == MODE_ARCADE && gRng.unit() < 0.09f) {
+			kind = kPowers[gRng.below(kPowerCount)];
 #endif
 		} else if (gRng.unit() < 0.035f) {
 			kind = OBJ_GOLD;
@@ -454,7 +486,8 @@ void Game::spawnWave() {
 			if ((pass == 0) != isBomb) continue;
 			float x = 160, vx = 0, vy = -300;
 			pickThrow(isBomb, stagger * i, x, vx, vy);
-			int fruit = gRng.unit() < 0.09f ? kCoconut : gRng.below(kCoconut);
+			int fruit = gRng.unit() < 0.09f ? kCoconut : normalFruit();
+			if (kinds[i] == OBJ_FRUIT && elapsed > 30 && gRng.unit() < kTrickChance) fruit = pickTrick(mode);
 			queue(stagger * i, x, vx, vy, kinds[i], fruit);
 		}
 	}
@@ -610,6 +643,7 @@ void Game::setCallout(const char* s, u32 color, float size) {
 void Game::award(int points) {
 	if (mode == MODE_SUDDEN) points *= 2;
 	if (doubleT > 0) points *= 2;
+	if (chiliT > 0) points *= 2;
 	if (feverT > 0) points *= 2;
 	score += points;
 	scorePulse = 1;
@@ -717,7 +751,9 @@ void Game::commitScore() {
 		if (newBest) coinsBonus = 10;
 	}
 	gSave.totalFruit += sliced;
-	u32 earned = (u32)(coinsCaught + coinsBonus);
+	// Each coin caught is worth 5, and every 100 points adds one more.
+	coinsEarned = (u32)(coinsCaught * 5 + coinsBonus) + score / 100;
+	u32 earned = coinsEarned;
 	gSave.coins = gSave.coins + earned < gSave.coins ? 0xFFFFFFFFu : gSave.coins + earned;
 	gSave.coinsLifetime += earned;
 	if ((u32)bestCombo > gSave.bestCombo) gSave.bestCombo = bestCombo;
@@ -848,7 +884,14 @@ void Game::sliceFruit(Obj& o, const Blade& blade) {
 	}
 	audio::play(cut, 0.95f, pan, gRng.range(0.92f, 1.09f));
 
-	int pts = o.kind == OBJ_GOLD ? 5 : (def.cut == CUT_SHELL ? 3 : 1);
+	if (o.kind == OBJ_FRUIT && o.fruit >= kSpiky) {
+		trickEffect(o, dx, dy);
+		if (o.fruit == kSpiky) {  // no points and no combo: it only gets in the way
+			o.on = false;
+			return;
+		}
+	}
+	int pts = o.kind == OBJ_GOLD ? 5 : (def.cut == CUT_SHELL ? 3 : (o.kind == OBJ_FRUIT && o.fruit == kJelly ? 2 : 1));
 	award(pts);
 	sliced++;
 	chain++;
@@ -882,6 +925,15 @@ void Game::sliceFruit(Obj& o, const Blade& blade) {
 
 void Game::hitBomb(Obj& o) {
 	o.on = false;
+	if (shield) {
+		// The shield takes it: the bomb fizzles out with a puff, and nothing is lost.
+		shield = false;
+		audio::play(SFX_KNOCK, 0.9f, fieldPan(o.x), 0.7f);
+		emitSparks(o.x, o.y, rgba(190, 170, 255), juiceCount(20), 200);
+		addRing(o.x, o.y, rgba(190, 170, 255), 2.4f, 0.35f);
+		addPopup("BLOCKED", o.x, o.y - 18, rgba(200, 180, 255), 0.7f);
+		return;
+	}
 #ifdef AUTOTEST
 	statBombHits++;
 #endif
@@ -953,10 +1005,118 @@ void Game::sliceObj(Obj& o, const Blade& blade) {
 			audio::play(SFX_POWER, 1.0f, pan);
 			setCallout("FRUIT STORM!", rgba(255, 180, 80));
 			break;
+		case OBJ_MAGNET:
+			magnetT = 6;
+			audio::play(SFX_POWER, 1.0f, pan);
+			setCallout("MAGNET!", rgba(255, 120, 120));
+			break;
+		case OBJ_WIDE:
+			wideT = 8;
+			audio::play(SFX_POWER, 1.0f, pan);
+			setCallout("WIDE BLADE!", rgba(150, 230, 130));
+			break;
+		case OBJ_SHIELD:
+			shield = true;
+			audio::play(SFX_POWER, 1.0f, pan);
+			setCallout("BOMB SHIELD!", rgba(180, 160, 255));
+			break;
+		case OBJ_TIME:
+			timeLeft += 5;
+			audio::play(SFX_POWER, 1.0f, pan);
+			setCallout("+5 SECONDS!", rgba(120, 230, 230));
+			break;
 	}
 	emitSparks(o.x, o.y, WHITE, juiceCount(18), 200);
 	addRing(o.x, o.y, WHITE, 2, 0.3f);
 	o.on = false;
+}
+
+// ---------------------------------------------------------------- trick fruit
+static constexpr float kStunTime = 2.0f, kStickyTime = 4.0f, kChiliTime = 5.0f;
+static constexpr float kJellySpeed = 11.0f;  // blade speed, in field units per step, a jelly fruit needs
+
+// Too slow a swipe bounces off a jelly fruit: it wobbles back up and can be tried again.
+void Game::bounceJelly(Obj& o, const Blade& blade) {
+	float dx = blade.x - blade.px, dy = blade.y - blade.py, len = sqrtf(dx * dx + dy * dy);
+	if (len > 0.01f) o.vx += dx / len * 90;
+	if (o.vy > -150) o.vy = -150;
+	o.rotv *= -1.3f;
+	o.hitCooldown = 0.3f;
+	audio::play(SFX_KNOCK, 0.7f, fieldPan(o.x), 1.6f);
+	addPopup("BOING", o.x, o.y - 20, rgba(255, 170, 220), 0.55f);
+	showCaption("Boing! Swipe faster.");
+}
+
+void Game::trickEffect(const Obj& o, float dx, float dy) {
+	const float pan = fieldPan(o.x);
+	switch (o.fruit) {
+		case kSpiky:
+			stunT = gSave.sliceAssist ? kStunTime * 0.5f : kStunTime;
+			PORT_VIBRATE(0.5f, 140);
+			audio::play(SFX_KNOCK, 1.0f, pan, 0.8f);
+			emitSparks(o.x, o.y, rgba(220, 230, 160), juiceCount(16), 220);
+			addPopup("STUNNED!", o.x, o.y - 20, rgba(230, 230, 150), 0.7f);
+			showCaption("Stunned! The blade can't cut.");
+			break;
+		case kGrapes: {
+			// The bunch bursts into loose grapes, each one worth a point.
+			int n = 3 + gRng.below(2);
+			for (auto& g : objs) {
+				if (g.on) continue;
+				g = {};
+				g.on = true;
+				g.kind = OBJ_FRUIT;
+				g.fruit = kGrape;
+				g.x = o.x;
+				g.y = o.y;
+				float side = n % 2 ? 1.0f : -1.0f;
+				g.vx = side * gRng.range(50, 150) + dy * 40;
+				g.vy = gRng.range(-280, -180) - dx * 20;
+				g.rot = gRng.range(0, 6.28f);
+				g.rotv = gRng.range(-5, 5);
+				g.ry = gRng.range(0, 6.28f);
+				g.ryv = gRng.range(-3, 3);
+				g.radius = 13;
+				g.hits = 1;
+				g.hitCooldown = 0.12f;
+				if (--n == 0) break;
+			}
+			addPopup("BURST!", o.x, o.y - 20, rgba(200, 150, 255), 0.6f);
+			break;
+		}
+		case kHoney:
+			stickyT = gSave.sliceAssist ? kStickyTime * 0.5f : kStickyTime;
+			addPopup("STICKY!", o.x, o.y - 20, rgba(255, 200, 80), 0.7f);
+			showCaption("Sticky! The blade drags.");
+			break;
+		case kChili:
+			chiliT = kChiliTime;
+			audio::play(SFX_POWER, 0.9f, pan, 1.15f);
+			setCallout("HOT! X2", rgba(255, 110, 70));
+			showCaption("Hot! Faster, double points.");
+			break;
+		default:
+			break;
+	}
+}
+
+// Timers for the trick fruit and the Arcade power-ups, and the magnet's pull.
+void Game::updateTricks(const Blade& blade) {
+	if (stunT > 0) stunT -= kDt;
+	if (stickyT > 0) stickyT -= kDt;
+	if (chiliT > 0) chiliT -= kDt;
+	if (wideT > 0) wideT -= kDt;
+	if (magnetT > 0) {
+		magnetT -= kDt;
+		if (blade.active) {
+			for (auto& o : objs) {
+				if (!o.on || o.kind == OBJ_BOMB || (o.kind > OBJ_GOLD && o.kind != OBJ_COIN) || (o.kind == OBJ_FRUIT && o.fruit == kSpiky)) continue;
+				float mx = blade.x - o.x, my = blade.y - o.y;
+				o.vx += clampf(mx * 2.6f, -260, 260) * kDt;
+				o.vy += clampf(my * 1.6f, -200, 200) * kDt;
+			}
+		}
+	}
 }
 
 bool Game::hitTest(const Obj& o, const Blade& blade, float radius) const {
@@ -978,12 +1138,17 @@ void Game::testSlices(Blade& blade) {
 		else audio::play((Sfx)(SFX_SWISH0 + gRng.below(3)), 0.5f, pan, gRng.range(0.9f, 1.12f));
 		blade.swishCooldown = 0.2f;
 	}
+	if (stunT > 0) return;  // a spiky fruit stunned the blade: nothing cuts, bombs included
 	// Fruit is tested first. If this movement cut a fruit, a nearby bomb only counts on a much
 	// closer pass, so going for a fruit that's near a bomb is fair.
 	bool cutFruit = false;
 	for (auto& o : objs) {
 		if (!o.on || o.kind == OBJ_BOMB || o.hitCooldown > 0) continue;
-		if (hitTest(o, blade, o.radius * (0.7f + gSave.forgiveness * 0.006f) * kCutReach * (gSave.sliceAssist ? 1.3f : 1.0f))) {
+		if (hitTest(o, blade, o.radius * (0.7f + gSave.forgiveness * 0.006f) * kCutReach * (gSave.sliceAssist ? 1.3f : 1.0f) * (wideT > 0 ? 1.6f : 1.0f))) {
+			if (o.kind == OBJ_FRUIT && o.fruit == kJelly && blade.speed < kJellySpeed) {
+				bounceJelly(o, blade);
+				continue;
+			}
 			sliceObj(o, blade);
 			cutFruit = true;
 			if (phase != PHASE_PLAY) return;
@@ -1157,7 +1322,9 @@ void Game::updateObjects(float dt) {
 		if (o.hitCooldown > 0) o.hitCooldown -= dt;
 		if (o.vy > 0 && o.y > kKillY) {
 			o.on = false;
-			if ((o.kind == OBJ_FRUIT || o.kind == OBJ_GOLD) && phase == PHASE_PLAY) addStrike(o.x);
+			// A dropped spiky fruit or loose grape is never a miss.
+			bool counts = o.kind == OBJ_GOLD || (o.kind == OBJ_FRUIT && o.fruit != kSpiky && o.fruit != kGrape);
+			if (counts && phase == PHASE_PLAY) addStrike(o.x);
 		}
 	}
 }
@@ -1236,6 +1403,8 @@ void Game::update(Blade& blade) {
 			best = gSave.bestAssisted[mode];
 		}
 		float objDt = (freezeT > 0 ? kDt * 0.45f : kDt) * (0.7f + gSave.fruitSpeed * 0.006f) * gameSpeedScale();
+		if (chiliT > 0) objDt *= 1.3f;  // the chili rush
+		updateTricks(blade);
 		if (slowT > 0) {
 			objDt *= 0.3f;
 			slowT -= kDt;
@@ -1291,7 +1460,7 @@ void Game::update(Blade& blade) {
 					feverTimer = mode == MODE_FRENZY && !sLightFrenzy ? 0.12f : 0.2f;
 					float x = 160, vx = 0, vy = -300;
 					pickThrow(false, 0, x, vx, vy);
-					queue(0, x, vx, vy, OBJ_FRUIT, gRng.below(kCoconut));
+					queue(0, x, vx, vy, OBJ_FRUIT, normalFruit());
 				}
 			} else if (frenzyT > 0) {
 				frenzyT -= kDt;
@@ -1307,7 +1476,7 @@ void Game::update(Blade& blade) {
 						x = kFieldW - x;
 						vx = -vx;
 					}
-					queue(0, x, vx, vy, OBJ_FRUIT, gRng.below(kCoconut));
+					queue(0, x, vx, vy, OBJ_FRUIT, normalFruit());
 				}
 			} else {
 				waveTimer -= objDt;
@@ -1468,6 +1637,19 @@ void Game::drawMarks(bool top, float ox, float oy) const {
 	}
 }
 
+static int powerSprite(ObjKind k) {
+	switch (k) {
+		case OBJ_FREEZE: return sprites_pw_freeze_idx;
+		case OBJ_DOUBLE: return sprites_pw_double_idx;
+		case OBJ_FRENZY: return sprites_pw_frenzy_idx;
+		case OBJ_MAGNET: return sprites_pw_magnet_idx;
+		case OBJ_WIDE: return sprites_pw_wide_idx;
+		case OBJ_SHIELD: return sprites_pw_shield_idx;
+		case OBJ_TIME: return sprites_pw_time_idx;
+		default: return -1;
+	}
+}
+
 // The coin flips end over end with only 2D draws: it narrows as it turns, shows its back past the
 // halfway point, shows its milled edge while side-on, and a shine slides across its face.
 static void drawCoin(const Obj& o, float ox, float oy) {
@@ -1535,11 +1717,10 @@ void Game::drawField(const Blade& blade) const {
 			case OBJ_FRUIT:
 				if (o.hits == 1 && o.fruit == kCoconut) gfx::sprite(SHEET_SPRITES, sprites_crack_idx, o.x, o.y, 1, 1, o.rot);
 				break;
-			case OBJ_FREEZE: gfx::sprite(SHEET_SPRITES, sprites_pw_freeze_idx, o.x, o.y, 1, 1, sinf(o.age * 3) * 0.3f); break;
-			case OBJ_DOUBLE: gfx::sprite(SHEET_SPRITES, sprites_pw_double_idx, o.x, o.y, 1, 1, sinf(o.age * 3) * 0.3f); break;
-			case OBJ_FRENZY: gfx::sprite(SHEET_SPRITES, sprites_pw_frenzy_idx, o.x, o.y, 1, 1, sinf(o.age * 3) * 0.3f); break;
 			case OBJ_COIN: drawCoin(o, 0, 0); break;
-			default: break;
+			default:
+				if (powerSprite(o.kind) >= 0) gfx::sprite(SHEET_SPRITES, powerSprite(o.kind), o.x, o.y, 1, 1, sinf(o.age * 3) * 0.3f);
+				break;
 		}
 	}
 	if (finaleOn && finaleT > kFinaleRise) {
@@ -1583,7 +1764,8 @@ void Game::drawFieldTop() const {
 			drawCoin(o, kTopOffsetX, kTopOffsetY);
 			continue;
 		}
-		int spr = o.kind == OBJ_FREEZE ? sprites_pw_freeze_idx : (o.kind == OBJ_DOUBLE ? sprites_pw_double_idx : sprites_pw_frenzy_idx);
+		int spr = powerSprite(o.kind);
+		if (spr < 0) continue;
 		gfx::sprite(SHEET_SPRITES, spr, o.x + kTopOffsetX, o.y + kTopOffsetY, 1, 1, sinf(o.age * 3) * 0.3f);
 	}
 	if (gSave.effects >= FX_MEDIUM) {
@@ -1660,7 +1842,7 @@ void Game::drawHud() const {
 
 	// Active power-up meters.
 	struct Meter { float t, max; int spr; };
-	const Meter meters[] = {{freezeT, 6, sprites_pw_freeze_idx}, {doubleT, 8, sprites_pw_double_idx}, {frenzyT, 5, sprites_pw_frenzy_idx}};
+	const Meter meters[] = {{freezeT, 6, sprites_pw_freeze_idx}, {doubleT, 8, sprites_pw_double_idx}, {frenzyT, 5, sprites_pw_frenzy_idx}, {magnetT, 6, sprites_pw_magnet_idx}, {wideT, 8, sprites_pw_wide_idx}, {shield ? 1.0f : 0.0f, 1, sprites_pw_shield_idx}};
 	float mx = 24;
 	for (const auto& m : meters) {
 		if (m.t <= 0) continue;
@@ -1746,7 +1928,7 @@ void Game::drawHud() const {
 	}
 
 	struct Meter { float t, max; int spr; };
-	const Meter meters[] = {{freezeT, 6, sprites_pw_freeze_idx}, {doubleT, 8, sprites_pw_double_idx}, {frenzyT, 5, sprites_pw_frenzy_idx}};
+	const Meter meters[] = {{freezeT, 6, sprites_pw_freeze_idx}, {doubleT, 8, sprites_pw_double_idx}, {frenzyT, 5, sprites_pw_frenzy_idx}, {magnetT, 6, sprites_pw_magnet_idx}, {wideT, 8, sprites_pw_wide_idx}, {shield ? 1.0f : 0.0f, 1, sprites_pw_shield_idx}};
 	float mx = PORT_PAUSE_BUTTON ? 44 : 12;  // the pause sign has the corner
 	for (const auto& m : meters) {
 		if (m.t <= 0) continue;

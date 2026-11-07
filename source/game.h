@@ -4,7 +4,7 @@
 
 // All gameplay objects live in fixed arrays: nothing here allocates after boot,
 // so rapid spawning can't fragment the heap.
-enum ObjKind : u8 { OBJ_FRUIT, OBJ_GOLD, OBJ_BOMB, OBJ_FREEZE, OBJ_DOUBLE, OBJ_FRENZY, OBJ_COIN };
+enum ObjKind : u8 { OBJ_FRUIT, OBJ_GOLD, OBJ_BOMB, OBJ_FREEZE, OBJ_DOUBLE, OBJ_FRENZY, OBJ_COIN, OBJ_MAGNET, OBJ_WIDE, OBJ_SHIELD, OBJ_TIME };
 
 struct Obj {
 	float x, y, vx, vy, rot, rotv, radius, age;
@@ -104,6 +104,11 @@ struct Game {
 	float calloutSize;
 	u32 calloutColor;
 	float freezeT, doubleT, frenzyT;
+	float magnetT, wideT;  // Arcade power-ups: fruit drift to the blade; the blade cuts a wider path
+	bool shield;           // the next bomb fizzles
+	float chiliT;          // chili pepper: faster game, double points, faster music
+	float stunT;           // spiky fruit: the blade can't cut
+	float stickyT;         // honey melon: the blade drags behind the finger
 	float frenzyTimer;
 	float feverMeter;   // 0..1, fills as you slice and never stops draining; running dry ends the combo
 	float comboFadeT;   // the COMBO text fades out for this long after the meter runs dry
@@ -124,6 +129,7 @@ struct Game {
 	int coinsThrown;    // this run, up to a cap so no one mode is by far the best way to earn
 	int coinsCaught;
 	int coinsBonus;     // for a new best, paid when the run ends
+	u32 coinsEarned;    // what the run paid in total, for the result screen
 #ifdef AUTOTEST
 	// Measures how often a fruit is actually drawn on top of a bomb.
 	u32 statBombFrames, statOverlapFrames, statWaves, statFrenzies, statResets;
@@ -152,6 +158,9 @@ private:
 	void spawnWave();
 	bool spawnPattern(float d);
 	void maybeCoin(float d);
+	void bounceJelly(Obj& o, const Blade& blade);
+	void trickEffect(const Obj& o, float dx, float dy);
+	void updateTricks(const Blade& blade);
 	void pickThrow(bool bomb, float delay, float& x, float& vx, float& vy);
 	float clearance(float x, float vx, float vy, float delay, bool bomb) const;
 	bool bombAround() const;

@@ -481,6 +481,96 @@ def compose_calm(bpm, bars, chords, scale, seed, note_chance, pad_level=0.22, me
     return out / (np.max(np.abs(out)) or 1) * 0.62  # no end fade: this has to loop
 
 
+# ---------------------------------------------------------------- upbeat music (Shop tracks)
+def marimba_note(freq, dur, rate=MUSIC_RATE):
+    """A wooden bar: bright knock at the start, a round tone that dies quickly."""
+    t = np.arange(int(dur * rate)) / rate
+    s = np.sin(2 * np.pi * freq * t) * np.exp(-t * 5) + 0.35 * np.sin(2 * np.pi * freq * 4 * t) * np.exp(-t * 28)
+    return s * np.minimum(1, t / 0.002)
+
+
+def square_note(freq, dur, rate=MUSIC_RATE):
+    """A soft, rounded square lead (odd harmonics only, kept gentle)."""
+    t = np.arange(int(dur * rate)) / rate
+    s = sum(np.sin(2 * np.pi * freq * h * t) / h for h in (1, 3, 5, 7))
+    env = np.minimum(1, t / 0.006) * np.exp(-t * 3.5)
+    return s * env * 0.8
+
+
+def compose_bright(bpm, bars, chords, scale, seed, lead=pluck_note, swing=0.0, lead_level=0.34, drive=1.0):
+    """Drums, a bouncing bass, off-beat chord stabs and a short catchy hook that comes back
+    with small changes. Loops seamlessly like the calm tracks."""
+    rate = MUSIC_RATE
+    rng = random.Random(seed)
+    nr = np.random.default_rng(seed)
+    beat = 60.0 / bpm
+    n = int(round(bars * 4 * beat * rate))
+    mix = np.zeros(n)
+
+    def put(sig, when, gain):
+        p = int(when * rate) % n
+        idx = (np.arange(len(sig)) + p) % n
+        np.add.at(mix, idx, sig * gain)
+
+    def eighth(k):  # the k-th eighth note, with swing on the off-beats
+        return k * beat / 2 + (swing * beat / 2 if k % 2 else 0)
+
+    # Drum kit.
+    kn = int(0.2 * rate)
+    kt = np.arange(kn) / rate
+    kick = np.sin(2 * np.pi * np.cumsum(50 + 90 * np.exp(-kt * 30)) / rate) * np.exp(-kt * 14)
+    cn = int(0.16 * rate)
+    clap = band(nr.normal(0, 1, cn), 900, 4500, rate) * np.exp(-np.arange(cn) / rate * 26)
+    hn = int(0.05 * rate)
+    hat = band(nr.normal(0, 1, hn), 4500, 7800, rate) * np.exp(-np.arange(hn) / rate * 70)
+    for bar in range(bars):
+        for b in range(4):
+            k = bar * 8 + b * 2
+            if b in (0, 2) or (drive > 1 and b == 3 and bar % 2):
+                put(kick, eighth(k), 0.55)
+            if b in (1, 3):
+                put(clap, eighth(k), 0.3)
+            put(hat, eighth(k + 1), 0.16 * drive)
+            if drive > 1:
+                put(hat, eighth(k), 0.08)
+
+    for bar in range(bars):
+        ch = chords[bar % len(chords)]
+        root = ch[0]
+        # Bass: root, root, fifth, octave, bouncing on the eighths.
+        for i, step in enumerate((0, 3, 4, 6)):
+            m = root - 24 + (0, 0, 7, 12)[i]
+            put(pluck_note(mtof(m), beat * 1.2), eighth(bar * 8 + step), 0.42)
+        # Chord stabs on the off-beats.
+        for off in (1, 3, 5, 7):
+            for m in ch:
+                put(pluck_note(mtof(m), beat * 0.5) * np.exp(-np.arange(int(beat * 0.5 * rate)) / rate * 10), eighth(bar * 8 + off), 0.12 / len(ch) * 3)
+
+    # The hook: a two-bar rhythm and melody, played four times with a twist on the 2nd and 4th.
+    pattern = [s for s in range(16) if rng.random() < 0.55 or s in (0, 6, 8)]
+    idx = len(scale) // 2
+    motif = []
+    for s in pattern:
+        idx = max(0, min(len(scale) - 1, idx + rng.choice((-2, -1, 1, 1, 2, 0))))
+        motif.append((s, idx))
+    for rep in range(bars // 2):
+        for j, (s, i) in enumerate(motif):
+            if rep % 2 and j >= len(motif) - 3:
+                i = max(0, min(len(scale) - 1, i + (2 if rep == 1 else -1)))  # answer the phrase differently
+            put(lead(mtof(scale[i]), beat * 1.5), eighth(rep * 16 + s), lead_level * (1.0 if s % 4 == 0 else 0.8))
+
+    # A short room, not a hall: keeps it bouncy.
+    ir = nr.normal(0, 1, n) * np.exp(-np.arange(n) / (0.35 * rate))
+    wet = np.fft.irfft(np.fft.rfft(mix) * np.fft.rfft(ir), n)
+    wet = wet / (np.max(np.abs(wet)) or 1) * (np.max(np.abs(mix)) or 1)
+    out = mix + wet * 0.18
+    X = np.fft.rfft(out)
+    f = np.fft.rfftfreq(n, 1 / rate)
+    out = np.fft.irfft(X / np.sqrt(1 + (f / 6000.0) ** 4), n)
+    out = np.tanh(out / (np.max(np.abs(out)) or 1) * 1.4)
+    return out / (np.max(np.abs(out)) or 1) * 0.6
+
+
 # ---------------------------------------------------------------- everything
 def build_audio():
     s = SFX_RATE
@@ -562,6 +652,18 @@ def build_audio():
     write_pcm("music_moss", compose_calm(44, 8, moss, [74, 76, 78, 81, 83, 86], 63, 0.2, 0.26, 0.22, 0.65, 0.0, bowl_note, 0.07), MUSIC_RATE)
     write_pcm("music_bamboo", compose_calm(48, 8, bamboo, [69, 72, 74, 76, 79, 81], 74, 0.26, 0.2, 0.3, 0.55, 0.0, flute_note, 0.0, 0.05), MUSIC_RATE)
     write_pcm("music_clouds", compose_calm(40, 8, clouds, [72, 74, 79, 81, 84, 86], 85, 0.12, 0.3, 0.2, 0.7, 0.0, bowl_note, 0.05, 0.03), MUSIC_RATE)
+    # Shop tracks: a bouncy plucked one and a warm late-evening one.
+    sunny = [[60, 64, 67, 72], [65, 69, 72, 77], [62, 65, 69, 74], [67, 71, 74, 77]]
+    ember = [[57, 60, 64, 67], [53, 57, 60, 64], [55, 59, 62, 66], [52, 55, 59, 64]]
+    write_pcm("music_sunny", compose_calm(92, 8, sunny, [72, 74, 76, 79, 81, 84], 96, 0.55, 0.16, 0.32, 0.3, 0.02, pluck_note, 0.16), MUSIC_RATE)
+    write_pcm("music_ember", compose_calm(60, 8, ember, [69, 71, 72, 76, 79, 81], 107, 0.38, 0.24, 0.3, 0.5, 0.008, felt_note, 0.12), MUSIC_RATE)
+    # Upbeat Shop tracks: drums, bass and a hook.
+    juice = [[60, 64, 67], [57, 60, 64], [65, 69, 72], [67, 71, 74]]
+    pip = [[62, 66, 69], [67, 71, 74], [64, 67, 71], [69, 73, 76]]
+    peel = [[57, 60, 64], [65, 69, 72], [60, 64, 67], [67, 71, 74]]
+    write_pcm("music_juice", compose_bright(124, 16, juice, [72, 74, 76, 79, 81, 84, 86], 118, pluck_note), MUSIC_RATE)
+    write_pcm("music_pip", compose_bright(112, 16, pip, [74, 76, 78, 81, 83, 86, 88], 129, marimba_note, swing=0.33, lead_level=0.4), MUSIC_RATE)
+    write_pcm("music_peel", compose_bright(136, 16, peel, [69, 72, 74, 76, 79, 81, 84], 140, square_note, lead_level=0.26, drive=1.5), MUSIC_RATE)
 
     # The HOME Menu banner sound: two quick slices, a clean finishing cut, then a bright little jingle.
     # Banner sound can be at most three seconds long.

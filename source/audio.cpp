@@ -131,7 +131,7 @@ static float makeRoom(Sfx s, float gain, float seconds, float minShare) {
 }
 
 static const char* const kTrackFiles[kTrackCount] = {
-	"music_menu", "music_play", "music_meadow", "music_lantern", "music_zen", "music_moss", "music_bamboo", "music_clouds",
+	"music_menu", "music_play", "music_meadow", "music_lantern", "music_zen", "music_moss", "music_bamboo", "music_clouds", "music_sunny", "music_ember", "music_juice", "music_pip", "music_peel",
 };
 // What each screen plays on Auto: menus, games, and Zen.
 static constexpr int kAutoTrack[MUSIC_COUNT] = {0, 1, 4};
@@ -359,6 +359,13 @@ void music(Music m) {
 void preview(Music m) { startTrack(resolveTrack(m)); }
 
 void reapply() { startTrack(resolveTrack(sContext)); }
+
+void musicSpeed(float factor) {
+	static float now = 1;
+	if (!sReady || factor == now) return;
+	now = factor;
+	audioport::musicRate(factor);
+}
 
 void fuse(bool on, float pan) {
 	if (!sReady || !sFuse.pcm) return;

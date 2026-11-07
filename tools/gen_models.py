@@ -60,6 +60,11 @@ def surface(lat, lon, radius, color):
         r = radius(th, ph)
         return np.array((math.sin(th) * math.cos(ph) * r, -math.cos(th) * r, math.sin(th) * math.sin(ph) * r))
 
+    return grid(lat, lon, point, color)
+
+
+def grid(lat, lon, point, color):
+    """The same closed surface as surface(), from any point(theta, phi), for shapes that aren't star-shaped."""
     m = Mesh()
     eps = 0.012
     ids = {}
@@ -332,6 +337,296 @@ def sunburst(lat, lon):
     return m
 
 
+# ---------------------------------------------------------------- fruit added in 1.0
+def deform(mesh, f):
+    """Moves every vertex through f, turning normals with it (by the inverse transpose of f's slope)."""
+    out = Mesh()
+    out.i = list(mesh.i)
+    out.body = mesh.body
+    h = 0.01
+    for p, n, c in mesh.v:
+        p = np.array(p, float)
+        jac = np.column_stack([(f(p + e * h) - f(p - e * h)) / (2 * h) for e in np.eye(3)])
+        nn = np.linalg.inv(jac).T @ np.array(n, float)
+        nn /= np.linalg.norm(nn) or 1
+        out.v.append((tuple(f(p)), tuple(nn), c))
+    return out
+
+
+def turn_z(a):
+    ca, sa = math.cos(a), math.sin(a)
+    return lambda p: np.array((p[0] * ca - p[1] * sa, p[0] * sa + p[1] * ca, p[2]))
+
+
+def turn_y(a):
+    ca, sa = math.cos(a), math.sin(a)
+    return lambda p: np.array((p[0] * ca + p[2] * sa, p[1], -p[0] * sa + p[2] * ca))
+
+
+def centred(mesh):
+    """Moves the fruit so that its body sits round the origin, which is what it spins about."""
+    pts = np.array([mesh.v[k][0] for k in mesh.i[:mesh.body]])
+    mid = (pts.min(axis=0) + pts.max(axis=0)) / 2
+    return deform(mesh, lambda p: p - mid)
+
+
+def ball(centre, r, lat, lon, color):
+    m = surface(lat, lon, lambda th, ph: r, color)
+    return deform(m, lambda p: p + np.array(centre, float))
+
+
+def pod(lat, lon, half, radial, color):
+    """A long fruit round the y axis: radial(t, phi) is its thickness, t running 0 (top) to 1."""
+    def point(th, ph):
+        r = radial(th / math.pi, ph) * math.sin(th) ** 0.7
+        return np.array((math.cos(ph) * r, -math.cos(th) * half, math.sin(ph) * r))
+
+    return grid(lat, lon + 2, point, lambda th, ph: color(th / math.pi, ph))
+
+
+def flap(m, base1, base2, tip, c0, c1):
+    """A thin two-sided scale, coloured from c0 at its root to c1 at its tip."""
+    base1, base2, tip = (np.array(p, float) for p in (base1, base2, tip))
+    nrm = np.cross(base2 - base1, tip - base1)
+    nrm /= np.linalg.norm(nrm) or 1
+    for s in (1, -1):
+        a, b, c = m.add_vertex(base1, nrm * s, c0), m.add_vertex(base2, nrm * s, c0), m.add_vertex(tip, nrm * s, c1)
+        m.add_tri(a, b, c) if s > 0 else m.add_tri(a, c, b)
+
+
+def banana(lat, lon):
+    def radial(t, ph):
+        return 8.6 * (1 + 0.07 * math.cos(5 * ph)) * (1 - 0.25 * t)
+
+    def col(t, ph):
+        if t < 0.05:
+            return (136, 140, 60)
+        if t > 0.95:
+            return (90, 66, 40)
+        return tri_shade([(232, 210, 70), (252, 218, 66), (246, 204, 54)], t)
+
+    m = pod(lat, lon, 27, radial, col)
+    m.add(prism((0, -25.5, 0), (0, -32.5, 0.5), 2.4, 1.8, (128, 136, 62)))
+    m.add(prism((0, -32, 0.5), (0, -34, 0.5), 1.8, 1.4, (96, 78, 44), 4))
+    m = deform(m, lambda p: np.array((-p[1], p[0], p[2])))  # lie it down, stem to the right
+    m = deform(m, lambda p: np.array((p[0], p[1] - 0.021 * p[0] ** 2, p[2])))
+    return centred(deform(m, turn_z(-0.18)))
+
+
+def mango(lat, lon):
+    def rad(th, ph):
+        d = (math.sin(th) * math.cos(ph), -math.cos(th), math.sin(th) * math.sin(ph))
+        r = 1 / math.sqrt((d[0] / 19) ** 2 + (d[1] / 23) ** 2 + (d[2] / 17) ** 2)
+        return r * (1 - 0.06 * math.exp(-((d[0] + 0.9) / 0.5) ** 2))  # the kidney curve on one side
+
+    def col(th, ph):
+        x, y = math.sin(th) * math.cos(ph), -math.cos(th)
+        blush = clamp01((x - y) * 0.75)
+        sun = clamp01((y - x) * 0.7)
+        c = lerp3((252, 156, 46), (226, 54, 50), blush)
+        return lerp3(c, (255, 214, 64), sun)
+
+    m = surface(lat, lon, rad, col)
+    m.add(prism((0, -21.5, 0), (1, -26, 0), 1.6, 1.2, (110, 76, 40)))
+    m.add(leaf((1, -24.5, 0), 0.4, 0.45, 14, 4.0, (84, 170, 72)))
+    return deform(m, turn_z(0.42))
+
+
+def cherry(lat, lon):
+    a, c = 11.5, 9.5  # two cherries, pinched where they touch
+
+    def rad(th, ph):
+        u, s = abs(math.cos(th)), math.sin(th)
+        return c * u + math.sqrt(max(a * a - c * c * s * s, 0.0))
+
+    def col(th, ph):
+        # The dimple at each stem, then a deep red that darkens underneath.
+        end = abs(math.cos(th))
+        side = math.sin(th) * math.cos(ph)
+        dark = clamp01(0.5 + 0.5 * side)
+        return lerp3((214, 26, 48), (150, 10, 32), dark * 0.8) if end < 0.97 else (110, 8, 26)
+
+    m = surface(lat + 2, lon, rad, col)
+    m = deform(m, lambda p: np.array((-p[1], p[0], p[2])))  # the pair side by side along x
+    for x in (-c, c):
+        m.add(prism((x, -a + 2, 0), (1.5, -34, 0), 1.0, 0.8, (108, 140, 56), 4))
+    m.add(leaf((1.5, -33, 0), 0.3, 0.3, 12, 3.6, (84, 170, 72)))
+    m = deform(m, turn_y(0.45))
+    return centred(deform(m, turn_z(0.22)))
+
+
+def dragon(lat, lon):
+    def rad(th, ph):
+        d = (math.sin(th), -math.cos(th))
+        return 1 / math.sqrt((d[0] / 17) ** 2 + (d[1] / 22) ** 2)
+
+    def col(th, ph):
+        return lerp3((236, 48, 136), (198, 28, 112), th / math.pi)
+
+    def at(th, ph, grow=1.0):
+        r = rad(th, ph) * grow
+        return (math.sin(th) * math.cos(ph) * r, -math.cos(th) * r, math.sin(th) * math.sin(ph) * r)
+
+    m = surface(lat, lon, rad, col)
+    rows = 4 if lat < 10 else 5
+    per = 5 if lat < 10 else 7
+    for k in range(rows):
+        th = 0.75 + k * (2.0 / (rows - 1)) * 0.95
+        for j in range(per):
+            ph = (j + 0.5 * (k % 2)) / per * math.tau
+            flap(m, at(th + 0.12, ph - 0.28), at(th + 0.12, ph + 0.28), at(th - 0.42, ph, 1.28), (240, 76, 150), (140, 204, 74))
+    for j in range(4):
+        ph = j / 4 * math.tau + 0.4
+        flap(m, at(0.32, ph - 0.6), at(0.32, ph + 0.6), at(0.05, ph, 1.38), (240, 76, 150), (140, 204, 74))
+    return m
+
+
+def spiky(lat, lon):
+    lo = lat < 10
+    m = surface(7 if lo else 11, 10 if lo else 16, lambda th, ph: 17.5 + 0.6 * math.sin(th * 6) * math.sin(ph * 5),
+                lambda th, ph: lerp3((48, 104, 56), (30, 70, 40), clamp01(0.5 + 0.5 * math.sin(ph * 3 + th * 4)) * (th / math.pi + 0.3)))
+    count = 16 if lo else 24
+    golden = math.pi * (3 - math.sqrt(5))
+    for k in range(count):
+        y = 1 - (k + 0.5) / count * 2
+        r = math.sqrt(1 - y * y)
+        d = np.array((math.cos(golden * k) * r, y, math.sin(golden * k) * r))
+        m.add(prism(d * 15.5, d * 29, 3.4, 0.0, (232, 226, 178), 3 if lo else 4))
+    return m
+
+
+def grapes(lat, lon):
+    lo = lat < 10
+    m = surface(3 if lo else 4, 5 if lo else 6, lambda th, ph: 10 * (1.15 - 0.45 * th / math.pi) * (1 + 0.5 * math.cos(th) ** 2),
+                lambda th, ph: (70, 28, 100))
+    glat, glon = (3, 4) if lo else (4, 6)
+    rows = ((-15, 10.5, 5), (-4, 9.5, 4), (7, 7, 3), (17, 0, 1)) if lo else ((-16, 11, 5), (-6, 10, 5), (4.5, 7.5, 4), (14, 4, 2), (21, 0, 1))
+    for row, (y, ring, n) in enumerate(rows):
+        for k in range(n):
+            ph = (k + 0.5 * (row % 2)) / n * math.tau
+            shade_k = 0.86 + 0.14 * ((k + row) % 2)
+            m.add(ball((math.cos(ph) * ring, y, math.sin(ph) * ring), 6.8, glat, glon,
+                       lambda th, ph2, s=shade_k: lerp3((140, 72, 186), (92, 40, 136), th / math.pi * 0.8 + 0.2 * (1 - s) * 5)))
+    m.add(prism((0, -20, 0), (-1.5, -30, 0), 1.4, 1.0, (102, 80, 44), 4))
+    m.add(leaf((-1, -26, 0), 0.6, 0.3, 17, 5.5, (84, 170, 72)))
+    return centred(m)
+
+
+def grape(lat, lon):
+    m = surface(max(4, lat - 2), max(8, lon - 2), lambda th, ph: 11.5 * (1 + 0.06 * math.cos(th) ** 2),
+                lambda th, ph: lerp3((140, 72, 186), (96, 42, 140), th / math.pi))
+    m.add(prism((0, -11, 0), (1, -16, 0), 1.1, 0.8, (102, 80, 44), 4))
+    return m
+
+
+def honey(lat, lon):
+    def edge(ph):
+        return 1.0 + 0.14 * math.sin(ph * 5 + 0.6)
+
+    glaze = (238, 126, 14)
+
+    def col(th, ph):
+        if th < edge(ph):
+            return lerp3((255, 182, 56), glaze, clamp01(th / 0.6))
+        return lerp3((240, 196, 102), (206, 148, 60), th / math.pi)
+
+    R = 22.5
+    m = surface(lat, lon, lambda th, ph: R + (0.6 if th < edge(ph) else 0), col)
+    lo = lat < 10
+
+    def at(th, ph, r):
+        return np.array((math.sin(th) * math.cos(ph), -math.cos(th), math.sin(th) * math.sin(ph))) * r
+
+    # Drips of honey running down from the glaze: ribbons lying on the skin, each ending in a bead.
+    for ph, length in ((0.3, 0.75), (1.6, 0.45), (2.9, 0.9), (4.4, 0.6), (5.4, 0.35))[: 4 if lo else 5]:
+        th0 = edge(ph) - 0.15
+        side = np.array((-math.sin(ph), 0, math.cos(ph)))
+        segs = 3 if lo else 4
+        prev = None
+        for k in range(segs + 1):
+            th = th0 + length * k / segs
+            w = 3.6 - 1.0 * k / segs
+            c = at(th, ph, R + 0.7)
+            n = c / np.linalg.norm(c)
+            pair = (m.add_vertex(c - side * w, n, glaze), m.add_vertex(c + side * w, n, glaze))
+            if prev:
+                m.add_tri(prev[0], prev[1], pair[0])
+                m.add_tri(prev[1], pair[1], pair[0])
+            prev = pair
+        m.add(ball(at(th0 + length + 0.05, ph, R + 0.4), 3.6, 3, 4 if lo else 6, lambda th, ph2: (246, 146, 26)))
+    return m
+
+
+def jelly(lat, lon):
+    def rad(th, ph):
+        sag = 1 + 0.1 * max(0.0, -math.cos(th)) * math.sin(th) ** 2
+        return 21 * (1 + 0.05 * math.sin(3 * ph + 0.5) * math.sin(th) + 0.035 * math.sin(2 * ph + 1.0) * math.sin(th * 2)) * sag * (1 - 0.08 * max(0.0, math.cos(th)))
+
+    def col(th, ph):
+        bubble = math.sin(ph * 4 + 1) * math.sin(th * 5) > 0.85
+        if bubble:
+            return (236, 255, 252)
+        return tri_shade([(60, 200, 198), (120, 230, 220), (255, 150, 200)], (th / math.pi) ** 1.1)
+
+    m = surface(lat, lon, rad, col)
+    m.add(prism((0, -18.5, 0), (0.5, -22.5, 0), 1.1, 0.9, (96, 110, 50), 4))
+    m.add(leaf((0.5, -21, 0), 0.9, 0.5, 12, 3.6, (84, 170, 72)))
+    return m
+
+
+def chili(lat, lon):
+    def radial(t, ph):
+        return 8.2 * (1 - t) ** 0.55 + 0.6
+
+    def col(t, ph):
+        if t < 0.07:
+            return (66, 140, 56)
+        return tri_shade([(226, 40, 36), (214, 30, 34), (186, 22, 30)], t)
+
+    m = pod(lat, lon, 24, radial, col)
+    m.add(prism((0, -22.5, 0), (-0.5, -28, 0), 1.6, 1.3, (72, 138, 56), 4))
+    m.add(prism((-0.5, -28, 0), (2.5, -32, 0), 1.3, 1.1, (72, 138, 56), 4))
+    m = deform(m, lambda p: np.array((p[1], -p[0], p[2])))  # stem to the left
+    m = deform(m, lambda p: np.array((p[0], p[1] + 12 - 0.02 * (p[0] - 6) ** 2, p[2])))
+    return centred(deform(m, turn_z(0.15)))
+
+
+COIN_GOLD = (246, 196, 62)
+COIN_DEEP = (214, 150, 34)
+COIN_LIGHT = (255, 232, 140)
+
+
+def coin(lat, lon):
+    """A gold coin facing the viewer, with a raised rim: a profile turned round the z axis."""
+    prof = [  # (r, z) from the middle of the face, round the edge, to the middle of the back
+        ((0, 2.0), (15.5, 2.0), COIN_GOLD), ((15.5, 2.0), (16.8, 3.2), COIN_LIGHT), ((16.8, 3.2), (20, 3.2), COIN_LIGHT),
+        ((20, 3.2), (21.5, 2.2), COIN_GOLD), ((21.5, 2.2), (21.5, -2.2), COIN_DEEP), ((21.5, -2.2), (20, -3.2), COIN_GOLD),
+        ((20, -3.2), (16.8, -3.2), COIN_LIGHT), ((16.8, -3.2), (15.5, -2.0), COIN_LIGHT), ((15.5, -2.0), (0, -2.0), COIN_GOLD),
+    ]
+    m = Mesh()
+    segs = lon
+    for (r0, z0), (r1, z1), c in prof:
+        dr, dz = r1 - r0, z1 - z0
+        ln = math.hypot(dr, dz)
+        nr, nz = -dz / ln, dr / ln
+        ring0, ring1 = [], []
+        for k in range(segs):
+            a = k / segs * math.tau
+            ca, sa = math.cos(a), math.sin(a)
+            n = (nr * ca, nr * sa, nz)
+            ring0.append(m.add_vertex((r0 * ca, r0 * sa, z0), n, c))
+            ring1.append(m.add_vertex((r1 * ca, r1 * sa, z1), n, c))
+        for k in range(segs):
+            j = (k + 1) % segs
+            # Wound to face outwards, like the fruit.
+            if r0 > 0:
+                m.add_tri(ring0[k], ring1[k], ring0[j])
+            if r1 > 0:
+                m.add_tri(ring0[j], ring1[k], ring1[j])
+    m.body = len(m.i)
+    return m
+
+
 # name, builder, flesh, rim
 FRUIT = [
     ("apple", apple, (255, 240, 190), (246, 216, 150)),
@@ -348,6 +643,17 @@ FRUIT = [
     ("gold", gold, (255, 236, 120), (255, 250, 200)),
     ("bomb", bomb, (60, 56, 80), (44, 40, 62)),
     ("sunburst", sunburst, (255, 196, 80), (250, 104, 70)),
+    ("banana", banana, (252, 246, 214), (246, 224, 120)),
+    ("mango", mango, (255, 172, 30), (255, 208, 96)),
+    ("cherry", cherry, (168, 20, 44), (130, 12, 32)),
+    ("dragon", dragon, (252, 250, 248), (226, 52, 132)),
+    ("spiky", spiky, (250, 238, 160), (70, 122, 62)),
+    ("grapes", grapes, (206, 234, 150), (108, 50, 140)),
+    ("grape", grape, (206, 234, 150), (108, 50, 140)),
+    ("honey", honey, (255, 146, 46), (246, 206, 110)),
+    ("jelly", jelly, (255, 196, 222), (120, 220, 214)),
+    ("chili", chili, (250, 100, 52), (190, 26, 30)),
+    ("coin", coin, COIN_GOLD, COIN_DEEP),
 ]
 
 

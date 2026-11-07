@@ -33,7 +33,18 @@ static void waitA(void) {
 	}
 }
 
-static u32 freeKb(void) { return osGetMemRegionFree(MEMREGION_APPLICATION) / 1024; }
+// libctru hands the whole app region to the heap at start-up, so the OS always reports 0 free.
+// What matters is what malloc can still give out: the unused heap plus freed blocks inside it.
+extern u32 __ctru_heap_size;
+static u32 freeKb(void) {
+	struct mallinfo m = mallinfo();
+	return (u32)((__ctru_heap_size - m.arena + m.fordblks) / 1024);
+}
+static u32 sLowKb;
+static void noteFree(void) {
+	u32 f = freeKb();
+	if (f < sLowKb) sLowKb = f;
+}
 
 static bool netUp(void) {
 	if (sSocBuf) return true;
@@ -68,6 +79,8 @@ typedef struct {
 	u64 bytes;           // file download: bytes seen
 	u64 expect;
 	Handle cia;          // file download: open AM install, or 0 to only count
+	u64 written;         // bytes handed to the installer so far
+	Result err;          // the installer's error, if a write failed
 	bool failed;
 	u64 started;
 	int lastPct;
@@ -90,17 +103,42 @@ static size_t toText(char* p, size_t sz, size_t n, void* user) {
 	return add;
 }
 
+// The installer gets whole 64 KB blocks, the same way Part B feeds it (which works).
+// Network chunks arrive in odd sizes, so they are gathered here first.
+static u8 sBlock[64 * 1024] __attribute__((aligned(0x1000)));
+static u32 sBlockLen;
+
+static bool flushBlock(Sink* s) {
+	if (!sBlockLen) return true;
+	u32 w = 0;
+	Result r = FSFILE_Write(s->cia, &w, s->written, sBlock, sBlockLen, 0);
+	if (R_FAILED(r) || w != sBlockLen) {
+		s->err = R_FAILED(r) ? r : -1;
+		s->failed = true;
+		return false;
+	}
+	s->written += sBlockLen;
+	sBlockLen = 0;
+	return true;
+}
+
 static size_t toFile(char* p, size_t sz, size_t n, void* user) {
 	Sink* s = (Sink*)user;
 	size_t add = sz * n;
 	if (s->cia) {
-		u32 written = 0;
-		if (R_FAILED(FSFILE_Write(s->cia, &written, s->bytes, p, add, 0)) || written != add) {
-			s->failed = true;
-			return 0;
+		size_t left = add;
+		while (left) {
+			size_t take = sizeof sBlock - sBlockLen;
+			if (take > left) take = left;
+			memcpy(sBlock + sBlockLen, p, take);
+			sBlockLen += take;
+			p += take;
+			left -= take;
+			if (sBlockLen == sizeof sBlock && !flushBlock(s)) return 0;
 		}
 	}
 	s->bytes += add;
+	noteFree();
 	int pct = s->expect ? (int)(s->bytes * 100 / s->expect) : 0;
 	if (pct / 10 != s->lastPct / 10) {
 		double secs = (osGetTime() - s->started) / 1000.0;
@@ -234,6 +272,8 @@ static void partA_download(bool install) {
 	s.expect = sCiaSize;
 	s.started = osGetTime();
 	s.lastPct = -10;
+	sBlockLen = 0;
+	sLowKb = freeKb();
 	if (install) {
 		if (R_FAILED(amInit()) || R_FAILED(AM_StartCiaInstall(MEDIATYPE_SD, &s.cia))) {
 			printf("  Could not start the installer.\n");
@@ -247,12 +287,14 @@ static void partA_download(bool install) {
 	curl_easy_setopt(c, CURLOPT_WRITEDATA, &s);
 	CURLcode r = curl_easy_perform(c);
 	curl_easy_cleanup(c);
+	if (install && r == CURLE_OK) flushBlock(&s);  // the last, partly filled block
 
 	double secs = (osGetTime() - s.started) / 1000.0;
 	bool sizeOk = s.bytes == sCiaSize;
 	printf("\n  Got %llu of %llu bytes in %.1f s\n", s.bytes, sCiaSize, secs);
 	printf("  Size matches GitHub: %s\n", sizeOk ? "YES" : "NO");
 	if (r != CURLE_OK) printf("  Network error: %s\n", curl_easy_strerror(r));
+	if (s.failed) printf("  Installer write failed: 0x%08lX\n  after %llu bytes\n", s.err, s.written);
 
 	if (install) {
 		if (r == CURLE_OK && sizeOk && !s.failed) {
@@ -264,7 +306,7 @@ static void partA_download(bool install) {
 		}
 		amExit();
 	}
-	printf("\n  Lowest free memory seen: watch the\n  'free' column above.\n");
+	printf("\n  Lowest free memory seen: %lu KB\n", sLowKb);
 	waitA();
 }
 

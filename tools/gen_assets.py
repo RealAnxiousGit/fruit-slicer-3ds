@@ -302,7 +302,385 @@ def spr_sunburst():
     return shrink(sticker(img, 2.4))
 
 
-# name, body, details, flesh colour, rim colour, seed colour, half-width of cut face
+# ---------------------------------------------------------------- fruit added in 1.0
+def overlay(d, draw, blur=0.0):
+    """Draws on a layer that is blended over the image (plain ImageDraw replaces alpha) and kept inside it."""
+    img = d._image
+    lay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    draw(ImageDraw.Draw(lay))
+    if blur:
+        lay = lay.filter(ImageFilter.GaussianBlur(blur * SS))
+    lay.putalpha(ImageChops.multiply(lay.getchannel("A"), img.getchannel("A")))
+    img.alpha_composite(lay)
+
+
+def bez(p0, p1, p2, t):
+    u = 1 - t
+    return (u * u * p0[0] + 2 * u * t * p1[0] + t * t * p2[0], u * u * p0[1] + 2 * u * t * p1[1] + t * t * p2[1])
+
+
+def bez_normal(p0, p1, p2, t):
+    dx = 2 * (1 - t) * (p1[0] - p0[0]) + 2 * t * (p2[0] - p1[0])
+    dy = 2 * (1 - t) * (p1[1] - p0[1]) + 2 * t * (p2[1] - p1[1])
+    ln = math.hypot(dx, dy) or 1
+    return -dy / ln, dx / ln
+
+
+def tube(curve, width, n=48):
+    """Outline of a curved, tapering pod along a quadratic curve; width(t) is the half-width."""
+    left, right = [], []
+    for k in range(n + 1):
+        t = k / n
+        x, y = bez(*curve, t)
+        nx, ny = bez_normal(*curve, t)
+        w = width(t)
+        left.append((x + nx * w, y + ny * w))
+        right.append((x - nx * w, y - ny * w))
+    return left + right[::-1]
+
+
+def tube_at_x(curve, width, x):
+    """Where the pod crosses the blade line x: centre y and half its height there."""
+    lo, hi = 0.0, 1.0
+    for _ in range(40):
+        mid = (lo + hi) / 2
+        if bez(*curve, mid)[0] < x:
+            lo = mid
+        else:
+            hi = mid
+    t = (lo + hi) / 2
+    ny = abs(bez_normal(*curve, t)[1]) or 1
+    return bez(*curve, t)[1], width(t) / ny
+
+
+def cut_circles(fd, circles, cut_w, flesh, rim, seed, pit=None):
+    """Cut faces for fruit made of round parts (cherries, grapes): one slice per part the blade crosses."""
+    for cx, cy, r in circles:
+        dx = abs(32 - cx)
+        if dx >= r - 1:
+            continue
+        h = math.sqrt(r * r - dx * dx)
+        el(fd, 32, cy, min(cut_w + 1.4, r), h - 0.3, rim)
+        el(fd, 32, cy, min(cut_w, r - 1.2), h - 1.8, flesh)
+        if pit:
+            el(fd, 32, cy, min(cut_w, r) * 0.42, h * 0.5, pit)
+        elif seed and h > 5:
+            el(fd, 32, cy, 0.8, 1.4, seed)
+
+
+BANANA = ((7, 21), (30, 60), (57, 17))
+
+
+def banana_w(t):
+    return 1.2 + 7.3 * math.sin(math.pi * t) ** 0.6
+
+
+def f_banana(d):
+    poly(d, tube(BANANA, banana_w), (252, 214, 64, 255))
+    poly(d, tube(((55.2, 20), (57, 15), (59.5, 11)), lambda t: 2.4 - 0.4 * t, 8), (150, 152, 64, 255))
+
+
+def f_banana_top(d):
+    for off, col in ((-0.35, (255, 240, 150, 255)), (0.45, (222, 172, 40, 255))):
+        pts = []
+        for k in range(6, 43):
+            t = k / 48
+            x, y = bez(*BANANA, t)
+            nx, ny = bez_normal(*BANANA, t)
+            w = banana_w(t) * off
+            pts.append(((x + nx * w) * SS, (y + ny * w) * SS))
+        d.line(pts, fill=col, width=int(1.2 * SS), joint="curve")
+    el(d, 7.6, 21.6, 1.9, 1.9, (84, 60, 36, 255))
+    el(d, 59.6, 11.2, 1.5, 1.5, (96, 78, 44, 255))
+
+
+def cut_banana(fd, cy, ch, cut_w, flesh, rim):
+    y, h = tube_at_x(BANANA, banana_w, 32)
+    el(fd, 32, y, cut_w + 1.6, h + 1, rim)
+    el(fd, 32, y, cut_w, h - 1.3, flesh)
+    for dy in (-1.5, 1.5):
+        el(fd, 32, y + dy, 0.6, 0.6, (150, 116, 70, 255))
+
+
+def mango_outline():
+    pts = []
+    for i in range(96):
+        a = i / 96 * math.tau
+        x, y = math.cos(a) * 18.5, math.sin(a) * 22
+        x += 2.6 * math.exp(-((a - 3.3) / 0.7) ** 2)  # the shallow kidney curve on one side
+        r = math.radians(-24)
+        pts.append((32 + x * math.cos(r) - y * math.sin(r), 34.5 + x * math.sin(r) + y * math.cos(r)))
+    return pts
+
+
+def f_mango(d):
+    poly(d, mango_outline(), (252, 156, 46, 255))
+
+    def tint(o):
+        el(o, 41, 23, 12, 10, (232, 60, 50, 220))
+        el(o, 24, 46, 14, 12, (255, 212, 64, 240))
+    overlay(d, tint, blur=3.5)
+
+
+def f_mango_top(d):
+    stem(d, 40.5, 15, 42, 10, 2)
+    leaf(d, 42, 11, -10, 13, (86, 170, 72, 255))
+    el(d, 40.2, 15.6, 1.8, 1.2, (150, 60, 30, 255))
+
+
+def cut_mango(fd, cy, ch, cut_w, flesh, rim):
+    el(fd, 32, cy, cut_w + 1.6, ch / 2 - 0.8, rim)
+    el(fd, 32, cy, cut_w, ch / 2 - 3.0, flesh)
+    el(fd, 32, cy + 0.5, 3.0, ch / 2 - 9, (246, 234, 196, 255))
+    for dy in (-6, 0, 6):
+        fd.line([30.6 * SS, (cy + dy) * SS, 33.4 * SS, (cy + dy + 1.5) * SS], fill=(226, 204, 150, 255), width=SS // 2 + 1)
+
+
+CHERRIES = ((39, 36.5, 10.5), (27, 44, 12))  # back, then front
+
+
+def f_cherry(d):
+    d.line([27.5 * SS, 32.5 * SS, 31 * SS, 21 * SS, 36 * SS, 12 * SS, 41 * SS, 7 * SS], fill=(108, 140, 56, 255), width=int(2.2 * SS), joint="curve")
+    d.line([39 * SS, 26.5 * SS, 40 * SS, 17 * SS, 41 * SS, 7 * SS], fill=(108, 140, 56, 255), width=int(2.2 * SS), joint="curve")
+    el(d, *CHERRIES[0][:2], CHERRIES[0][2], CHERRIES[0][2], (186, 22, 46, 255))
+    el(d, *CHERRIES[1][:2], CHERRIES[1][2], CHERRIES[1][2], (222, 30, 54, 255))
+
+
+def f_cherry_top(d):
+    cx, cy, r = CHERRIES[1]
+    d.arc([(cx - r) * SS, (cy - r) * SS, (cx + r) * SS, (cy + r) * SS], -75, 15, fill=(120, 10, 32, 255), width=int(1.3 * SS))
+    for x, y, rr in CHERRIES:
+        el(d, x + 0.5, y - rr + 1.6, 2.2, 1.1, (130, 12, 34, 255))
+    el(d, 34.5, 31, 1.8, 1.2, (255, 214, 214, 255))
+    el(d, 21.5, 38.5, 2.6, 1.7, (255, 204, 204, 255))
+    leaf(d, 41, 7.5, -15, 12, (86, 170, 72, 255))
+
+
+def cut_cherry(fd, cy, ch, cut_w, flesh, rim):
+    cut_circles(fd, CHERRIES, cut_w, flesh, rim, None, pit=(240, 222, 196, 255))
+
+
+def dragon_flaps():
+    """Each scale as (base point, base point, tip), swept up the fruit."""
+    out = []
+    for i in range(11):
+        a = -math.pi / 2 + (i - 5) * 0.52
+        b1, b2 = a - 0.2, a + 0.2
+        p1 = (32 + math.cos(b1) * 15, 35 + math.sin(b1) * 19)
+        p2 = (32 + math.cos(b2) * 15, 35 + math.sin(b2) * 19)
+        lean = -0.35 if math.cos(a) > 0.05 else (0.35 if math.cos(a) < -0.05 else 0)
+        tip = (32 + math.cos(a + lean) * 21.5, 35 + math.sin(a + lean) * 26)
+        out.append((p1, p2, tip))
+    return out
+
+
+def lerp2(a, b, t):
+    return (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)
+
+
+def f_dragon(d):
+    for p1, p2, tip in dragon_flaps():
+        poly(d, [p1, tip, p2], (236, 66, 142, 255))
+    el(d, 32, 35, 16, 20, (226, 40, 128, 255))
+
+
+def f_dragon_top(d):
+    for p1, p2, tip in dragon_flaps():
+        poly(d, [lerp2(p1, tip, 0.5), tip, lerp2(p2, tip, 0.5)], (132, 196, 70, 255))
+    # Scales on the face: pink flaps with green tips, in staggered rows.
+    for row, (y, xs) in enumerate(((24, (25, 39)), (34, (20, 32, 44)), (45, (26, 38)))):
+        for x in xs:
+            base = [(x - 4.2, y + 4.5), (x + 4.2, y + 4.5)]
+            tip = (x + 1.2, y - 3.5)
+            poly(d, [base[0], tip, base[1]], (246, 108, 168, 255))
+            poly(d, [lerp2(base[0], tip, 0.55), tip, lerp2(base[1], tip, 0.55)], (150, 206, 80, 255))
+
+
+def cut_dragon(fd, cy, ch, cut_w, flesh, rim):
+    el(fd, 32, 35, cut_w + 1.6, 19.2, rim)
+    el(fd, 32, 35, cut_w, 17.6, flesh)
+    rng = random.Random(77)
+    for _ in range(26):
+        y = 35 + rng.uniform(-14, 14)
+        span = cut_w * math.sqrt(max(0, 1 - ((y - 35) / 17) ** 2)) - 1.2
+        el(fd, 32 + rng.uniform(-span, span), y, 0.6, 0.75, (30, 22, 30, 255))
+
+
+def spiky_points():
+    out = []
+    for i in range(16):
+        a = -math.pi / 2 + i * math.tau / 16
+        out.append((32 + math.cos(a - 0.17) * 13, 34 + math.sin(a - 0.17) * 13))
+        out.append((32 + math.cos(a) * 26.5, 34 + math.sin(a) * 26.5))
+        out.append((32 + math.cos(a + 0.17) * 13, 34 + math.sin(a + 0.17) * 13))
+    return out
+
+
+def f_spiky(d):
+    pts = spiky_points()
+    for k in range(0, len(pts), 3):
+        poly(d, pts[k:k + 3], (218, 212, 150, 255))
+    el(d, 32, 34, 16, 16, (44, 92, 52, 255))
+
+
+def f_spiky_top(d):
+    # A shaded side on every spike, so they read as sharp cones and not as part of the sticker edge.
+    pts = spiky_points()
+    for k in range(0, len(pts), 3):
+        b1, tip, b2 = pts[k:k + 3]
+        poly(d, [lerp2(lerp2(b1, b2, 0.5), tip, 0.25), tip, lerp2(b2, tip, 0.25)], (170, 160, 100, 255))
+    rng = random.Random(31)
+    for _ in range(9):
+        a, r = rng.uniform(0, 6.28), rng.uniform(3, 12)
+        el(d, 32 + math.cos(a) * r, 34 + math.sin(a) * r, 2.6, 2.0, (32, 70, 40, 255))
+    # Short thorns pointing out of the face, darker at the root.
+    for x, y, a in ((26, 28, -2.3), (38, 28, -0.8), (32, 36, -1.57), (24, 40, 2.6), (40, 41, 0.5), (32, 45, 1.57)):
+        ux, uy = math.cos(a), math.sin(a)
+        el(d, x, y, 2.2, 2.2, (26, 56, 32, 255))
+        poly(d, [(x - uy * 1.8, y + ux * 1.8), (x + ux * 6, y + uy * 6), (x + uy * 1.8, y - ux * 1.8)], (240, 236, 204, 255))
+
+
+def cut_spiky(fd, cy, ch, cut_w, flesh, rim):
+    cut_circles(fd, ((32, 34, 16),), cut_w, flesh, rim, None)
+    rng = random.Random(5)
+    for _ in range(7):
+        el(fd, 32 + rng.uniform(-cut_w + 3, cut_w - 3), 34 + rng.uniform(-9, 9), 0.9, 1.4, (214, 186, 80, 255))
+
+
+def grape_circles():
+    out = []
+    for y, n, shift in ((20, 4, 0), (29.5, 3, -1.5), (38.5, 3, 1.5), (47, 2, -1), (55, 1, 0.5)):
+        for i in range(n):
+            out.append((32 + shift + (i - (n - 1) / 2) * 10.6, y, 6.3))
+    return out
+
+
+def f_grapes(d):
+    stem(d, 32, 15, 30, 6, 2)
+    for x, y, r in grape_circles():
+        el(d, x, y, r, r, (112, 52, 156, 255))
+
+
+def f_grapes_top(d):
+    for x, y, r in grape_circles():
+        el(d, x, y, r, r, (84, 34, 122, 255))
+        el(d, x - 0.5, y - 0.6, r - 1.1, r - 1.1, (132, 66, 178, 255))
+        el(d, x - 2.2, y - 2.4, 1.5, 1.1, (214, 186, 240, 255))
+    leaf(d, 33, 11, -15, 17, (86, 170, 72, 255))
+
+
+def cut_grapes(fd, cy, ch, cut_w, flesh, rim):
+    cut_circles(fd, grape_circles(), cut_w, flesh, rim, (150, 176, 96, 255))
+
+
+def f_grape(d):
+    stem(d, 32, 26, 33.5, 20.5, 2)
+    el(d, 32, 37, 11, 11, (122, 58, 168, 255))
+
+
+def f_grape_top(d):
+    el(d, 32, 26.6, 2.0, 1.0, (84, 34, 122, 255))
+    el(d, 27.5, 32, 2.4, 1.7, (220, 196, 244, 255))
+
+
+def cut_grape(fd, cy, ch, cut_w, flesh, rim):
+    cut_circles(fd, ((32, 37, 11),), cut_w, flesh, rim, (150, 176, 96, 255))
+
+
+HONEY = (232, 132, 22, 255)
+
+
+def f_honey(d):
+    el(d, 32, 35, 21.5, 21.5, (236, 180, 74, 255))
+
+
+def f_honey_top(d):
+    rng = random.Random(21)
+    for _ in range(24):
+        a, r = rng.uniform(0, 6.28), rng.uniform(4, 19)
+        el(d, 32 + math.cos(a) * r, 35 + math.sin(a) * r, 0.7, 0.7, (250, 210, 120, 255))
+    # A glaze of honey over the top, with drips running down.
+    cap = [(32 + math.cos(math.radians(a)) * 21.3, 35 + math.sin(math.radians(a)) * 21.3) for a in range(-166, -13, 4)]
+    for k in range(25):
+        x = 52.5 - k * 41 / 24
+        cap.append((x, 29 + 1.6 * math.sin(x * 0.55)))
+    poly(d, cap, HONEY)
+    for x, length in ((19, 10), (28, 18), (38, 8), (46, 13)):
+        top = 29 + 1.6 * math.sin(x * 0.55) - 1
+        d.rectangle([(x - 2.3) * SS, top * SS, (x + 2.3) * SS, (top + length) * SS], fill=HONEY)
+        el(d, x, top + length, 3.0, 3.2, HONEY)
+        d.line([(x - 1) * SS, (top + 2) * SS, (x - 1) * SS, (top + length) * SS], fill=(255, 196, 92, 255), width=SS)
+        el(d, x - 1, top + length - 0.5, 0.9, 1.1, (255, 244, 214, 255))
+    d.arc([14 * SS, 17 * SS, 50 * SS, 53 * SS], 205, 255, fill=(255, 226, 150, 255), width=int(1.5 * SS))
+    el(d, 23, 21, 3.4, 1.8, (255, 248, 222, 255))
+
+
+def jelly_outline(scale=1.0):
+    pts = []
+    for i in range(120):
+        a = i / 120 * math.tau
+        r = (20 + 1.3 * math.sin(3 * a + 0.5) + 0.9 * math.sin(5 * a + 1.3)) * scale
+        y = math.sin(a) * r * (0.94 if math.sin(a) < 0 else 0.98)
+        pts.append((32 + math.cos(a) * r * (1.04 if math.sin(a) > 0 else 1.0), 36 + y))
+    return pts
+
+
+def f_jelly(d):
+    poly(d, jelly_outline(), (34, 164, 172, 255))
+
+    def inner(o):
+        poly(o, jelly_outline(0.8), (112, 226, 214, 255))
+        el(o, 33, 41, 9.5, 8, (255, 132, 186, 255))
+    overlay(d, inner, blur=2.6)
+
+
+def f_jelly_top(d):
+    def bubbles(o):
+        for x, y, r in ((23, 40, 2.6), (41, 31, 2.0), (37, 48, 1.6), (27, 49, 1.2), (44, 41, 1.4)):
+            o.ellipse([(x - r) * SS, (y - r) * SS, (x + r) * SS, (y + r) * SS], outline=(255, 255, 255, 210), width=int(0.8 * SS))
+            el(o, x - r * 0.35, y - r * 0.35, r * 0.3, r * 0.3, (255, 255, 255, 230))
+        o.arc([15 * SS, 19 * SS, 49 * SS, 53 * SS], 195, 260, fill=(255, 255, 255, 235), width=int(2.4 * SS))
+        el(o, 40, 23, 2.4, 1.6, (255, 255, 255, 200))
+    overlay(d, bubbles)
+    leaf(d, 32, 17, -60, 12, (86, 170, 72, 255))
+
+
+CHILI = ((19, 16), (26, 52), (60, 49))
+
+
+def chili_w(t):
+    return 7.4 * (1 - t) ** 0.7 * min(1.0, 0.6 + t * 4) + 0.7
+
+
+def f_chili(d):
+    poly(d, tube(CHILI, chili_w), (214, 34, 38, 255))
+    d.line([19 * SS, 16 * SS, 21 * SS, 9 * SS, 26 * SS, 5 * SS], fill=(72, 138, 56, 255), width=int(2.8 * SS), joint="curve")
+    el(d, 19.5, 16.5, 6.5, 4.0, (72, 150, 60, 255))
+
+
+def f_chili_top(d):
+    pts = []
+    for k in range(4, 34):
+        t = k / 48
+        x, y = bez(*CHILI, t)
+        nx, ny = bez_normal(*CHILI, t)
+        w = chili_w(t) * 0.45
+        pts.append(((x - nx * w) * SS, (y - ny * w) * SS))
+    d.line(pts, fill=(255, 132, 112, 255), width=int(1.4 * SS), joint="curve")
+    for a in (-0.6, 0.3, 1.2):
+        poly(d, [(19.5 + math.cos(a) * 2, 16.5 + math.sin(a) * 2), (19.5 + math.cos(a + 0.3) * 7.5, 18 + math.sin(a + 0.3) * 4.6),
+                 (19.5 + math.cos(a + 0.6) * 2, 16.5 + math.sin(a + 0.6) * 2)], (52, 116, 44, 255))
+
+
+def cut_chili(fd, cy, ch, cut_w, flesh, rim):
+    y, h = tube_at_x(CHILI, chili_w, 32)
+    el(fd, 32, y, cut_w + 1.4, h + 0.6, rim)
+    el(fd, 32, y, cut_w, h - 1.2, flesh)
+    for dy in (-2.2, 0, 2.2):
+        el(fd, 32 + dy * 0.3, y + dy, 0.9, 0.7, (255, 236, 176, 255))
+
+
+# name, body, details, flesh colour, rim colour, seed colour (or a function that draws the whole cut face), half-width of cut face
 FRUITS = [
     ("apple", f_apple, f_apple_top, (255, 240, 190, 255), (246, 216, 150, 255), (92, 54, 34, 255), 9),
     ("orange", f_orange, f_orange_top, (255, 176, 66, 255), (255, 232, 180, 255), (255, 212, 130, 255), 10),
@@ -316,6 +694,16 @@ FRUITS = [
     ("pineapple", f_pineapple, f_pineapple_top, (255, 232, 110, 255), (255, 246, 190, 255), (232, 190, 60, 255), 9),
     ("coconut", f_coconut, f_coconut_top, (250, 250, 244, 255), (255, 255, 255, 255), (226, 226, 214, 255), 11),
     ("gold", f_gold, f_gold_top, (255, 236, 120, 255), (255, 250, 200, 255), (214, 150, 20, 255), 8),
+    ("banana", f_banana, f_banana_top, (252, 246, 214, 255), (246, 224, 120, 255), cut_banana, 6),
+    ("mango", f_mango, f_mango_top, (255, 172, 30, 255), (255, 208, 96, 255), cut_mango, 10),
+    ("cherry", f_cherry, f_cherry_top, (168, 20, 44, 255), (130, 12, 32, 255), cut_cherry, 4.5),
+    ("dragon", f_dragon, f_dragon_top, (252, 250, 248, 255), (226, 52, 132, 255), cut_dragon, 10),
+    ("spiky", f_spiky, f_spiky_top, (250, 238, 160, 255), (70, 122, 62, 255), cut_spiky, 9),
+    ("grapes", f_grapes, f_grapes_top, (206, 234, 150, 255), (108, 50, 140, 255), cut_grapes, 4),
+    ("grape", f_grape, f_grape_top, (206, 234, 150, 255), (108, 50, 140, 255), cut_grape, 5.5),
+    ("honey", f_honey, f_honey_top, (255, 146, 46, 255), (246, 206, 110, 255), (255, 226, 160, 255), 11),
+    ("jelly", f_jelly, f_jelly_top, (255, 196, 222, 255), (120, 220, 214, 255), (255, 255, 255, 255), 10),
+    ("chili", f_chili, f_chili_top, (250, 100, 52, 255), (190, 26, 30, 255), cut_chili, 5),
 ]
 
 
@@ -333,13 +721,16 @@ def fruit_images(spec):
     bb = silhouette.getbbox()
     ch = (bb[3] - bb[1]) / SS
     cy = (bb[1] + bb[3]) / 2 / SS
-    el(fd, 32, cy, cut_w + 1.6, ch / 2 - 0.8, rim)
-    el(fd, 32, cy, cut_w, ch / 2 - 3.0, flesh)
-    rng = random.Random(len(name) * 31)
-    for _ in range(9):
-        y = cy + rng.uniform(-ch / 2 + 7, ch / 2 - 7)
-        x = rng.choice((-1, 1)) * rng.uniform(2, max(3, cut_w - 3)) + 32
-        el(fd, x, y, 1.0, 1.7, seed)
+    if callable(seed):
+        seed(fd, cy, ch, cut_w, flesh, rim)
+    else:
+        el(fd, 32, cy, cut_w + 1.6, ch / 2 - 0.8, rim)
+        el(fd, 32, cy, cut_w, ch / 2 - 3.0, flesh)
+        rng = random.Random(len(name) * 31)
+        for _ in range(9):
+            y = cy + rng.uniform(-ch / 2 + 7, ch / 2 - 7)
+            x = rng.choice((-1, 1)) * rng.uniform(2, max(3, cut_w - 3)) + 32
+            el(fd, x, y, 1.0, 1.7, seed)
 
     halves = []
     for side in (0, 1):
@@ -386,7 +777,9 @@ def spr_bomb():
 def spr_power(kind):
     img = canvas(CELL)
     d = ImageDraw.Draw(img)
-    base = {"freeze": (90, 196, 244, 255), "double": (255, 110, 170, 255), "frenzy": (255, 158, 40, 255)}[kind]
+    base = {"freeze": (90, 196, 244, 255), "double": (255, 110, 170, 255), "frenzy": (255, 158, 40, 255),
+            "magnet": (230, 70, 70, 255), "wide": (120, 210, 110, 255), "shield": (150, 120, 240, 255),
+            "time": (70, 200, 200, 255)}[kind]
     el(d, 32, 32, 24, 24, base)
     img = shade(img)
     d = ImageDraw.Draw(img)
@@ -403,6 +796,26 @@ def spr_power(kind):
                     d.line([ex * SS, ey * SS, (ex + math.cos(b) * 6) * SS, (ey + math.sin(b) * 6) * SS], fill=white, width=int(2 * SS))
     elif kind == "double":
         stroke_text(d, "X2", 32, 32, 9.5, white, 3.4)
+    elif kind == "magnet":
+        # A horseshoe magnet, open end down, with pale tips.
+        d.arc([20 * SS, 17 * SS, 44 * SS, 41 * SS], 180, 360, fill=white, width=int(5 * SS))
+        for x in (22.5, 41.5):
+            d.line([x * SS, 29 * SS, x * SS, 41 * SS], fill=white, width=int(5 * SS))
+            d.line([x * SS, 38 * SS, x * SS, 44 * SS], fill=(255, 210, 210, 255), width=int(5 * SS))
+    elif kind == "wide":
+        # Arrows pointing out both ways from a bar: a wider blade.
+        d.line([17 * SS, 32 * SS, 47 * SS, 32 * SS], fill=white, width=int(3.4 * SS))
+        poly(d, [(13, 32), (21, 25), (21, 39)], white)
+        poly(d, [(51, 32), (43, 25), (43, 39)], white)
+    elif kind == "shield":
+        poly(d, [(32, 16), (45, 21), (44, 34), (32, 47), (20, 34), (19, 21)], white)
+        poly(d, [(32, 21), (40, 24), (39.5, 33), (32, 41.5)], base)
+    elif kind == "time":
+        # A stopwatch with a plus.
+        d.ellipse([20 * SS, 21 * SS, 44 * SS, 45 * SS], outline=white, width=int(3.4 * SS))
+        d.line([32 * SS, 16 * SS, 32 * SS, 21 * SS], fill=white, width=int(3.4 * SS))
+        d.line([32 * SS, 27 * SS, 32 * SS, 39 * SS], fill=white, width=int(3 * SS))
+        d.line([26 * SS, 33 * SS, 38 * SS, 33 * SS], fill=white, width=int(3 * SS))
     else:
         for i in range(8):
             a = i * math.pi / 4
@@ -870,6 +1283,10 @@ def build_graphics():
         ("coin", spr_coin()),
         ("coin_back", spr_coin(True)),
         ("coin_rim", spr_coin_rim()),
+        ("pw_magnet", spr_power("magnet")),
+        ("pw_wide", spr_power("wide")),
+        ("pw_shield", spr_power("shield")),
+        ("pw_time", spr_power("time")),
     ]
     write_sheet("sprites", sprites)
     write_sheet("logo", [("logo", spr_logo())])
