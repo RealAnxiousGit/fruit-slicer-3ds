@@ -49,12 +49,38 @@ static bool loadMeshes(int lod) {
 	if (!loadFile(lod ? "models/fruit_hi.bin" : "models/fruit_lo.bin", &blob, &size)) return false;
 	m3dport::flush(blob, size);
 	const u8* base = (const u8*)blob;
-	if (memcmp(base, "FSM1", 4) != 0 || *(const u32*)(base + 4) != MESH_COUNT) {
+	const u32 headBytes = 8 + 20 * 3 * MESH_COUNT;
+	if (size < headBytes || memcmp(base, "FSM1", 4) != 0 || *(const u32*)(base + 4) != MESH_COUNT) {
+		fprintf(stderr, "[m3d] model file doesn't match this build\n");
 		m3dport::release(blob);
 		return false;
 	}
+	// Check every part fits in the file and every index names a real vertex before using any of it,
+	// so a stale or cut-short file falls back to 2D instead of reading past its end.
+	{
+		const u32* head = (const u32*)(base + 8);
+		u32 at = headBytes;
+		for (int i = 0; i < MESH_COUNT * 3; i++, head += 5) {
+			const u32 nv = head[0], ni = head[1];
+			const u32 vBytes = nv * (u32)sizeof(Vertex), iBytes = (ni * 2 + 3) & ~3u;
+			if (nv > 65535 || ni > 0x100000 || at + vBytes + iBytes > size) {
+				fprintf(stderr, "[m3d] model file is damaged\n");
+				m3dport::release(blob);
+				return false;
+			}
+			const u16* idx = (const u16*)(base + at + vBytes);
+			for (u32 k = 0; k < ni; k++) {
+				if (idx[k] >= nv) {
+					fprintf(stderr, "[m3d] model file is damaged\n");
+					m3dport::release(blob);
+					return false;
+				}
+			}
+			at += vBytes + iBytes;
+		}
+	}
 	const u32* head = (const u32*)(base + 8);
-	const u8* cur = base + 8 + 20 * 3 * MESH_COUNT;
+	const u8* cur = base + headBytes;
 	for (int m = 0; m < MESH_COUNT; m++) {
 		for (int p = 0; p < 3; p++) {
 			PartData& d = sParts[m][p];

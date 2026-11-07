@@ -25,6 +25,7 @@ static const char* const kSfxFiles[SFX_COUNT] = {
 	"strike", "click", "power", "freeze", "fever", "go", "over", "best", "gold",
 	"finale_rise", "finale_hit", "finale_burst",
 };
+static_assert(sizeof kSfxFiles / sizeof kSfxFiles[0] == SFX_COUNT, "every sound needs a file name");
 // How much of the mix one sound may take. A new sound is turned down if the ones still playing have
 // used this up, so a long Frenzy stays at the level of a quiet moment instead of piling up to clipping.
 static constexpr float kSfxGain = 0.7f;
@@ -156,7 +157,11 @@ static port::AssetFile* openClip(const char* name, u32 head[3]) {
 		fprintf(stderr, "[audio] missing %s\n", path);
 		return nullptr;
 	}
-	if (port::assetRead(head, 12, f) != 12 || head[0] != 0x31415346) {  // "FSA1"
+	// A clip with a bad header is skipped on its own, so one broken file can't stall or flood the mix:
+	// a sample rate of 0 would never finish, and a huge length would eat the memory every sound shares.
+	if (port::assetRead(head, 12, f) != 12 || head[0] != 0x31415346 ||  // "FSA1"
+	    head[1] == 0 || head[1] > 48000u * 600 || head[2] < 8000 || head[2] > 96000) {
+		fprintf(stderr, "[audio] skipping %s: bad header\n", path);
 		port::assetClose(f);
 		return nullptr;
 	}
@@ -278,8 +283,10 @@ void play(Sfx s, float volume, float pan, float pitch) {
 	if (!sReady || gSave.sfx == 0) return;
 	const Clip& clip = sSfx[s];
 	if (!clip.pcm) return;
+	if (!(pitch > 0.05f)) pitch = 1.0f;  // also catches NaN
 	const bool combo = isCombo(s);
-	float full = combo ? volume * comboStack() * kComboLoud / sClipLoud[s] : volume * kSfxGain * clipTrim(s);
+	float full = combo ? volume * comboStack() * kComboLoud / fmaxf(sClipLoud[s], 1e-3f) : volume * kSfxGain * clipTrim(s);
+	if (!isfinite(full) || full <= 0) return;
 	float v = full * makeRoom(s, full, clip.samples / ((float)clip.rate * pitch), combo ? kComboMinShare : kMinShare) * level(gSave.sfx);
 	audioport::playSfx(clip, v * clampf(1.0f - pan, 0.0f, 1.0f), v * clampf(1.0f + pan, 0.0f, 1.0f), (float)clip.rate * pitch);
 }

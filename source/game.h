@@ -165,6 +165,7 @@ private:
 	void drawObjects2D(bool top, float ox, float oy) const;
 	void emitJuice(float x, float y, u32 color, int count, float dirX, float dirY);
 	void emitSparks(float x, float y, u32 color, int count, float speed);
+	bool popupBlocked(float x, float y, float hw, float hh) const;
 	void addPopup(const char* s, float x, float y, u32 color, float scale);
 	void addRing(float x, float y, u32 color, float maxScale, float life);
 	void setCallout(const char* s, u32 color, float size = 0.72f);

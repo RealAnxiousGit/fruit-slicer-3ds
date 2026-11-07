@@ -458,12 +458,36 @@ void Game::emitSparks(float x, float y, u32 color, int count, float speed) {
 	}
 }
 
+// True if a popup of half-width hw at (x, y) would land on fresh text already on the field.
+bool Game::popupBlocked(float x, float y, float hw, float hh) const {
+	for (const Popup& o : popups) {
+		if (!o.on || o.life < 0.45f) continue;  // fading ones have drifted away already
+		float ow = gfx::textWidth(o.text, o.scale) * 0.5f;
+		if (fabsf(o.x - x) < ow + hw + 4 && fabsf(o.y - y) < hh + 9 * o.scale) return true;
+	}
+#if !PORT_TWO_SCREENS
+	// One screen: the big callout shares the field (it sits on the top screen of a 3DS).
+	if (calloutT > 0.3f && phase != PHASE_FINALE) {
+		float cw = fminf(gfx::textWidth(callout, calloutSize), kFieldW - 20) * 0.5f;
+		if (fabsf(kFieldW * 0.5f - x) < cw + hw && fabsf(96 - y) < hh + 14 * calloutSize) return true;
+	}
+#endif
+	return false;
+}
+
 void Game::addPopup(const char* s, float x, float y, u32 color, float scale) {
 	Popup& p = popups[popupCursor];
 	popupCursor = (popupCursor + 1) % kMaxPopups;
+	p.on = false;  // the slot being reused must not block its own replacement
 	snprintf(p.text, sizeof p.text, "%s", s);
 	p.x = clampf(x, 26, kFieldW - 26);
 	p.y = clampf(y, kFieldTop + 24, 220);
+	// Step clear of text already showing: down a line, or up once the bottom is reached.
+	float hw = gfx::textWidth(p.text, scale) * 0.5f, hh = 9 * scale, step = 20 * scale;
+	for (int tries = 0; tries < 6 && popupBlocked(p.x, p.y, hw, hh); tries++) {
+		if (p.y + step > 220) step = -fabsf(step);
+		p.y = clampf(p.y + step, kFieldTop + 24, 220);
+	}
 	p.life = 0.9f;
 	p.color = color;
 	p.scale = scale;
@@ -1273,11 +1297,14 @@ void Game::drawObjects3D(bool top, float ox, float oy) const {
 		if (h.cut >= 0) m3d::drawCut(h.cut, pose);
 		else m3d::draw(h.mesh, (m3d::Part)h.part, pose);
 	}
-	for (const auto& o : objs) {
-		if (!o.on || o.kind > OBJ_BOMB || !onThisScreen(o.y, 34, top, oy)) continue;
-		int mesh = o.kind == OBJ_BOMB ? m3d::MESH_BOMB : (o.kind == OBJ_GOLD ? m3d::MESH_GOLD : kFruit[o.fruit].mesh);
-		m3d::Pose pose = {o.x + ox, o.y + oy, o.kind == OBJ_BOMB ? kBombZ : kFruitZ, o.rx, o.ry, o.rot, 1, 0, 0, 0};
-		m3d::draw(mesh, m3d::PART_WHOLE, pose);
+	// Bombs go last, so they always show on top of fruit even where there's no depth buffer.
+	for (int pass = 0; pass < 2; pass++) {
+		for (const auto& o : objs) {
+			if (!o.on || o.kind > OBJ_BOMB || (o.kind == OBJ_BOMB) != (pass == 1) || !onThisScreen(o.y, 34, top, oy)) continue;
+			int mesh = o.kind == OBJ_BOMB ? m3d::MESH_BOMB : (o.kind == OBJ_GOLD ? m3d::MESH_GOLD : kFruit[o.fruit].mesh);
+			m3d::Pose pose = {o.x + ox, o.y + oy, o.kind == OBJ_BOMB ? kBombZ : kFruitZ, o.rx, o.ry, o.rot, 1, 0, 0, 0};
+			m3d::draw(mesh, m3d::PART_WHOLE, pose);
+		}
 	}
 	if (finaleOn && !top) {
 		float s = 1.0f + finaleSwell + sinf(finaleT * 11) * 0.015f;
