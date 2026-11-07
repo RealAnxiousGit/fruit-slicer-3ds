@@ -20,6 +20,7 @@ static constexpr int kCutSlots = 16;
 static constexpr int kCutMaxVerts = 2450;
 static Vertex* sCutVerts;
 static volatile u32 sCutCount[kCutSlots];
+static volatile bool sCutDirty[kCutSlots];  // built, but still sitting in the CPU's cache
 static u32 sCutSurface[kCutSlots];
 static int sCutMesh[kCutSlots];
 static bool sCutUsed[kCutSlots];
@@ -46,6 +47,7 @@ static bool loadMeshes(int lod) {
 	u32 size = 0;
 	void* blob = nullptr;
 	if (!loadFile(lod ? "models/fruit_hi.bin" : "models/fruit_lo.bin", &blob, &size)) return false;
+	m3dport::flush(blob, size);
 	const u8* base = (const u8*)blob;
 	if (memcmp(base, "FSM1", 4) != 0 || *(const u32*)(base + 4) != MESH_COUNT) {
 		m3dport::release(blob);
@@ -277,6 +279,7 @@ static void cutBuild(int handle, int mesh, float nx, float ny, float nz, float o
 		}
 	}
 	sCutCount[handle] = n;
+	sCutDirty[handle] = true;
 }
 
 struct CutJob {
@@ -301,6 +304,11 @@ void cutRequest(int handle, int mesh, float nx, float ny, float nz, float offset
 
 void drawCut(int handle, const Pose& pose) {
 	if (handle < 0 || sCutCount[handle] == 0) return;
+	if (sCutDirty[handle]) {
+		// A real console's GPU reads memory directly, so it would otherwise see stale vertices. Emulators hide this.
+		sCutDirty[handle] = false;
+		m3dport::flush(sCutVerts + handle * kCutMaxVerts, sCutCount[handle] * sizeof(Vertex));
+	}
 	m3dport::drawCut(sCutMesh[handle], sCutVerts + handle * kCutMaxVerts, sCutCount[handle], sCutSurface[handle], pose);
 }
 

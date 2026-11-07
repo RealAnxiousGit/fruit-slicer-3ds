@@ -45,7 +45,7 @@ A free, fan-made fruit-slicing arcade game for the Nintendo 3DS. Swipe the touch
 | Section | Settings |
 | --- | --- |
 | Audio | Sound Effects, Music and Menu Sounds sliders. Menu Music and Game Music each choose Auto or a track: Orchard Morning, Picnic Stroll, Sleepy Meadow, Lantern Walk, Still Water, Moss Garden, Bamboo Breeze, Drifting Clouds. |
-| Visuals | Art Style (3D Models or 2D Stickers), Board, Scenery, Blade, Effects (None, Low, Medium, Full), 3D Depth, Screen Shake, and speed savers: Background, Top Screen Fruit, 3D Detail, Slice Style and Transitions. |
+| Visuals | Art Style (3D Models or 2D Stickers), Board, Scenery, Blade, Effects (None, Low, Medium, Full), 3D Depth, Screen Shake, and speed savers: Background, 3D Detail, Slice Style and Transitions. |
 | Gameplay | Stylus Sensitivity, Difficulty (Easy, Normal, Hard, Insane), Fruit Speed, Bomb Amount, Slice Forgiveness, Frenzy Drain, Misses Allowed. |
 | Scores and Data | Reset scores or everything, and the Speed Test. |
 
@@ -128,9 +128,10 @@ make cia    # FruitSlicer3DS.cia
 ## How it works
 
 - **Rendering:** all drawing goes through the PICA200 using citro2D on citro3D. The 3D fruit are code-generated meshes in two detail levels, drawn with a small vertex shader, and each eye gets its own per-vertex disparity so that depth is true volume. A New 3DS runs at 804 MHz with L2 cache.
-- **Slicing:** in 3D with Exact slices, a cut really splits the mesh along your swipe and caps it with a coloured face. That work runs on the New 3DS's extra core when it is available. Otherwise each fruit uses ready-made halves, rolled to show their faces.
+- **Slicing:** in 3D with Exact slices, a cut really splits the mesh along your swipe and caps it with a coloured face. That work runs on the New 3DS's extra core when it is available. Otherwise each fruit uses ready-made halves, rolled to show their faces. Frenzy always uses ready-made halves, because it throws the most fruit.
 - **Touch:** a speed-adaptive low-pass filter smooths slow movement and stays close to the stylus on fast swipes. It also rejects pressure spikes, and curve interpolation smooths the trail. Hits are tested along the whole swept segment, so fast swipes can't skip over fruit.
-- **Memory:** fruit, halves, particles, splats, popups and spawn queues live in fixed static pools, so gameplay never allocates memory.
+- **Memory:** fruit, halves, particles, splats, popups and spawn queues live in fixed static pools, so gameplay never allocates memory. Newly cut meshes are flushed from the CPU cache before the GPU reads them, and draws stop short of filling the GPU's command list.
+- **Shared code:** `source/` is shared with the Windows, Linux and Android port and `port/` holds what is specific to the 3DS. `shared-files.txt` lists the shared files.
 - **Audio:** sound effects load at boot and play through `ndsp`, using one music channel, one looping fuse channel and 12 sound-effect channels. Only the current music track is in memory, and it loads a little each frame so that starting one never stalls the game. Cut sounds are synthesized from layers (blade tick, fibre grains, body thump, droplets and spray), balanced differently for each type of fruit.
 
 ## Assets

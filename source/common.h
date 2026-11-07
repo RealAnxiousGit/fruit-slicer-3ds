@@ -68,7 +68,7 @@ struct Settings {
 	u8 depth;       // 3D depth; 50 is the normal strength
 	u8 shake;
 	u8 bgDetail;    // 0 simple, 1 full
-	u8 topFruit;    // 1: throws can fly up onto the top screen
+	u8 topFruit;    // no longer a setting; kept so that existing saves still line up
 	u8 detail;      // 3D model detail: 0 low, 1 high
 	u8 sliceStyle;  // 0 ready-made halves, 1 cut along the actual swipe
 	u8 transitions;
@@ -97,6 +97,7 @@ struct Input {
 	bool touching;
 	int tx, ty;
 	bool hovering;  // a mouse cursor rests at tx, ty with no button held
+	int wheel;      // mouse wheel notches this frame, up is positive
 };
 
 // Sound pans with position on the field.

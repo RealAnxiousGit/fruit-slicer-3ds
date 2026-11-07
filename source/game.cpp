@@ -86,7 +86,13 @@ u32 hueColor(float t) {
 	}
 }
 
+// Frenzy throws more than anything else in the game. Lighter ports trim it so it can't overrun the hardware.
+static bool sLightFrenzy;
+static constexpr int kLightMaxObjs = 14;
+static constexpr int kLightMaxHalves = 24;
+
 static int juiceCount(int base) {
+	if (sLightFrenzy) base /= 2;
 	// A New 3DS has the headroom for a bigger splash on the top setting.
 	const float full = gIsNew3ds ? 1.3f : 1.0f;
 	const float scale[] = {0.0f, 0.35f, 0.7f, full};
@@ -101,6 +107,7 @@ void Game::start(Mode m) {
 	m3d::cutReleaseAll();
 	memset((void*)this, 0, sizeof(Game));
 	mode = m;
+	sLightFrenzy = PORT_LIGHT_FRENZY && m == MODE_FRENZY;
 	phase = PHASE_READY;
 	best = gSave.best[m];
 	gravity = 300;
@@ -143,6 +150,11 @@ void Game::queue(float delay, float x, float vx, float vy, ObjKind kind, int fru
 }
 
 void Game::launch(const Pending& p) {
+	if (sLightFrenzy && p.kind != OBJ_BOMB) {
+		int inAir = 0;
+		for (const auto& o : objs) inAir += o.on;
+		if (inAir >= kLightMaxObjs) return;
+	}
 	for (auto& o : objs) {
 		if (o.on) continue;
 		o = {};
@@ -215,7 +227,7 @@ void Game::pickThrow(bool bomb, float delay, float& x, float& vx, float& vy) {
 		// About half the throws leave the top of the board and carry on up the top screen in full view,
 		// peaking below the score sign, before falling back down onto the board.
 		float apexY = gRng.range(kFieldTop + 20, kFieldTop + 90);
-		if (PORT_TWO_SCREENS && gSave.topFruit && gRng.unit() < 0.5f) apexY = gRng.range(-170, -60);
+		if (PORT_TWO_SCREENS && gRng.unit() < 0.5f) apexY = gRng.range(-170, -60);
 		float cvy = -sqrtf(2.0f * gravity * (kSpawnY - apexY));
 		float cx = gRng.range(36, kFieldW - 36);
 		float air = -2.0f * cvy / gravity;
@@ -509,7 +521,7 @@ void Game::addHalves(const Obj& o, const FruitDef& def, const Blade& blade, floa
 	const float roll = (dx * ny - dy * nx) >= 0 ? 1.0f : -1.0f;
 
 	// Cutting along the real swipe needs two free slots; otherwise this fruit uses ready-made halves.
-	bool exact = use3D() && gSave.sliceStyle == 1;
+	bool exact = use3D() && gSave.sliceStyle == 1 && !sLightFrenzy;
 	int slots[2] = {-1, -1};
 	if (exact) {
 		slots[0] = m3d::cutAcquire();
@@ -538,7 +550,7 @@ void Game::addHalves(const Obj& o, const FruitDef& def, const Blade& blade, floa
 	const float kick = 42;  // how fast the halves drift apart along the cut's normal
 	for (int s = 0; s < 2; s++) {
 		Half& h = halves[halfCursor];
-		halfCursor = (halfCursor + 1) % kMaxHalves;
+		halfCursor = (halfCursor + 1) % (sLightFrenzy ? kLightMaxHalves : kMaxHalves);
 		if (h.on) m3d::cutRelease(h.cut);
 		float side = s == 0 ? -1.0f : 1.0f;
 		h.on = true;
@@ -1032,7 +1044,7 @@ void Game::update(Blade& blade) {
 				}
 				feverTimer -= kDt;
 				if (feverTimer <= 0) {
-					feverTimer = mode == MODE_FRENZY ? 0.12f : 0.2f;
+					feverTimer = mode == MODE_FRENZY && !sLightFrenzy ? 0.12f : 0.2f;
 					float x = 160, vx = 0, vy = -300;
 					pickThrow(false, 0, x, vx, vy);
 					queue(0, x, vx, vy, OBJ_FRUIT, gRng.below(kCoconut));
@@ -1218,7 +1230,7 @@ void Game::drawField(const Blade& blade) const {
 		            withAlpha(s.color, clampf(s.life, 0, 1) * 0.75f));
 	}
 	// Soft shadows on the board give solid fruit somewhere to float above.
-	if (solid && gSave.effects >= FX_MEDIUM) {
+	if (solid && gSave.effects >= FX_MEDIUM && !sLightFrenzy) {
 		for (const auto& o : objs) {
 			if (o.on && o.y > -20 && o.kind <= OBJ_BOMB) gfx::sprite(SHEET_SPRITES, sprites_glow_idx, o.x + 7, o.y + 10, 1.15f, 1.15f, 0, rgba(0, 0, 0, 110));
 		}
@@ -1284,7 +1296,6 @@ void Game::drawField(const Blade& blade) const {
 
 #if PORT_TWO_SCREENS
 void Game::drawFieldTop() const {
-	if (!gSave.topFruit) return;
 	if (use3D()) drawObjects3D(true, kTopOffsetX, kTopOffsetY);
 	else drawObjects2D(true, kTopOffsetX, kTopOffsetY);
 	// Power-ups can fly high too; juice follows them up when Effects allows it.

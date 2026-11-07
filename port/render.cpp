@@ -145,6 +145,24 @@ void beginFrame() {
 }
 
 void endFrame() {
+#ifdef AUTOTEST
+	// How close each frame comes to the GPU's limits, worst of the last second.
+	static float sPeakCmd;
+	static u32 sPeakDraws, sLogFrames;
+	u32* cmdAddr;
+	u32 cmdSize, cmdUsed;
+	GPUCMD_GetBuffer(&cmdAddr, &cmdSize, &cmdUsed);
+	const u32 kCmdWords = C3D_DEFAULT_CMDBUF_SIZE / 4;
+	float used = (float)(kCmdWords - (cmdSize - cmdUsed)) / kCmdWords;  // the whole frame, not just the last screen
+	if (used > sPeakCmd) sPeakCmd = used;
+	if (drawCallsLive > sPeakDraws) sPeakDraws = drawCallsLive;
+	if (++sLogFrames == 60) {
+		fprintf(stderr, "[gpu] cmd %.1f%% draws %lu linear %lu KB\n", sPeakCmd * 100, (unsigned long)sPeakDraws, (unsigned long)(linearSpaceFree() / 1024));
+		sPeakCmd = 0;
+		sPeakDraws = 0;
+		sLogFrames = 0;
+	}
+#endif
 	C3D_FrameEnd(0);
 	drawCalls = drawCallsLive;
 }
@@ -203,7 +221,7 @@ static inline float offX() { return sBaseX + sDepthX + (sOnTop ? 0 : sShakeX); }
 static inline float offY() { return sBaseY + (sOnTop ? 0 : sShakeY); }
 
 void sprite(SheetId sheet, int idx, float x, float y, float sx, float sy, float rot, u32 color) {
-	if (!sSheets[sheet]) return;
+	if (!sSheets[sheet] || !gpuHasRoom()) return;
 	C2D_Image img = C2D_SpriteSheetGetImage(sSheets[sheet], idx);
 	float w = img.subtex->width * sx;
 	float h = img.subtex->height * sy;
@@ -219,7 +237,7 @@ void sprite(SheetId sheet, int idx, float x, float y, float sx, float sy, float 
 }
 
 void image(SheetId sheet, int idx, float x, float y, float w, float h, u32 color) {
-	if (!sSheets[sheet]) return;
+	if (!sSheets[sheet] || !gpuHasRoom()) return;
 	C2D_Image img = C2D_SpriteSheetGetImage(sSheets[sheet], idx);
 	C2D_DrawParams p;
 	p.pos = {x + offX(), y + offY(), w, h};

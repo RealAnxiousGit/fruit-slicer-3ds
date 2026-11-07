@@ -20,7 +20,7 @@
 #include "logo.h"
 #include "port_api.h"
 
-#define VERSION_STRING "0.3.0-alpha"
+#define VERSION_STRING "0.4.0-alpha"
 
 #if PORT_TWO_SCREENS
 static constexpr float kSlideTop = 400, kSlideBottom = 320;
@@ -117,7 +117,7 @@ static const Button kOptionButtons[] = {
 static const Button kOnlyBack[] = {kBack};
 static const Button kResultButtons[] = {kBack, {20, 170, 134, 52, "Again"}, {166, 170, 134, 52, "Modes"}};
 #if PORT_PAUSE_BUTTON
-static const Button kPauseSign = {kFieldW - 34.0f, 0, 34, 34, nullptr};  // in field units, over the score sign
+static const Button kPauseSign = {2, kFieldTop + 2, 36, 36, nullptr};  // in field units: top-left, just under the score sign
 #endif
 static const Button kPauseButtons[] = {kBack, {50, 44, 220, 56, "Resume"}, {50, 108, 220, 56, "Options"}, {50, 172, 220, 56, "Main Menu"}};
 
@@ -153,7 +153,10 @@ static void drawBackArrow(bool focused, bool pressed) {
 }
 
 static void drawHeader(const char* title) {
-	gfx::text(title, 186, 8, 0.62f, COL_CREAM, ALIGN_CENTER);
+	// Centred on the screen, like the signs below it. A long title shrinks to stay clear of the back arrow.
+	float scale = 0.62f, w = gfx::textWidth(title, scale), room = 320 - 2 * (kBack.x + kBack.w + 4);
+	if (w > room) scale *= room / w;
+	gfx::text(title, 160, 8 + (0.62f - scale) * 20, scale, COL_CREAM, ALIGN_CENTER);
 }
 
 // Menus sit on the board chosen in Visuals, a little dimmed so that the signs stand out on it.
@@ -300,7 +303,6 @@ static const Row kVisualRows[] = {
 	{ROW_SLIDER, "Screen Shake", &gSave.shake, 0, 100, nullptr, 0, 100, ACT_NONE, "How hard big hits shake the field.", ""},
 #if PORT_TWO_SCREENS
 	{ROW_CHOICE, "Background", &gSave.bgDetail, 0, 1, kBgNames, 0, 0, ACT_NONE, "Simple draws fewer scenery layers", "and helps an Old 3DS."},
-	{ROW_CHOICE, "Top Screen Fruit", &gSave.topFruit, 0, 1, kOffOn, 0, 0, ACT_NONE, "High throws fly up onto the top", "screen, where 3D depth shows."},
 #endif
 	{ROW_CHOICE, "3D Detail", &gSave.detail, 0, 1, kDetailNames, 0, 0, ACT_NONE, "Polygons per fruit, 3D style only.", PORT_DETAIL_HINT},
 	{ROW_CHOICE, "Slice Style", &gSave.sliceStyle, 0, 1, kSliceNames, 0, 0, ACT_NONE, "Exact cuts along your swipe.", "Quick uses ready-made halves."},
@@ -348,6 +350,8 @@ static constexpr float kTrackX0 = 162, kTrackX1 = 258;
 
 static int sSection = 0;
 static float sScroll = 0;
+static int sTouchStartX;
+static u8 sSliderStart;
 static int sArmed = -1;  // a reset row waiting for its second tap
 static bool sDirty = false;
 enum TouchMode { TOUCH_NONE, TOUCH_BACK, TOUCH_SLIDER, TOUCH_ROW };
@@ -488,6 +492,20 @@ static void updateSection(const Input& in, bool wasTouching) {
 		sArmed = -1;
 	}
 	if (focus < 0 && (in.repeat & (KEY_UP | KEY_DOWN))) sScroll = 0;
+#if PORT_MOUSE
+	sScroll -= in.wheel * kRowH;
+	if (in.hovering) {
+		if (hit(kBack, in.tx, in.ty)) {
+			focus = -1;
+		} else if (in.ty >= kListTop) {
+			int row = (int)((in.ty - kListTop + sScroll) / kRowH);
+			if (row >= 0 && row < sec.count) {
+				if (row != focus) sArmed = -1;
+				focus = row;
+			}
+		}
+	}
+#endif
 	if (focus >= 0) {
 		const Row& r = sec.rows[focus];
 		if (in.repeat & KEY_LEFT) adjustRow(r, -1);
@@ -525,6 +543,9 @@ static void updateSection(const Input& in, bool wasTouching) {
 					const Row& r = sec.rows[row];
 					if (r.kind == ROW_SLIDER && in.tx >= kTrackX0 - 12 && in.tx <= kTrackX1 + 12) {
 						sTouchMode = TOUCH_SLIDER;
+						sTouchStartX = in.tx;
+						sTouchStartY = in.ty;
+						sSliderStart = *r.value;
 						setSliderFromTouch(r, in.tx);
 					} else {
 						sTouchMode = TOUCH_ROW;
@@ -540,7 +561,18 @@ static void updateSection(const Input& in, bool wasTouching) {
 				sPressed = -1;
 			}
 		} else if (sTouchMode == TOUCH_SLIDER) {
-			setSliderFromTouch(sec.rows[sTouchRow], in.tx);
+			// A mostly upward or downward drag means the list, so the slider goes back to where it was.
+			int dx = in.tx - sTouchStartX, dy = in.ty - sTouchStartY;
+			if (abs(dy) > 8 && abs(dy) > abs(dx) * 2) {
+				*sec.rows[sTouchRow].value = sSliderStart;
+				audio::refreshVolumes();
+				sTouchMode = TOUCH_ROW;
+				sScrollStart = sScroll;
+				sTouchMoved = true;
+				sScroll = sScrollStart - dy;
+			} else {
+				setSliderFromTouch(sec.rows[sTouchRow], in.tx);
+			}
 		} else if (sTouchMode == TOUCH_ROW) {
 			int dy = in.ty - sTouchStartY;
 			if (dy > 6 || dy < -6) sTouchMoved = true;
@@ -822,7 +854,7 @@ static void drawTopContent(Screen screen) {
 				{"Sound, music and menu volume.", ""},
 				{PORT_VISUALS_HINT, "effects and speed savers."},
 				{PORT_GAMEPLAY_HINT, "game plays."},
-				{"Speed test, and resetting scores.", ""},
+				{PORT_DATA_HINT, ""},
 			};
 			int f = sFocus[SCREEN_OPTIONS];
 			gfx::setDepth(1.0f);
@@ -1062,11 +1094,14 @@ static void drawBottomContent(Screen screen) {
 			drawHeader("How to Play");
 			drawBackArrow(true, sPressed == 0);
 			gfx::image(SHEET_SPRITES, sprites_plank_idx, 8, 48, 304, 186, COL_PLANK);
+			// One size for every line, narrow enough to stay clear of the plank's screws.
+			float s = 0.36f;
 			for (int i = 0; i < 7; i++) {
-				float s = 0.36f, w = gfx::textWidth(kLines[i], s);
-				if (w > 284) s *= 284 / w;
-				gfx::text(kLines[i], 160, 58 + i * 24, s, COL_CREAM, ALIGN_CENTER);
+				float w = gfx::textWidth(kLines[i], s);
+				if (w > 262) s *= 262 / w;
 			}
+			for (int i = 0; i < 7; i++)
+				gfx::text(kLines[i], 160, 58 + i * 24, s, COL_CREAM, ALIGN_CENTER);
 			break;
 		}
 #if PORT_TWO_SCREENS
@@ -1376,9 +1411,10 @@ static void drawFrame() {
 		sGame.drawHud();
 #if PORT_PAUSE_BUTTON
 		if (sScreen == SCREEN_GAME) {
-			gfx::image(SHEET_SPRITES, sprites_plank_idx, kPauseSign.x + 3, kPauseSign.y + 2, 28, 28, COL_PLANK);
-			gfx::rect(kPauseSign.x + 12, kPauseSign.y + 9, 3, 14, COL_CREAM);
-			gfx::rect(kPauseSign.x + 19, kPauseSign.y + 9, 3, 14, COL_CREAM);
+			// Half see-through, so fruit passing behind it stays easy to see.
+			gfx::image(SHEET_SPRITES, sprites_plank_idx, kPauseSign.x + 3, kPauseSign.y + 3, 30, 30, withAlpha(COL_PLANK, 0.55f));
+			gfx::rect(kPauseSign.x + 12, kPauseSign.y + 10, 4, 16, withAlpha(COL_CREAM, 0.55f));
+			gfx::rect(kPauseSign.x + 20, kPauseSign.y + 10, 4, 16, withAlpha(COL_CREAM, 0.55f));
 		}
 #endif
 		if (sScreen == SCREEN_PAUSE) gfx::rect(kFillX, 0, kFillW, 240, rgba(30, 18, 10, 150));
@@ -1482,17 +1518,22 @@ void app::notifySuspended() { sSuspended = true; }
 
 bool app::inFieldView() { return sScreen == SCREEN_GAME; }
 
-bool app::frame(Input& in) {
+bool app::frame(Input& in, int steps) {
+	for (int i = 0; i < steps; i++) {
 #ifdef AUTOTEST
-	autotestInput(in);
-	if (autotestDone()) return false;
+		autotestInput(in);
+		if (autotestDone()) return false;
 #elif PORT_3DS
-	// START+SELECT from the title quits, for builds launched from the Homebrew Launcher.
-	if (sScreen == SCREEN_TITLE && (in.held & KEY_START) && (in.held & KEY_SELECT)) return false;
+		// START+SELECT from the title quits, for builds launched from the Homebrew Launcher.
+		if (sScreen == SCREEN_TITLE && (in.held & KEY_START) && (in.held & KEY_SELECT)) return false;
 #endif
 
-	updateFrame(in, sWasTouching);
-	sWasTouching = in.touching;
+		updateFrame(in, sWasTouching);
+		sWasTouching = in.touching;
+		// A press belongs to the first step only.
+		in.down = 0;
+		in.repeat = 0;
+	}
 
 	// New scenery, boards and models load here, between frames.
 	gfx::sync();

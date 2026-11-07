@@ -22,6 +22,7 @@ bool init();  // false sends the game to the 2D art style
 void shutdown();
 void* alloc(u32 bytes);  // memory the renderer can read meshes from
 void release(void* p);
+void flush(const void* p, u32 bytes);  // the CPU just wrote this mesh data, and the renderer is about to read it
 void begin(float screenW, float stereo);
 void end();
 void drawIndexed(int mesh, const m3d::PartData& d, const m3d::Pose& pose);

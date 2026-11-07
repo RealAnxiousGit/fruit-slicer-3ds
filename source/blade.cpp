@@ -126,4 +126,15 @@ void Blade::draw() const {
 		prevCol = col;
 		prevCore = core;
 	}
+	// A pointed tip, so the head of the stroke doesn't end in a flat edge.
+	const Point& last = trail[(head - 1 + kTrail) % kTrail];
+	const Point& before = trail[(head - 2 + kTrail) % kTrail];
+	float dx = last.x - before.x, dy = last.y - before.y;
+	float len = sqrtf(dx * dx + dy * dy);
+	if (len < 0.01f) return;
+	float wx = prevLx - last.x, wy = prevLy - last.y;
+	float reach = sqrtf(wx * wx + wy * wy) * 1.8f;
+	float tipX = last.x + dx / len * reach, tipY = last.y + dy / len * reach;
+	gfx::tri(prevLx, prevLy, prevCol, prevRx, prevRy, prevCol, tipX, tipY, prevCol);
+	gfx::tri(last.x + wx * 0.45f, last.y + wy * 0.45f, prevCore, last.x - wx * 0.45f, last.y - wy * 0.45f, prevCore, tipX, tipY, prevCore);
 }

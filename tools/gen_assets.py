@@ -363,10 +363,10 @@ def spr_bomb():
     # Naval-mine silhouette with stubby horns and a warning light.
     for i in range(8):
         a = i * math.pi / 4 + math.pi / 8
-        x, y = 32 + math.cos(a) * 25, 34 + math.sin(a) * 25
-        d.line([32 * SS, 34 * SS, x * SS, y * SS], fill=(60, 54, 84, 255), width=int(6 * SS))
+        x, y = 32 + math.cos(a) * 24, 31 + math.sin(a) * 24
+        d.line([32 * SS, 31 * SS, x * SS, y * SS], fill=(60, 54, 84, 255), width=int(6 * SS))
         el(d, x, y, 3.6, 3.6, (214, 62, 52, 255))
-    el(d, 32, 34, 20, 20, (46, 42, 70, 255))
+    el(d, 32, 31, 20, 20, (46, 42, 70, 255))
     img = shade(img, light=(180, 190, 255, 90), dark=(0, 0, 0, 80))
     d = ImageDraw.Draw(img)
     # Hazard band
@@ -375,9 +375,9 @@ def spr_bomb():
     for i in range(-3, 4):
         x = 32 + i * 9
         col = (250, 202, 44, 255) if i % 2 == 0 else (30, 28, 44, 255)
-        bd.rectangle([(x - 4.5) * SS, 30 * SS, (x + 4.5) * SS, 38 * SS], fill=col)
+        bd.rectangle([(x - 4.5) * SS, 27 * SS, (x + 4.5) * SS, 35 * SS], fill=col)
     disc = Image.new("L", img.size, 0)
-    el(ImageDraw.Draw(disc), 32, 34, 20, 20, 255)
+    el(ImageDraw.Draw(disc), 32, 31, 20, 20, 255)
     band.putalpha(ImageChops.multiply(mask_of(band), disc))
     img.alpha_composite(band)
     return shrink(sticker(img, 1.8))

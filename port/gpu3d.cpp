@@ -54,6 +54,7 @@ void shutdown() {
 
 void* alloc(u32 bytes) { return linearAlloc(bytes); }
 void release(void* p) { linearFree(p); }
+void flush(const void* p, u32 bytes) { GSPGPU_FlushDataCache(p, bytes); }
 
 void begin(float screenW, float stereo) {
 	C2D_Flush();
@@ -102,6 +103,7 @@ static void setPose(const Pose& p) {
 }
 
 void drawIndexed(int, const PartData& d, const Pose& pose) {
+	if (!gpuHasRoom()) return;
 	setPose(pose);
 	C3D_BufInfo* buf = C3D_GetBufInfo();
 	BufInfo_Init(buf);
@@ -111,6 +113,7 @@ void drawIndexed(int, const PartData& d, const Pose& pose) {
 }
 
 void drawCut(int, const Vertex* v, u32 count, u32, const Pose& pose) {
+	if (!gpuHasRoom()) return;
 	setPose(pose);
 	C3D_BufInfo* buf = C3D_GetBufInfo();
 	BufInfo_Init(buf);
