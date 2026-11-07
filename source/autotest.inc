@@ -23,6 +23,7 @@ static float sBotX, sBotY, sBotDX, sBotDY;
 static int sBotTapFrames = 0;
 static bool sBotDone = false;
 static int sBotTapX, sBotTapY;
+static bool sBotSwipe = false;  // menu signs need a swipe across them; settings rows take a tap
 static u32 sBotModeFrames = 0;
 #if defined(BOT_ONLY) || defined(TEST_SPEED) || defined(BOT_SHOTS) || defined(TEST_BALANCE)
 static int sBotMenuStep = 100;
@@ -36,12 +37,14 @@ static void botTap(const Button& b) {
 	sBotTapX = (int)(b.x + b.w / 2);
 	sBotTapY = (int)(b.y + b.h / 2);
 	sBotTapFrames = 8;
+	sBotSwipe = true;
 }
 
 static void botTapXY(int x, int y) {
 	sBotTapX = x;
 	sBotTapY = y;
 	sBotTapFrames = 8;
+	sBotSwipe = false;
 }
 
 #ifdef BOT_TOUR
@@ -114,7 +117,7 @@ static void autotestInput(Input& in) {
 		sBotTapFrames--;
 		if (sBotTapFrames > 2) {
 			in.touching = true;
-			in.tx = sBotTapX;
+			in.tx = sBotSwipe ? sBotTapX - 18 + (7 - sBotTapFrames) * 9 : sBotTapX;
 			in.ty = sBotTapY;
 		}
 		return;
@@ -217,6 +220,26 @@ static void autotestInput(Input& in) {
 		in.ty = 112 + (int)(cosf(sBotModeFrames * 0.31f) * 18);
 		return;
 	}
+#ifdef BOT_STICK
+	// Stick only: steer the blade point at the next fruit and hold the trigger near it, never near a bomb.
+	{
+		const Obj* t = sGame.botTarget(false);
+		if (!t) return;
+		// Aim where the fruit will be by the time the point gets there, at full push: a player flicks.
+		float dx = t->x - sPointX, dy = t->y - sPointY, d = sqrtf(dx * dx + dy * dy) + 0.01f;
+		float lead = clampf(d / 600, 0.03f, 0.3f);
+		dx += t->vx * lead;
+		dy += t->vy * lead;
+		d = sqrtf(dx * dx + dy * dy) + 0.01f;
+		in.stickX = dx / d;
+		in.stickY = dy / d;
+		bool bombNear = false;
+		for (const auto& o : sGame.objs)
+			if (o.on && o.kind == OBJ_BOMB && fabsf(o.x - sPointX) < 50 && fabsf(o.y - sPointY) < 50) bombNear = true;
+		in.stickSlice = d < 60 && !bombNear;
+		return;
+	}
+#endif
 #if defined(TEST_BALANCE)
 	bool suicide = false;
 #elif defined(TEST_SEEKBOMB)

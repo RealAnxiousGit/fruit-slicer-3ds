@@ -530,6 +530,18 @@ def build_audio():
     write_pcm("finale_rise", finale_rise(), s)
     write_pcm("finale_hit", finale_hit(), s)
     write_pcm("finale_burst", finale_burst(), s)
+    # A coin thrown up: a short metallic ting that wobbles as it spins.
+    coin = np.zeros(n_of(0.34))
+    place(coin, bell(2350, 0.3), 0)
+    place(coin, bell(3170, 0.2), 0.012, 0.45)
+    t = np.arange(len(coin)) / s
+    coin *= 0.55 + 0.45 * np.abs(np.cos(2 * np.pi * 9 * t))
+    write_pcm("coin", norm(coin, 0.46), s)
+    # A coin caught: a bright two-note plink.
+    plink = np.zeros(n_of(0.5))
+    place(plink, bell(1976, 0.22), 0)
+    place(plink, bell(2637, 0.34), 0.055)
+    write_pcm("plink", norm(reverb_tail(plink, 0.5, 0.18), 0.6), s)
 
     # Original tracks: all slow, soft and major-leaning.
     menu = [[60, 64, 67, 71, 74], [57, 60, 64, 67, 71], [65, 69, 72, 76], [55, 59, 62, 67, 69]]

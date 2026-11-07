@@ -412,6 +412,45 @@ def spr_power(kind):
     return shrink(sticker(img, 1.8))
 
 
+COIN_GOLD = (246, 196, 62, 255)
+COIN_DEEP = (214, 150, 34, 255)
+COIN_LIGHT = (255, 232, 140, 255)
+
+
+def spr_coin(back=False):
+    """The coin, face or back: gold, with an apple stamped on the face and a leaf ring on the back."""
+    img = canvas(CELL)
+    d = ImageDraw.Draw(img)
+    el(d, 32, 32, 21, 21, COIN_DEEP)
+    el(d, 32, 32, 17.5, 17.5, COIN_GOLD)
+    if not back:
+        # The stamp: an apple in a deeper gold, lit from the top left.
+        el(d, 32.6, 34.6, 9.6, 9.0, COIN_DEEP)
+        el(d, 31.4, 33.4, 9.0, 8.4, COIN_LIGHT)
+        el(d, 32, 34, 8.4, 7.8, COIN_GOLD)
+        d.line([32 * SS, 26 * SS, 33.5 * SS, 21.5 * SS], fill=COIN_DEEP, width=int(2.2 * SS))
+        poly(d, [(34, 23.5), (40, 20.5), (38.5, 25)], COIN_DEEP)
+    else:
+        # The back: a ring of little leaves round a plain centre.
+        for i in range(10):
+            a = i * math.pi / 5
+            el(d, 32 + math.cos(a) * 12.5, 32 + math.sin(a) * 12.5, 2.4, 2.4, COIN_DEEP)
+        el(d, 32, 32, 6.5, 6.5, COIN_LIGHT)
+        el(d, 32.5, 32.5, 5.5, 5.5, COIN_GOLD)
+    img = shade(img, light=(255, 255, 230, 110))
+    return shrink(sticker(img, 1.6))
+
+
+def spr_coin_rim():
+    """The coin edge-on: a narrow milled strip, shown while the coin turns through its edge."""
+    img = canvas(16, CELL)
+    d = ImageDraw.Draw(img)
+    d.rounded_rectangle([5 * SS, 11 * SS, 11 * SS, 53 * SS], radius=2.5 * SS, fill=COIN_DEEP)
+    for y in range(13, 52, 3):
+        d.line([6 * SS, y * SS, 10 * SS, y * SS], fill=COIN_LIGHT, width=int(1.1 * SS))
+    return shrink(sticker(img, 1.4))
+
+
 def spr_splat(seed):
     rng = random.Random(seed)
     img = canvas(CELL)
@@ -828,6 +867,9 @@ def build_graphics():
         ("ic_one", spr_icon("one")),
         ("ic_mine", spr_icon("mine")),
         ("ic_chain", spr_icon("chain")),
+        ("coin", spr_coin()),
+        ("coin_back", spr_coin(True)),
+        ("coin_rim", spr_coin_rim()),
     ]
     write_sheet("sprites", sprites)
     write_sheet("logo", [("logo", spr_logo())])

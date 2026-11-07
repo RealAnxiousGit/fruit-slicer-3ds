@@ -67,6 +67,8 @@ int main() {
 		return 1;
 	}
 	hidSetRepeatParameters(20, 5);
+	// The New 3DS C-Stick comes through ir:rst. An Old 3DS (or a Circle Pad Pro) just goes without it.
+	bool cstick = gIsNew3ds && R_SUCCEEDED(irrstInit());
 	aptHook(&sAptCookie, onApt, nullptr);
 	gRng.s = (u32)osGetTime() | 1;
 
@@ -74,6 +76,7 @@ int main() {
 
 	while (aptMainLoop()) {
 		hidScanInput();
+		if (cstick) irrstScanInput();
 		Input in{};
 		in.down = hidKeysDown();
 		in.held = hidKeysHeld();
@@ -85,9 +88,23 @@ int main() {
 			in.tx = tp.px;
 			in.ty = tp.py;
 		}
+		// Stick slicing: the Circle Pad, plus the C-Stick on a New 3DS. A, L or R slices.
+		circlePosition cp;
+		hidCircleRead(&cp);
+		float sx = cp.dx / 150.0f, sy = -cp.dy / 150.0f;
+		if (cstick) {
+			circlePosition cs;
+			irrstCstickRead(&cs);
+			sx += cs.dx / 150.0f;
+			sy -= cs.dy / 150.0f;
+		}
+		in.stickX = sx < -1 ? -1 : (sx > 1 ? 1 : sx);
+		in.stickY = sy < -1 ? -1 : (sy > 1 ? 1 : sy);
+		in.stickSlice = (in.held & (KEY_A | KEY_L | KEY_R)) != 0;
 		if (!app::frame(in)) break;
 	}
 
+	if (cstick) irrstExit();
 	aptUnhook(&sAptCookie);
 	app::shutdown();
 	cfguExit();

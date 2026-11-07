@@ -45,6 +45,8 @@ static float sTime = 0;
 static float sFps = 60;
 static u64 sLastTick = 0;
 static bool sWasTouching = false;
+static float sPointX = kFieldW * 0.5f, sPointY = 150;  // the stick's blade point, in field units
+static float sPointShow = 0;  // seconds the point stays up after the stick was last used
 
 // ---------------------------------------------------------------- transitions
 // Menus slide sideways; anything entering or leaving a game fades through black.
@@ -58,8 +60,11 @@ static float sFade = 0;       // 0 clear, 1 black
 static bool sFadingOut = false;
 static void (*sFadeAction)() = nullptr;
 
+static void pickSplash();
+
 static void goTo(Screen to, float dir) {
 	sPressed = -1;
+	if (to == SCREEN_TITLE) pickSplash();
 	// These menus open on their first real choice, not on the back arrow.
 	if ((to == SCREEN_MODES || to == SCREEN_OPTIONS) && sFocus[to] == 0) sFocus[to] = 1;
 	if (!gSave.transitions) {
@@ -133,11 +138,170 @@ static void drawPlank(float x, float y, float w, float h, bool focused, bool pre
 	if (focused) gfx::sign(sprites_plank_focus_idx, x - 2, y - 2 + dy, w + 4, h + 4, COL_ACCENT);
 }
 
-static void drawSign(const Button& b, const char* label, bool focused, bool pressed, float scale = 0.56f, int icon = -1) {
+// ---------------------------------------------------------------- menu fruit
+// A sign that takes you somewhere carries a fruit, always the same one for the same choice, and a swipe
+// across the sign cuts it to pick it. The back sign carries a small berry on every screen.
+struct MenuFruit {
+	int whole, left, right, mesh;
+	u32 juice;
+};
+enum { MF_MELON, MF_ORANGE, MF_PLUM, MF_LEMON, MF_BERRY, MF_APPLE, MF_PEAR, MF_PEACH, MF_KIWI, MF_GOLD, MF_PINEAPPLE, MF_COCONUT };
+static const MenuFruit kMenuFruit[] = {
+	{fruit_melon_idx, fruit_melon_l_idx, fruit_melon_r_idx, m3d::MESH_MELON, 0xFF4A3CF0u},
+	{fruit_orange_idx, fruit_orange_l_idx, fruit_orange_r_idx, m3d::MESH_ORANGE, 0xFF2E9CFFu},
+	{fruit_plum_idx, fruit_plum_l_idx, fruit_plum_r_idx, m3d::MESH_PLUM, 0xFF9A4AC2u},
+	{fruit_lemon_idx, fruit_lemon_l_idx, fruit_lemon_r_idx, m3d::MESH_LEMON, 0xFF52E6FFu},
+	{fruit_berry_idx, fruit_berry_l_idx, fruit_berry_r_idx, m3d::MESH_BERRY, 0xFF5A32F0u},
+	{fruit_apple_idx, fruit_apple_l_idx, fruit_apple_r_idx, m3d::MESH_APPLE, 0xFF6AD8F5u},
+	{fruit_pear_idx, fruit_pear_l_idx, fruit_pear_r_idx, m3d::MESH_PEAR, 0xFF8AEBDDu},
+	{fruit_peach_idx, fruit_peach_l_idx, fruit_peach_r_idx, m3d::MESH_PEACH, 0xFF80B0FFu},
+	{fruit_kiwi_idx, fruit_kiwi_l_idx, fruit_kiwi_r_idx, m3d::MESH_KIWI, 0xFF52D69Au},
+	{fruit_gold_idx, fruit_gold_l_idx, fruit_gold_r_idx, m3d::MESH_GOLD, 0xFF40D8FFu},
+	{fruit_pineapple_idx, fruit_pineapple_l_idx, fruit_pineapple_r_idx, m3d::MESH_PINEAPPLE, 0xFF50E0FFu},
+	{fruit_coconut_idx, fruit_coconut_l_idx, fruit_coconut_r_idx, m3d::MESH_COCONUT, 0xFFF0F5FFu},
+};
+
+static int fruitFor(const char* label) {
+	static const struct {
+		const char* label;
+		int fruit;
+	} kMap[] = {
+		{"Play", MF_MELON}, {"Options", MF_ORANGE}, {"Credits", MF_PLUM}, {"How to Play", MF_LEMON}, {"Shop", MF_GOLD},
+		{"Resume", MF_APPLE}, {"Main Menu", MF_PEAR}, {"Again", MF_PEACH}, {"Modes", MF_KIWI},
+		{"Audio", MF_APPLE}, {"Visuals", MF_PEACH}, {"Gameplay", MF_PINEAPPLE}, {"Controls", MF_KIWI}, {"Display", MF_COCONUT}, {"Accessibility", MF_PEAR}, {"Scores and Data", MF_PLUM},
+	};
+	if (!label) return MF_BERRY;
+	for (const auto& m : kMap)
+		if (strcmp(m.label, label) == 0) return m.fruit;
+	return MF_APPLE;
+}
+
+// part: 0 whole, 1 left half, 2 right half. size is the fruit's width on screen.
+static void drawMenuFruit(int f, float x, float y, float size, float spin, float rot = 0, int part = 0) {
+	const MenuFruit& m = kMenuFruit[f];
+	float s = size / 48.0f;
+	if (gSave.artStyle == ART_3D && m3d::ready()) {
+		m3d::begin(320, gfx::stereoPerZ());
+		m3d::Pose pose = {x, y, 0, 0.25f, spin, rot, s, 0, 0, 0};
+		m3d::draw(m.mesh, (m3d::Part)part, pose);
+		m3d::end();
+	} else {
+		gfx::sprite(SHEET_FRUIT, part == 0 ? m.whole : (part == 1 ? m.left : m.right), x, y, s, s, rot);
+	}
+}
+
+// The cut a swipe (or the confirm button) made. The choice acts a moment later, once the fruit has split.
+static constexpr float kCutDelay = 0.2f, kCutLife = 0.75f;
+static struct {
+	bool on, pending;
+	float t;
+	const Button* btn;
+	int index, fruit;
+	float x, y, ang;
+	Screen screen;
+} sCut;
+static Screen sDrawing = SCREEN_LOADING;  // the screen whose signs are being drawn, during a slide too
+static Blade sMenuBlade;                  // the trail a swipe leaves across the menus
+static bool menuBladeShown() {
+	return sScreen == SCREEN_TITLE || sScreen == SCREEN_MODES || sScreen == SCREEN_OPTIONS || sScreen == SCREEN_CREDITS || sScreen == SCREEN_HOWTO || sScreen == SCREEN_PAUSE || sScreen == SCREEN_RESULT;
+}
+
+static bool fruit3D() { return gSave.artStyle == ART_3D && m3d::ready(); }
+
+// A menu choice is a fruit standing where its sign's box is. With 3D Models its name circles it like a
+// ring; with 2D Stickers the name sits underneath, so the fruit sits a little higher.
+static void fruitSpot(const Button& b, float* x, float* y, float* d) {
+	*x = b.x + b.w * 0.5f;
+	if (fruit3D()) {
+		*d = fminf(b.h * 0.62f, 42);
+		*y = b.y + b.h * 0.46f;
+	} else {
+		*d = fminf(b.h - 18, 40);
+		*y = b.y + 2 + *d * 0.5f;
+	}
+}
+static float fruitSize(const Button& b) {
+	float x, y, d;
+	fruitSpot(b, &x, &y, &d);
+	return d;
+}
+
+// The name on a tilted ring round the fruit, turning slowly. Letters on the far side are smaller and
+// dimmer, and pass behind the fruit: back is drawn before the fruit, front after it.
+static void drawRingText(const char* label, float cx, float cy, float d, float maxW, float scale, bool back) {
+	int n = (int)strlen(label);
+	if (n == 0 || n > 31) return;
+	float w = gfx::textWidth(label, scale);
+	// Wide enough that the whole name fits on the near half of the ring, so it reads in one go.
+	float rx = fmaxf(d * 0.5f + 10, w / 2.0f);
+	if (rx > maxW * 0.5f - 4) rx = maxW * 0.5f - 4;
+	float room = rx * 2.0f;
+	if (w > room) {
+		scale *= room / w;
+		w = room;
+	}
+	float ry = rx * 0.22f;
+	// Calm Effects stops the turning and holds the name facing front.
+	float spin = gSave.calmFx ? 0 : sTime * 0.5f;
+	// The name goes round as many times as fits, evenly spaced, so one copy always faces the player.
+	const float turn = 2 * 3.14159265f;
+	int copies = (int)(turn * rx / (w + 16 * scale));
+	if (copies < 1) copies = 1;
+	char one[2] = {0, 0};
+	float a = 0;
+	for (int k = 0; k < copies * n; k++) {
+		int i = k % n;
+		if (i == 0) {
+			// Letters run clockwise seen from above, so across the near side they read left to right.
+			a = 1.5707963f + spin + (k / n) * turn / copies + (w * 0.5f) / rx;
+		}
+		one[0] = label[i];
+		float adv = gfx::textWidth(one, scale);
+		float ang = a - (adv * 0.5f) / rx;
+		a -= adv / rx;
+		float s = sinf(ang);  // 1 at the front
+		if ((s < 0) != back) continue;
+		float depth = 0.5f + 0.5f * s;
+		float cs = scale * (0.78f + 0.22f * depth);
+		float px = cx + cosf(ang) * rx, py = cy + d * 0.18f + s * ry;
+		// Faint on the far side, where it reads backwards, and thinning out towards the edges where letters crowd.
+		float edge = clampf(fabsf(s) * 3, 0, 1);
+		u32 col = withAlpha(COL_CREAM, (s < 0 ? 0.18f : 1.0f) * edge);
+		gfx::text(one, px - gfx::textWidth(one, cs) * 0.5f, py - 20 * cs, cs, col);
+	}
+}
+
+static void drawFruitChoice(const Button& b, const char* label, bool focused, bool pressed, float scale, int fruit) {
+	float x, y, d;
+	fruitSpot(b, &x, &y, &d);
+	float dy = pressed ? 2 : 0;
+	bool cut = sCut.on && sCut.btn == &b;
+	if (focused) gfx::sprite(SHEET_SPRITES, sprites_ring_idx, x, y + dy, d / 34, d / 34, 0, withAlpha(COL_ACCENT, 0.9f));
+	float bob = focused && !gSave.calmFx ? sinf(sTime * 4) * 1.5f : 0;
+	float spin = sTime * 0.8f + b.x * 0.05f;
+	if (fruit3D()) {
+		float ts = scale * 0.9f;
+		drawRingText(label, x, y + dy, d, b.w, ts, true);
+		if (!cut) drawMenuFruit(fruit, x, y + dy + bob, d, spin);
+		drawRingText(label, x, y + dy, d, b.w, ts, false);
+	} else {
+		if (!cut) drawMenuFruit(fruit, x, y + dy + bob, d, spin);
+		float ts = 0.4f, w = gfx::textWidth(label, ts);
+		if (w > b.w - 6) ts *= (b.w - 6) / w;
+		gfx::text(label, x, y + d * 0.5f + 1 + dy, ts, focused ? COL_ACCENT : COL_CREAM, ALIGN_CENTER);
+	}
+}
+
+static void drawSign(const Button& b, const char* label, bool focused, bool pressed, float scale = 0.56f, int icon = -1, int fruit = -1) {
+	if (fruit >= 0) {
+		drawFruitChoice(b, label, focused, pressed, scale, fruit);
+		return;
+	}
 	drawPlank(b.x, b.y, b.w, b.h, focused, pressed);
 	float dy = pressed ? 2 : 0;
+	float lead = icon >= 0 ? 30 : 0;
 	float w = gfx::textWidth(label, scale);
-	float room = b.w - (icon >= 0 ? 52 : 22);
+	float room = b.w - 22 - lead;
 	if (w > room) scale *= room / w;
 	float cx = b.x + b.w * 0.5f + (icon >= 0 ? 12 : 0);
 	if (icon >= 0) gfx::sprite(SHEET_SPRITES, icon, b.x + 21, b.y + b.h * 0.5f + dy, 0.8f, 0.8f);
@@ -146,7 +310,10 @@ static void drawSign(const Button& b, const char* label, bool focused, bool pres
 
 static void drawBackArrow(bool focused, bool pressed) {
 	drawPlank(kBack.x, kBack.y, kBack.w, kBack.h, focused, pressed);
-	gfx::sprite(SHEET_SPRITES, sprites_arrow_back_idx, kBack.x + kBack.w * 0.5f, kBack.y + kBack.h * 0.5f + (pressed ? 2 : 0), 0.8f, 0.8f, 0, COL_CREAM);
+	float dy = pressed ? 2 : 0;
+	bool cut = sCut.on && sCut.index == 0 && sCut.screen == sDrawing;
+	if (!cut) drawMenuFruit(MF_BERRY, kBack.x + 14, kBack.y + kBack.h * 0.5f + dy, 18, sTime * 0.8f);
+	gfx::sprite(SHEET_SPRITES, sprites_arrow_back_idx, kBack.x + 32, kBack.y + kBack.h * 0.5f + dy, 0.55f, 0.55f, 0, COL_CREAM);
 }
 
 static void drawHeader(const char* title) {
@@ -239,25 +406,135 @@ static void dpadNav(const Button* btns, int n, u32 keys, int& focus) {
 	}
 }
 
+static void startCut(const Button* btns, int i, Screen screen, float ang) {
+	const Button& b = btns[i];
+	int fruit = i == 0 && !b.label ? MF_BERRY : (b.label ? fruitFor(b.label) : MF_BERRY);
+	bool hasFruit = i == 0 || screen != SCREEN_MODES;  // mode signs show their icon, not a fruit
+	sCut = {};
+	sCut.on = sCut.pending = true;
+	sCut.btn = &b;
+	sCut.index = i;
+	sCut.fruit = hasFruit ? fruit : -1;
+	sCut.screen = screen;
+	sCut.ang = ang;
+	if (i == 0 && !b.label) {
+		sCut.x = kBack.x + 15;
+		sCut.y = kBack.y + kBack.h * 0.5f;
+	} else if (hasFruit) {
+		float d;
+		fruitSpot(b, &sCut.x, &sCut.y, &d);
+	} else {
+		sCut.x = b.x + b.w * 0.5f;
+		sCut.y = b.y + b.h * 0.5f;
+	}
+	float v = gSave.menuSfx / 100.0f;
+	audio::play(SFX_SWISH1, 0.7f * v);
+	audio::play(SFX_JUICY0, 0.8f * v, 0, 1.1f);
+}
+
+// A swipe across a sign picks it. A plain tap only counts with a mouse, with Slice Assist, or on the
+// back sign, since on a touch screen it may be a stray touch. Taps keep working on settings rows.
+static int sliceButtons(const Button* btns, int n, Screen screen, const Input& in, bool wasTouching, int& focus) {
+	static float lastX, lastY, length;
+	static int downOn = -1;
+	static bool done, mouse;
+	if (in.hovering) mouse = true;
+	const float minSwipe = gSave.sliceAssist ? 12.0f : 30.0f;
+	if (in.touching) {
+		if (!wasTouching) {
+			lastX = in.tx;
+			lastY = in.ty;
+			length = 0;
+			done = false;
+			downOn = sPressed = -1;
+			for (int i = 0; i < n; i++)
+				if (hit(btns[i], in.tx, in.ty)) downOn = sPressed = focus = i;
+			return -1;
+		}
+		if (sPressed >= 0 && !hit(btns[sPressed], in.tx, in.ty)) sPressed = -1;
+		float dx = in.tx - lastX, dy = in.ty - lastY, d = sqrtf(dx * dx + dy * dy);
+		if (done || d < 0.5f) return -1;
+		// Walked in small steps, so a fast swipe can't jump over a sign between two frames.
+		int steps = (int)(d / 4) + 1;
+		for (int s = 1; s <= steps; s++) {
+			float px = lastX + dx * s / steps, py = lastY + dy * s / steps;
+			length += d / steps;
+			if (length < minSwipe) continue;
+			for (int i = 0; i < n; i++) {
+				if (!hit(btns[i], (int)px, (int)py)) continue;
+				done = true;
+				sPressed = -1;
+				focus = i;
+				startCut(btns, i, screen, atan2f(dy, dx));
+				lastX = in.tx;
+				lastY = in.ty;
+				return -1;
+			}
+		}
+		lastX = in.tx;
+		lastY = in.ty;
+	} else if (wasTouching) {
+		bool tapOk = mouse || gSave.sliceAssist || downOn == 0;
+		if (!done && downOn >= 0 && length < minSwipe && tapOk && hit(btns[downOn], (int)lastX, (int)lastY))
+			startCut(btns, downOn, screen, -0.6f);
+		sPressed = downOn = -1;
+		done = false;
+	}
+	return -1;
+}
+
 static int menuInput(const Button* btns, int n, Screen screen, const Input& in, bool wasTouching) {
 	int& focus = sFocus[screen];
+	if (sCut.pending) {
+		// The choice acts once the fruit has split. If the screen changed some other way, it's dropped.
+		if (sCut.screen != screen) sCut.pending = false;
+		else if (sCut.t >= kCutDelay) {
+			sCut.pending = false;
+			return sCut.index;
+		}
+		return -1;
+	}
 	dpadNav(btns, n, in.repeat, focus);
 #if PORT_MOUSE
 	if (in.hovering)
 		for (int i = 0; i < n; i++)
 			if (hit(btns[i], in.tx, in.ty)) focus = i;
 #endif
-	int tapped = touchButtons(btns, n, in, wasTouching, focus);
-	if (tapped < 0 && (in.down & KEY_A)) {
-		tapped = focus;
-		audio::click();
+	sliceButtons(btns, n, screen, in, wasTouching, focus);
+	if (!sCut.pending && (in.down & KEY_A) && focus >= 0 && focus < n) startCut(btns, focus, screen, -0.6f);
+	return -1;
+}
+
+// The halves and juice of a cut sign, drawn over the screen it was on.
+static void drawCut(Screen screen) {
+	if (!sCut.on || sCut.screen != screen) return;
+	float t = sCut.t, a = 1 - clampf(t / kCutLife, 0, 1);
+	float r0 = sCut.ang - 1.5707963f, ux = cosf(r0), uy = sinf(r0);
+	u32 juice = sCut.fruit >= 0 ? kMenuFruit[sCut.fruit].juice : COL_ACCENT;
+	// The stroke itself, for the first moment: a thin bright wedge along the cut.
+	if (t < 0.16f) {
+		float k = 1 - t / 0.16f, ca = cosf(sCut.ang), sa = sinf(sCut.ang), len = 46, w = 2.5f * k;
+		u32 c = withAlpha(COL_CREAM, k);
+		gfx::tri(sCut.x - ca * len, sCut.y - sa * len, withAlpha(COL_CREAM, 0), sCut.x + ux * w, sCut.y + uy * w, c, sCut.x - ux * w, sCut.y - uy * w, c);
+		gfx::tri(sCut.x + ca * len, sCut.y + sa * len, withAlpha(COL_CREAM, 0), sCut.x + ux * w, sCut.y + uy * w, c, sCut.x - ux * w, sCut.y - uy * w, c);
 	}
-	return tapped;
+	int drops = gSave.calmFx ? 5 : 12;
+	for (int k = 0; k < drops; k++) {
+		float th = k * 2.39996f + sCut.ang, v = 50 + (k * 37 % 90);
+		float px = sCut.x + cosf(th) * v * t, py = sCut.y + sinf(th) * v * t + 260 * t * t;
+		float s = 2 + (k % 3);
+		gfx::rect(px - s * 0.5f, py - s * 0.5f, s, s, withAlpha(juice, a));
+	}
+	if (sCut.fruit < 0) return;
+	float size = sCut.index == 0 ? 18 : fruitSize(*sCut.btn);
+	float off = 4 + 70 * t, fall = 300 * t * t, spin = gSave.calmFx ? 0 : t * 3;
+	drawMenuFruit(sCut.fruit, sCut.x - ux * off, sCut.y - uy * off + fall, size, 0, r0 - spin, 1);
+	drawMenuFruit(sCut.fruit, sCut.x + ux * off, sCut.y + uy * off + fall, size, 0, r0 + spin, 2);
 }
 
 // ---------------------------------------------------------------- settings rows
 enum RowKind { ROW_SLIDER, ROW_CHOICE, ROW_ACTION };
-enum RowAction { ACT_NONE, ACT_RESET_AUDIO, ACT_RESET_VISUALS, ACT_RESET_GAMEPLAY, ACT_RESET_SCORES, ACT_RESET_ALL, ACT_SPEED_TEST, ACT_APPLY_DISPLAY, ACT_RESET_DISPLAY, ACT_RESET_ACCESS };
+enum RowAction { ACT_NONE, ACT_RESET_AUDIO, ACT_RESET_VISUALS, ACT_RESET_GAMEPLAY, ACT_RESET_SCORES, ACT_RESET_ALL, ACT_SPEED_TEST, ACT_APPLY_DISPLAY, ACT_RESET_DISPLAY, ACT_RESET_ACCESS, ACT_RESET_CONTROLS };
 
 struct Row {
 	RowKind kind;
@@ -385,13 +662,21 @@ static const Row kAccessRows[] = {
 #if PORT_MOUSE
 	{ROW_CHOICE, "Slice Without Holding", &gSave.sliceNoHold, 0, 1, kOffOn, 0, 0, ACT_NONE, "Moving the mouse slices,", "with no button held."},
 #endif
-#if PORT_ANDROID
-	{ROW_CHOICE, "Vibration", &gSave.vibration, 0, 1, kOffOn, 0, 0, ACT_NONE, "A buzz on slices and bombs.", ""},
-#endif
 	{ROW_ACTION, "Reset Accessibility", nullptr, 0, 0, nullptr, 0, 0, ACT_RESET_ACCESS, "Puts these back to their defaults.", ""},
 };
 
-enum SectionId { SID_AUDIO, SID_VISUALS, SID_GAMEPLAY, SID_DISPLAY, SID_ACCESS, SID_DATA };
+static const char* const kStickStyleNames[] = {"Hold", "Flick"};
+static const Row kControlRows[] = {
+	{ROW_CHOICE, "Stick Slicing", &gSave.stickStyle, 0, 1, kStickStyleNames, 0, 0, ACT_NONE, PORT_STICK_HINT, "Flick: a fast move slices."},
+	{ROW_SLIDER, "Point Speed", &gSave.stickSpeed, 0, 100, nullptr, 50, 150, ACT_NONE, "How fast the stick moves", "the blade point."},
+	{ROW_CHOICE, "Snap Assist", &gSave.snapAssist, 0, 1, kOffOn, 0, 0, ACT_NONE, "Bends the point gently toward", "a fruit just ahead of it."},
+#if !PORT_3DS
+	{ROW_CHOICE, "Vibration", &gSave.vibration, 0, 1, kOffOn, 0, 0, ACT_NONE, PORT_VIBRATION_HINT, "on slices, misses and bombs."},
+#endif
+	{ROW_ACTION, "Reset Controls", nullptr, 0, 0, nullptr, 0, 0, ACT_RESET_CONTROLS, "Puts these back to their defaults.", ""},
+};
+
+enum SectionId { SID_AUDIO, SID_VISUALS, SID_GAMEPLAY, SID_CONTROLS, SID_DISPLAY, SID_ACCESS, SID_DATA };
 struct Section {
 	const char* title;
 	const Row* rows;
@@ -409,6 +694,7 @@ static const Section kSections[] = {
 	{"Visuals", kVisualRows, sizeof kVisualRows / sizeof(Row), SID_VISUALS, true, PORT_VISUALS_HINT, "effects and speed savers."},
 #endif
 	{"Gameplay", kGameplayRows, sizeof kGameplayRows / sizeof(Row), SID_GAMEPLAY, true, PORT_GAMEPLAY_HINT, "game plays."},
+	{"Controls", kControlRows, sizeof kControlRows / sizeof(Row), SID_CONTROLS, true, PORT_CONTROLS_HINT, "point speed and snap assist."},
 #if PORT_HAS_DISPLAY
 	{"Display", kDisplayRows, sizeof kDisplayRows / sizeof(Row), SID_DISPLAY, true, PORT_DISPLAY_HINT, PORT_DISPLAY_HINT2},
 #endif
@@ -598,6 +884,7 @@ static void rowAction(int index, const Row& r) {
 		case ACT_RESET_ALL: saveDefaults(false, SEC_ALL); break;
 		case ACT_RESET_DISPLAY: saveDefaults(true, SEC_DISPLAY); break;
 		case ACT_RESET_ACCESS: saveDefaults(true, SEC_ACCESS); break;
+		case ACT_RESET_CONTROLS: saveDefaults(true, SEC_CONTROLS); break;
 		default: break;
 	}
 #if PORT_HAS_DISPLAY
@@ -822,6 +1109,65 @@ static void drawHero(float x, float y, float scale, float depth) {
 	}
 }
 
+// ---------------------------------------------------------------- splash line
+static const char* const kSplash[] = {
+#include "splash_lines.inc"
+};
+static constexpr int kSplashCount = sizeof kSplash / sizeof kSplash[0];
+static int sSplash = 0;
+
+// A new line each time the title appears, never the same one twice running.
+static void pickSplash() {
+	static u32 seed = 0;
+	seed = seed * 1664525u + 1013904223u + (u32)(sTime * 1000.0f);
+	int next = (int)((seed >> 8) % kSplashCount);
+	if (next == sSplash) next = (next + 1) % kSplashCount;
+	sSplash = next;
+}
+
+// Tilted over the logo's lower right corner, gently pulsing. Text can't turn, so the letters step up
+// along the slope instead.
+static void drawTilted(const char* s, int len, float x, float y, float scale) {
+	const float slope = -0.22f;
+	char buf[64];
+	if (len > 63) len = 63;
+	memcpy(buf, s, len);
+	buf[len] = 0;
+	float cx = x - gfx::textWidth(buf, scale) * 0.5f;
+	char one[2] = {0, 0};
+	for (int i = 0; i < len; i++) {
+		one[0] = buf[i];
+		gfx::text(one, cx, y + (cx - x) * slope - 20 * scale, scale, COL_ACCENT);
+		cx += gfx::textWidth(one, scale);
+	}
+}
+
+// A long line breaks in two at the space nearest its middle, so every line stays readable.
+static void drawSplash(float x, float y) {
+	const char* s = kSplash[sSplash];
+	const float room = 140;
+	int len = (int)strlen(s), cut = -1;
+	float scale = 0.46f;
+	if (gfx::textWidth(s, scale) > room) {
+		for (int i = 0; i < len; i++)
+			if (s[i] == ' ' && (cut < 0 || abs(i - len / 2) < abs(cut - len / 2))) cut = i;
+	}
+	float pulse = gSave.calmFx ? 1 : 1 + 0.06f * sinf(sTime * 5.5f);
+	if (cut < 0) {
+		float w = gfx::textWidth(s, scale);
+		if (w > room) scale *= room / w;
+		drawTilted(s, len, x, y, scale * pulse);
+		return;
+	}
+	char first[64];
+	snprintf(first, sizeof first, "%.*s", cut, s);
+	float w = fmaxf(gfx::textWidth(first, scale), gfx::textWidth(s + cut + 1, scale));
+	if (w > room) scale *= room / w;
+	float gap = 9 * scale / 0.42f;
+	drawTilted(s, cut, x, y - gap, scale * pulse);
+	drawTilted(s + cut + 1, len - cut - 1, x + 6, y + gap, scale * pulse);
+}
+
 static void topPanel(float x, float y, float w, float h) {
 	gfx::setDepth(0.3f);
 	gfx::sign(sprites_plank_idx, x, y, w, h, COL_PLANK);
@@ -1010,7 +1356,18 @@ static void drawTopContent(Screen screen) {
 		case SCREEN_TITLE:
 			gfx::setDepth(1.2f);
 			gfx::sprite(SHEET_LOGO, logo_logo_idx, 200, 66 + sinf(sTime * 1.6f) * 2);
+			gfx::setDepth(1.4f);
+			drawSplash(298, 114 + sinf(sTime * 1.6f) * 2);
 			drawHero(200, 172, 1.25f, 0.8f);
+#if PORT_TWO_SCREENS
+			{
+				// What the chosen sign below does, since the signs themselves sit on the other screen.
+				static const char* const kWhat[] = {"Pick a game and start slicing.", "Sound, looks, controls and more.", "Who made the game.", "The rules, in a minute."};
+				int f = sFocus[SCREEN_TITLE];
+				gfx::setDepth(0.6f);
+				if (f >= 0 && f < 4) gfx::text(kWhat[f], 200, 204, 0.36f, COL_CREAM, ALIGN_CENTER);
+			}
+#endif
 			if (sNoSound) {
 				gfx::setDepth(0.6f);
 				gfx::text(PORT_NO_SOUND_TEXT, 200, 222, 0.34f, rgba(255, 190, 150), ALIGN_CENTER);
@@ -1216,14 +1573,15 @@ static void drawRows() {
 
 static void drawBottomContent(Screen screen) {
 	static const int kIcons[] = {sprites_pip_on_idx, sprites_ic_clock_idx, sprites_ic_leaf_idx, sprites_ic_fast_idx, sprites_ic_one_idx, sprites_ic_mine_idx, sprites_ic_chain_idx};
+	sDrawing = screen;
 	switch (screen) {
 		case SCREEN_LOADING:
 			break;
 		case SCREEN_TITLE: {
 			drawMenuBack();
-			gfx::image(SHEET_SPRITES, sprites_post_idx, 150, 0, 20, 240, COL_PLANK);
+			// The choices are fruit now, standing on the board: no signpost behind them.
 			int f = sFocus[SCREEN_TITLE];
-			for (int i = 0; i < 4; i++) drawSign(kTitleButtons[i], kTitleButtons[i].label, f == i, sPressed == i, i == 0 ? 1.0f : 0.5f);
+			for (int i = 0; i < 4; i++) drawSign(kTitleButtons[i], kTitleButtons[i].label, f == i, sPressed == i, i == 0 ? 1.0f : 0.5f, -1, fruitFor(kTitleButtons[i].label));
 			break;
 		}
 		case SCREEN_MODES: {
@@ -1240,7 +1598,7 @@ static void drawBottomContent(Screen screen) {
 			drawHeader("Options");
 			drawBackArrow(f == 0, sPressed == 0);
 			int n = optionButtons();
-			for (int i = 1; i < n; i++) drawSign(sOptionButtons[i], sOptionButtons[i].label, f == i, sPressed == i, 0.56f);
+			for (int i = 1; i < n; i++) drawSign(sOptionButtons[i], sOptionButtons[i].label, f == i, sPressed == i, 0.56f, -1, fruitFor(sOptionButtons[i].label));
 			break;
 		}
 		case SCREEN_SECTION:
@@ -1323,7 +1681,7 @@ static void drawBottomContent(Screen screen) {
 #endif
 			int f = sFocus[SCREEN_PAUSE];
 			drawBackArrow(f == 0, sPressed == 0);
-			for (int i = 1; i < 4; i++) drawSign(kPauseButtons[i], kPauseButtons[i].label, f == i, sPressed == i);
+			for (int i = 1; i < 4; i++) drawSign(kPauseButtons[i], kPauseButtons[i].label, f == i, sPressed == i, 0.56f, -1, fruitFor(kPauseButtons[i].label));
 			break;
 		}
 		case SCREEN_RESULT: {
@@ -1332,7 +1690,7 @@ static void drawBottomContent(Screen screen) {
 #endif
 			int f = sFocus[SCREEN_RESULT];
 			drawBackArrow(f == 0, sPressed == 0);
-			for (int i = 1; i < 3; i++) drawSign(kResultButtons[i], kResultButtons[i].label, f == i, sPressed == i);
+			for (int i = 1; i < 3; i++) drawSign(kResultButtons[i], kResultButtons[i].label, f == i, sPressed == i, 0.56f, -1, fruitFor(kResultButtons[i].label));
 			break;
 		}
 #if PORT_3DS
@@ -1353,6 +1711,7 @@ static void drawBottomContent(Screen screen) {
 		default:
 			break;
 	}
+	drawCut(screen);
 }
 
 // ---------------------------------------------------------------- flow
@@ -1380,6 +1739,7 @@ static void toTitle() {
 	sOptionsFromPause = false;
 	toModes();
 	sScreen = SCREEN_TITLE;
+	pickSplash();
 }
 
 static void quitRun() {
@@ -1429,6 +1789,12 @@ static void updateFrame(const Input& in, bool wasTouching) {
 		pauseGame();
 	}
 	updateTransitions();
+	if (sCut.on) {
+		sCut.t += kDt;
+		if (sCut.t > kCutLife) sCut.on = false;
+	}
+	if (menuBladeShown()) sMenuBlade.update(in);
+	else sMenuBlade.reset();
 
 	// The game keeps moving during a fade, but menus ignore input while anything is sliding.
 	const bool blocked = inputBlocked();
@@ -1501,8 +1867,9 @@ static void updateFrame(const Input& in, bool wasTouching) {
 		case SCREEN_HOWTO: {
 			if (blocked) break;
 			int& f = sFocus[sScreen];
-			int t = touchButtons(kOnlyBack, 1, in, wasTouching, f);
-			if (t == 0 || (in.down & (KEY_A | KEY_B))) {
+			f = 0;
+			int t = menuInput(kOnlyBack, 1, sScreen, in, wasTouching);
+			if (t == 0 || (in.down & KEY_B)) {
 				if (t != 0) audio::click();
 				goTo(SCREEN_TITLE, -1);
 			}
@@ -1579,6 +1946,7 @@ static void updateFrame(const Input& in, bool wasTouching) {
 	}
 }
 
+static void drawStickPoint();
 #if PORT_TWO_SCREENS
 static void drawFrame() {
 	float e = sSlideT * sSlideT * (3 - 2 * sSlideT);  // eases in and out
@@ -1612,6 +1980,8 @@ static void drawFrame() {
 	} else {
 		drawBottomContent(sScreen);
 	}
+	if (!sSliding) drawStickPoint();
+	if (menuBladeShown()) sMenuBlade.draw();
 	if (sFade > 0) gfx::rect(0, 0, 320, 240, rgba(0, 0, 0, (u8)(clampf(sFade, 0, 1) * 255)));
 	gfx::endFrame();
 }
@@ -1628,6 +1998,7 @@ static void drawFrame() {
 		gfx::beginField();
 		sGame.drawField(sBlade);
 		sGame.drawHud();
+		drawStickPoint();
 #if PORT_PAUSE_BUTTON
 		if (sScreen == SCREEN_GAME) {
 			// Half see-through, so fruit passing behind it stays easy to see.
@@ -1652,6 +2023,7 @@ static void drawFrame() {
 		} else {
 			content(sScreen);
 		}
+		if (pass == 1 && menuBladeShown()) sMenuBlade.draw();
 	}
 	// A message from starting up, such as the chosen renderer not working, shows under the logo for a while.
 	static int noticeFrames = 0;
@@ -1711,6 +2083,7 @@ void app::showLoading() {
 	}
 	audio::music(MUSIC_MENU);
 	sFade = 1;  // the title fades up out of black
+	pickSplash();
 	sScreen = SCREEN_TITLE;
 #if PORT_3DS
 	sLastTick = osGetTime();
@@ -1757,6 +2130,52 @@ void app::notifySuspended() {
 
 bool app::inFieldView() { return sScreen == SCREEN_GAME; }
 
+// ---------------------------------------------------------------- stick slicing
+// During a game a stick moves a glowing point around the field. It slices while the slice button is
+// held, or, with Flick chosen in Controls, whenever it moves fast. Touch and the mouse always win.
+
+static void stickBlade(Input& in) {
+	if (sScreen != SCREEN_GAME || in.touching) {
+		if (in.touching) sPointShow = 0;
+		return;
+	}
+	const float dead = 0.2f;
+	float sx = in.stickX, sy = in.stickY, mag = sqrtf(sx * sx + sy * sy);
+	if (mag > dead || in.stickSlice) sPointShow = 3;
+	else if (sPointShow > 0) sPointShow -= kDt;
+	if (sPointShow <= 0) return;
+	float speed = 0;
+	if (mag > dead) {
+		// Further out goes faster, on a curve, so small pushes stay precise.
+		float k = clampf((mag - dead) / (1 - dead), 0, 1);
+		speed = (80 + 560 * k * k) * (0.5f + gSave.stickSpeed / 100.0f);
+		sx /= mag;
+		sy /= mag;
+	}
+	float vx = sx * speed, vy = sy * speed;
+	float fx, fy;
+	if (gSave.snapAssist && speed > 60 && sGame.fruitAhead(sPointX, sPointY, sx, sy, 70, &fx, &fy)) {
+		// Bend a third of the way toward the fruit, keeping the speed.
+		float tx = fx - sPointX, ty = fy - sPointY, tl = sqrtf(tx * tx + ty * ty);
+		if (tl > 1) {
+			vx = lerpf(vx, tx / tl * speed, 0.35f);
+			vy = lerpf(vy, ty / tl * speed, 0.35f);
+		}
+	}
+	sPointX = clampf(sPointX + vx * kDt, 4, kFieldW - 4);
+	sPointY = clampf(sPointY + vy * kDt, kFieldTop + 4, 236);
+	in.touching = in.stickSlice || (gSave.stickStyle == 1 && speed > 320);
+	in.tx = (int)sPointX;
+	in.ty = (int)sPointY;
+}
+
+static void drawStickPoint() {
+	if (sScreen != SCREEN_GAME || sPointShow <= 0 || sWasTouching) return;
+	float a = clampf(sPointShow, 0, 1);
+	gfx::sprite(SHEET_SPRITES, sprites_glow_idx, sPointX, sPointY, 0.5f, 0.5f, 0, withAlpha(COL_ACCENT, 0.8f * a));
+	gfx::rect(sPointX - 2, sPointY - 2, 4, 4, withAlpha(COL_CREAM, a));
+}
+
 bool app::frame(Input& in, int steps) {
 	for (int i = 0; i < steps; i++) {
 #ifdef AUTOTEST
@@ -1767,6 +2186,7 @@ bool app::frame(Input& in, int steps) {
 		if (sScreen == SCREEN_TITLE && (in.held & KEY_START) && (in.held & KEY_SELECT)) return false;
 #endif
 
+		stickBlade(in);
 		updateFrame(in, sWasTouching);
 		sWasTouching = in.touching;
 		if (sLeaving) return false;

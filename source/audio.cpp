@@ -24,6 +24,7 @@ static const char* const kSfxFiles[SFX_COUNT] = {
 	"combo3", "combo4", "combo5", "combo6", "combo8", "combo10",
 	"strike", "click", "power", "freeze", "fever", "go", "over", "best", "gold",
 	"finale_rise", "finale_hit", "finale_burst",
+	"coin", "plink",
 };
 static_assert(sizeof kSfxFiles / sizeof kSfxFiles[0] == SFX_COUNT, "every sound needs a file name");
 // How much of the mix one sound may take. A new sound is turned down if the ones still playing have
@@ -289,6 +290,8 @@ static const char* captionFor(Sfx s) {
 		case SFX_FREEZE: return "Freeze!";
 		case SFX_FEVER: return "Frenzy!";
 		case SFX_GOLD: return "Gold!";
+		case SFX_COIN: return "Coin!";
+		case SFX_PLINK: return "Plink!";
 		case SFX_FINALE_RISE: return "Big fruit!";
 		case SFX_FINALE_BURST: return "Burst!";
 		default: return nullptr;

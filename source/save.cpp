@@ -89,10 +89,10 @@ void saveDefaults(bool keepScores, int section) {
 		gSave.stickStyle = 0;
 		gSave.stickSpeed = 50;
 		gSave.snapAssist = 1;
+		gSave.vibration = 1;
 	}
 	if (section == SEC_ALL || section == SEC_ACCESS) {
 		gSave.shake = 100;
-		gSave.vibration = 1;
 		gSave.uiScale = 0;
 		gSave.colorBlind = 0;
 		gSave.highContrast = gSave.largeText = gSave.calmFx = 0;

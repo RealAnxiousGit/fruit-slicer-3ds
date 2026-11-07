@@ -254,7 +254,11 @@ void Game::launch(const Pending& p) {
 		o.ry = gRng.range(0, 6.28f);
 		o.rxv = gRng.range(-1.6f, 1.6f);
 		o.ryv = gRng.range(-2.4f, 2.4f);
-		o.radius = p.kind == OBJ_BOMB ? 19 : 23;
+		o.radius = p.kind == OBJ_BOMB ? 19 : (p.kind == OBJ_COIN ? 18 : 23);
+		if (p.kind == OBJ_COIN) {
+			o.rotv = (p.vx >= 0 ? 1.0f : -1.0f) * gRng.range(6.5f, 8.5f);  // end over end, as a flipped coin
+			audio::play(SFX_COIN, 0.75f, fieldPan(p.x), gRng.range(0.96f, 1.06f));
+		}
 		o.hits = (p.kind == OBJ_FRUIT && p.fruit == kCoconut) ? 2 : 1;
 		audio::play(SFX_THROW, 0.3f, fieldPan(p.x), gRng.range(0.9f, 1.15f));
 		if (p.kind == OBJ_BOMB) showCaption("Bomb!");
@@ -392,6 +396,7 @@ void Game::spawnWave() {
 	if (mode == MODE_FRENZY) patternChance = 0.06f;  // waves are so frequent that this is still one every few seconds
 	if (elapsed > 6 && gRng.unit() < patternChance && spawnPattern(d)) {
 		waveTimer = (mode == MODE_FRENZY ? 0.7f : lerpf(3.1f, 2.1f, d)) * level.interval;
+		maybeCoin(d);
 		return;
 	}
 
@@ -458,6 +463,24 @@ void Game::spawnWave() {
 	if (mode == MODE_ZEN) interval *= 0.95f;
 	if (mode == MODE_SUDDEN) interval *= 0.85f;
 	waveTimer = interval * level.interval + stagger * count;
+	maybeCoin(d);
+}
+
+// Now and then a coin flies up with a wave: a few more on harder settings, never beside a bomb, and only
+// so many a run. Frenzy throws waves so often that each one carries less chance.
+void Game::maybeCoin(float d) {
+	static constexpr int kCoinCap = 24;
+	if (coinsThrown >= kCoinCap || phase != PHASE_PLAY) return;
+	float chance = mode == MODE_FRENZY ? 0.03f : 0.075f;
+	chance *= 1 + 0.15f * gSave.difficulty + 0.3f * d;
+#ifdef TEST_COINS
+	chance = 1;  // test builds: a coin with every wave, to see and hear them
+#endif
+	if (gRng.unit() >= chance) return;
+	float x = 160, vx = 0, vy = -300;
+	pickThrow(false, 0.35f, x, vx, vy);
+	queue(0.35f, x, vx, vy, OBJ_COIN, 0);
+	coinsThrown++;
 }
 
 #ifdef TEST_SPAWN
@@ -691,8 +714,12 @@ void Game::commitScore() {
 	if (score > best) {
 		best = score;
 		newBest = score > 0;
+		if (newBest) coinsBonus = 10;
 	}
 	gSave.totalFruit += sliced;
+	u32 earned = (u32)(coinsCaught + coinsBonus);
+	gSave.coins = gSave.coins + earned < gSave.coins ? 0xFFFFFFFFu : gSave.coins + earned;
+	gSave.coinsLifetime += earned;
 	if ((u32)bestCombo > gSave.bestCombo) gSave.bestCombo = bestCombo;
 	saveWrite();
 }
@@ -900,6 +927,16 @@ void Game::sliceObj(Obj& o, const Blade& blade) {
 		case OBJ_BOMB: hitBomb(o); return;
 		case OBJ_FRUIT:
 		case OBJ_GOLD: sliceFruit(o, blade); return;
+		case OBJ_COIN:
+			// One coin and five points. It bursts into sparkles instead of splitting.
+			coinsCaught++;
+			award(5);
+			addPopup("+5", o.x, o.y - 18, rgba(255, 220, 90), 0.8f);
+			audio::play(SFX_PLINK, 0.85f, pan);
+			emitSparks(o.x, o.y, rgba(255, 226, 120), juiceCount(16), 170);
+			addRing(o.x, o.y, rgba(255, 220, 110), 1.6f, 0.28f);
+			o.on = false;
+			return;
 		case OBJ_FREEZE:
 			freezeT = 6;
 			audio::play(SFX_FREEZE, 1.0f, pan);
@@ -1431,6 +1468,16 @@ void Game::drawMarks(bool top, float ox, float oy) const {
 	}
 }
 
+// The coin flips end over end with only 2D draws: it narrows as it turns, shows its back past the
+// halfway point, shows its milled edge while side-on, and a shine slides across its face.
+static void drawCoin(const Obj& o, float ox, float oy) {
+	float ph = o.age * o.rotv, c = cosf(ph), w = fabsf(c);
+	float x = o.x + ox, y = o.y + oy, tilt = sinf(o.age * 1.7f) * 0.2f;
+	if (w > 0.1f) gfx::sprite(SHEET_SPRITES, c >= 0 ? sprites_coin_idx : sprites_coin_back_idx, x, y, w * 0.82f, 0.82f, tilt);
+	if (w < 0.4f) gfx::sprite(SHEET_SPRITES, sprites_coin_rim_idx, x, y, 0.82f * (1 - w / 0.4f) + 0.2f, 0.82f, tilt);
+	if (w > 0.3f && gSave.effects != FX_NONE) gfx::sprite(SHEET_SPRITES, sprites_spark_idx, x + sinf(ph) * 11 * w, y - 6, 0.45f, 0.45f, 0, withAlpha(WHITE, 0.75f * w));
+}
+
 void Game::drawField(const Blade& blade) const {
 	const bool solid = use3D();
 #if PORT_TWO_SCREENS
@@ -1491,6 +1538,7 @@ void Game::drawField(const Blade& blade) const {
 			case OBJ_FREEZE: gfx::sprite(SHEET_SPRITES, sprites_pw_freeze_idx, o.x, o.y, 1, 1, sinf(o.age * 3) * 0.3f); break;
 			case OBJ_DOUBLE: gfx::sprite(SHEET_SPRITES, sprites_pw_double_idx, o.x, o.y, 1, 1, sinf(o.age * 3) * 0.3f); break;
 			case OBJ_FRENZY: gfx::sprite(SHEET_SPRITES, sprites_pw_frenzy_idx, o.x, o.y, 1, 1, sinf(o.age * 3) * 0.3f); break;
+			case OBJ_COIN: drawCoin(o, 0, 0); break;
 			default: break;
 		}
 	}
@@ -1531,6 +1579,10 @@ void Game::drawFieldTop() const {
 	gfx::setDepth(0.7f);
 	for (const auto& o : objs) {
 		if (!o.on || o.kind < OBJ_FREEZE || !onThisScreen(o.y, 34, true, kTopOffsetY)) continue;
+		if (o.kind == OBJ_COIN) {
+			drawCoin(o, kTopOffsetX, kTopOffsetY);
+			continue;
+		}
 		int spr = o.kind == OBJ_FREEZE ? sprites_pw_freeze_idx : (o.kind == OBJ_DOUBLE ? sprites_pw_double_idx : sprites_pw_frenzy_idx);
 		gfx::sprite(SHEET_SPRITES, spr, o.x + kTopOffsetX, o.y + kTopOffsetY, 1, 1, sinf(o.age * 3) * 0.3f);
 	}
@@ -1723,3 +1775,19 @@ void Game::drawHud() const {
 	}
 }
 #endif
+
+bool Game::fruitAhead(float x, float y, float dx, float dy, float range, float* fx, float* fy) const {
+	float best = range * range;
+	bool found = false;
+	for (const auto& o : objs) {
+		if (!o.on || o.kind == OBJ_BOMB || o.kind > OBJ_GOLD) continue;
+		float ox = o.x - x, oy = o.y - y, d2 = ox * ox + oy * oy;
+		// Ahead: within about 50 degrees of the way the point is going.
+		if (d2 >= best || ox * dx + oy * dy < sqrtf(d2) * 0.64f) continue;
+		best = d2;
+		*fx = o.x;
+		*fy = o.y;
+		found = true;
+	}
+	return found;
+}

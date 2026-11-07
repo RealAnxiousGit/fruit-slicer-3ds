@@ -4,7 +4,7 @@
 
 // All gameplay objects live in fixed arrays: nothing here allocates after boot,
 // so rapid spawning can't fragment the heap.
-enum ObjKind : u8 { OBJ_FRUIT, OBJ_GOLD, OBJ_BOMB, OBJ_FREEZE, OBJ_DOUBLE, OBJ_FRENZY };
+enum ObjKind : u8 { OBJ_FRUIT, OBJ_GOLD, OBJ_BOMB, OBJ_FREEZE, OBJ_DOUBLE, OBJ_FRENZY, OBJ_COIN };
 
 struct Obj {
 	float x, y, vx, vy, rot, rotv, radius, age;
@@ -121,6 +121,9 @@ struct Game {
 	float finaleTravel; // blade distance inside the fruit since the last hit
 	int finaleHits;
 	bool finaleOn;
+	int coinsThrown;    // this run, up to a cap so no one mode is by far the best way to earn
+	int coinsCaught;
+	int coinsBonus;     // for a new best, paid when the run ends
 #ifdef AUTOTEST
 	// Measures how often a fruit is actually drawn on top of a bomb.
 	u32 statBombFrames, statOverlapFrames, statWaves, statFrenzies, statResets;
@@ -137,6 +140,8 @@ struct Game {
 	void drawFieldTop() const;                  // top screen: fruit thrown high, one eye at a time
 	void kickParticles();                       // steps particles, on the spare core when there is one
 	void drawMarks(bool top, float ox, float oy) const;  // High Contrast outlines and colour-blind bomb rings
+	// Snap assist: the closest fruit ahead of a moving point, within range. False if none.
+	bool fruitAhead(float x, float y, float dx, float dy, float range, float* fx, float* fy) const;
 	void drawHud() const;                       // top screen, one eye at a time
 	int activeObjects() const;
 	int activeParticles() const;
@@ -146,6 +151,7 @@ struct Game {
 private:
 	void spawnWave();
 	bool spawnPattern(float d);
+	void maybeCoin(float d);
 	void pickThrow(bool bomb, float delay, float& x, float& vx, float& vy);
 	float clearance(float x, float vx, float vy, float delay, bool bomb) const;
 	bool bombAround() const;

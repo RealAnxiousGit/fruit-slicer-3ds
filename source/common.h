@@ -137,6 +137,8 @@ struct Input {
 	int tx, ty;
 	bool hovering;  // a mouse cursor rests at tx, ty with no button held
 	int wheel;      // mouse wheel notches this frame, up is positive
+	float stickX, stickY;  // a stick (or two added up), -1 to 1, down is positive
+	bool stickSlice;       // the slice button: right trigger, or A, L or R on a 3DS
 };
 
 // Sound pans with position on the field.
