@@ -43,8 +43,8 @@ CXXFLAGS	:= $(CFLAGS) -fno-rtti -fno-exceptions -std=gnu++17
 ASFLAGS	:=	-g $(ARCH)
 LDFLAGS	=	-specs=3dsx.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map),--gc-sections
 
-LIBS	:= -lcitro2d -lcitro3d -lctru -lm
-LIBDIRS	:= $(CTRULIB)
+LIBS	:= -lcitro2d -lcitro3d -lcurl -lmbedtls -lmbedx509 -lmbedcrypto -lz -lctru -lm  # curl and mbedTLS: updates over HTTPS
+LIBDIRS	:= $(CTRULIB) $(PORTLIBS)
 
 ifneq ($(BUILD),$(notdir $(CURDIR)))
 

@@ -12,3 +12,4 @@ dist/
 .tools/
 __pycache__/
 graphify-out/
+romfs/cacert.pem

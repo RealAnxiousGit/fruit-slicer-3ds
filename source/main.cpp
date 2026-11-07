@@ -13,6 +13,7 @@
 #include "render.h"
 #include "progress.h"
 #include "shop.h"
+#include "update.h"
 #include "sprites.h"
 
 #if PORT_3DS
@@ -35,7 +36,7 @@ static constexpr float kSlideTop = 900, kSlideBottom = 900;
 
 enum Screen {
 	SCREEN_LOADING, SCREEN_TITLE, SCREEN_MODES, SCREEN_OPTIONS, SCREEN_SECTION, SCREEN_CREDITS, SCREEN_HOWTO, SCREEN_SHOP,
-	SCREEN_JOURNAL, SCREEN_STATS, SCREEN_BEAT, SCREEN_BEATTOOL,
+	SCREEN_JOURNAL, SCREEN_STATS, SCREEN_BEAT, SCREEN_BEATTOOL, SCREEN_UPDATE,
 	SCREEN_GAME, SCREEN_PAUSE, SCREEN_RESULT, SCREEN_BENCH, SCREEN_COUNT
 };
 
@@ -111,8 +112,112 @@ static const Button kTitleButtons[] = {
 	{40, 14, 240, 80, "Play"},
 	{10, 102, 96, 54, "Options"},  {112, 102, 96, 54, "Journal"}, {214, 102, 96, 54, "Stats"},
 	{10, 166, 96, 46, "How to Play"}, {112, 166, 96, 46, "Shop"}, {214, 166, 96, 46, "Credits"},
+#if !PORT_3DS
+	// Link icons in the bottom-left corner: not fruit, so a swipe never opens a browser.
+	{8, 215, 24, 24, "GitHub"}, {36, 215, 24, 24, "X"}, {64, 215, 24, 24, "YouTube"},
+#endif
 };
 static constexpr int kTitleCount = sizeof kTitleButtons / sizeof kTitleButtons[0];
+static constexpr int kTitleSigns = 7;  // the fruit; anything after is a link icon
+#if !PORT_3DS
+static const char* const kTitleLinks[] = {"https://github.com/RealAnxiousGit/fruit-slicer", "https://x.com/NickBinMusic", "https://www.youtube.com/@NickBStudios"};
+
+// The link icons are drawn from shapes at the size they appear, so they stay sharp at any scale. A convex
+// shape gets a thin rim fading to clear, which smooths its edges.
+static void softShape(const float* xy, int n, float cx, float cy, float s, u32 c) {
+	constexpr int kMax = 40;
+	float px[kMax], py[kMax], mx = 0, my = 0;
+	for (int i = 0; i < n; i++) {
+		px[i] = cx + xy[i * 2] * s;
+		py[i] = cy + xy[i * 2 + 1] * s;
+		mx += px[i] / n;
+		my += py[i] / n;
+	}
+	const u32 clear = withAlpha(c, 0);
+	constexpr float kRim = 0.7f;
+	for (int i = 0; i < n; i++) {
+		const int j = (i + 1) % n;
+		gfx::tri(mx, my, c, px[i], py[i], c, px[j], py[j], c);
+		float nx = py[j] - py[i], ny = px[i] - px[j];
+		const float len = sqrtf(nx * nx + ny * ny);
+		if (len < 1e-4f) continue;
+		nx /= len;
+		ny /= len;
+		if (nx * (px[i] - mx) + ny * (py[i] - my) < 0) {
+			nx = -nx;
+			ny = -ny;
+		}
+		gfx::tri(px[i], py[i], c, px[j], py[j], c, px[j] + nx * kRim, py[j] + ny * kRim, clear);
+		gfx::tri(px[i], py[i], c, px[j] + nx * kRim, py[j] + ny * kRim, clear, px[i] + nx * kRim, py[i] + ny * kRim, clear);
+	}
+}
+
+static void softEllipse(float cx, float cy, float rx, float ry, u32 c) {
+	constexpr int kSegs = 32;
+	float xy[kSegs * 2];
+	for (int i = 0; i < kSegs; i++) {
+		const float a = i * 6.2831853f / kSegs;
+		xy[i * 2] = cosf(a) * rx;
+		xy[i * 2 + 1] = sinf(a) * ry;
+	}
+	softShape(xy, kSegs, cx, cy, 1, c);
+}
+
+// A rectangle with round corners, w by h around its middle.
+static void softRoundRect(float cx, float cy, float w, float h, float r, u32 c) {
+	constexpr int kArc = 7;
+	float xy[kArc * 4 * 2];
+	const float hx = w * 0.5f - r, hy = h * 0.5f - r;
+	const float ox[4] = {hx, -hx, -hx, hx}, oy[4] = {hy, hy, -hy, -hy};
+	int k = 0;
+	for (int q = 0; q < 4; q++)
+		for (int i = 0; i < kArc; i++) {
+			const float a = (q + i / (float)(kArc - 1)) * 1.5707963f;
+			xy[k++] = ox[q] + cosf(a) * r;
+			xy[k++] = oy[q] + sinf(a) * r;
+		}
+	softShape(xy, kArc * 4, cx, cy, 1, c);
+}
+
+// GitHub's cat, X's letter and YouTube's play button, in solid black on a light round plate.
+static void drawLinkIcon(const Button& b, int which, bool focused) {
+	const float cx = b.x + b.w * 0.5f, cy = b.y + b.h * 0.5f, r = b.w * 0.5f;
+	const u32 ink = rgba(16, 16, 18), plate = COL_CREAM;
+	if (focused) softEllipse(cx, cy, r + 2.2f, r + 2.2f, COL_ACCENT);
+	softEllipse(cx, cy, r, r, plate);
+	const float s = r * 0.68f;  // the mark's own radius
+	if (which == 0) {
+		// A black circle with the cat standing out of it in the plate's colour.
+		softEllipse(cx, cy, s, s, ink);
+		softEllipse(cx, cy - s * 0.1f, s * 0.5f, s * 0.42f, plate);
+		static const float kEarL[] = {-0.48f, -0.24f, -0.42f, -0.66f, -0.16f, -0.44f};
+		static const float kEarR[] = {0.48f, -0.24f, 0.16f, -0.44f, 0.42f, -0.66f};
+		static const float kBody[] = {-0.22f, 0.2f, 0.22f, 0.2f, 0.24f, 0.84f, -0.24f, 0.84f};
+		static const float kTail1[] = {-0.24f, 0.62f, -0.24f, 0.5f, -0.48f, 0.4f, -0.54f, 0.5f};
+		static const float kTail2[] = {-0.54f, 0.5f, -0.48f, 0.4f, -0.6f, 0.26f, -0.68f, 0.3f};
+		softShape(kEarL, 3, cx, cy, s, plate);
+		softShape(kEarR, 3, cx, cy, s, plate);
+		softShape(kBody, 4, cx, cy, s, plate);
+		softShape(kTail1, 4, cx, cy, s, plate);
+		softShape(kTail2, 4, cx, cy, s, plate);
+	} else if (which == 1) {
+		// The X: a broad stroke falling left to right, hollowed down its middle, crossed by a thin one.
+		static const float kBroad[] = {-0.78f, -0.78f, -0.32f, -0.78f, 0.78f, 0.78f, 0.32f, 0.78f};
+		static const float kHollow[] = {-0.56f, -0.66f, -0.44f, -0.66f, 0.56f, 0.66f, 0.44f, 0.66f};
+		static const float kThinTop[] = {0.6f, -0.78f, 0.76f, -0.78f, 0.12f, -0.04f, 0.0f, -0.16f};
+		static const float kThinLow[] = {-0.12f, 0.06f, 0.0f, 0.18f, -0.62f, 0.78f, -0.78f, 0.78f};
+		softShape(kBroad, 4, cx, cy, s, ink);
+		softShape(kHollow, 4, cx, cy, s, plate);
+		softShape(kThinTop, 4, cx, cy, s, ink);
+		softShape(kThinLow, 4, cx, cy, s, ink);
+	} else {
+		// A wide rounded box with the play arrow cut out of it.
+		softRoundRect(cx, cy, s * 2.0f, s * 1.4f, s * 0.36f, ink);
+		static const float kPlay[] = {-0.26f, -0.34f, 0.38f, 0.0f, -0.26f, 0.34f};
+		softShape(kPlay, 3, cx, cy, s, plate);
+	}
+}
+#endif
 // Index 0 of every list below is its back arrow, so D-pad and touch treat it like any other sign.
 static const Button kModeButtons[] = {
 	kBack,
@@ -236,7 +341,7 @@ static struct {
 static Screen sDrawing = SCREEN_LOADING;  // the screen whose signs are being drawn, during a slide too
 static Blade sMenuBlade;                  // the trail a swipe leaves across the menus
 static bool menuBladeShown() {
-	return sScreen == SCREEN_TITLE || sScreen == SCREEN_MODES || sScreen == SCREEN_OPTIONS || sScreen == SCREEN_CREDITS || sScreen == SCREEN_HOWTO || sScreen == SCREEN_JOURNAL || sScreen == SCREEN_STATS || sScreen == SCREEN_BEAT || sScreen == SCREEN_BEATTOOL || sScreen == SCREEN_PAUSE || sScreen == SCREEN_RESULT;
+	return sScreen == SCREEN_TITLE || sScreen == SCREEN_MODES || sScreen == SCREEN_OPTIONS || sScreen == SCREEN_CREDITS || sScreen == SCREEN_HOWTO || sScreen == SCREEN_JOURNAL || sScreen == SCREEN_STATS || sScreen == SCREEN_BEAT || sScreen == SCREEN_BEATTOOL || sScreen == SCREEN_UPDATE || sScreen == SCREEN_PAUSE || sScreen == SCREEN_RESULT;
 }
 
 static bool fruit3D() { return gSave.artStyle == ART_3D && m3d::ready(); }
@@ -535,8 +640,29 @@ static int sliceButtons(const Button* btns, int n, Screen screen, const Input& i
 	return -1;
 }
 
-static int menuInput(const Button* btns, int n, Screen screen, const Input& in, bool wasTouching) {
+// Buttons from index `slices` on are plain icons: picked by a click that starts and ends on them, or by the
+// confirm key, and returned at once with no fruit cut.
+static int menuInput(const Button* btns, int n, Screen screen, const Input& in, bool wasTouching, int slices = -1) {
 	int& focus = sFocus[screen];
+	if (slices < 0) slices = n;
+	if (slices < n && !sCut.pending) {
+		static int iconDown = -1;
+		static int lastX, lastY;
+		if (in.touching) {
+			if (!wasTouching) {
+				iconDown = -1;
+				for (int i = slices; i < n; i++)
+					if (hit(btns[i], in.tx, in.ty)) iconDown = focus = i;
+			}
+			lastX = in.tx;
+			lastY = in.ty;
+		} else if (wasTouching && iconDown >= 0) {
+			const int i = iconDown;
+			iconDown = -1;
+			if (hit(btns[i], lastX, lastY)) return i;
+		}
+		if ((in.down & KEY_A) && focus >= slices && focus < n) return focus;
+	}
 	if (sCut.pending) {
 		// The choice acts once the fruit has split. If the screen changed some other way, it's dropped.
 		if (sCut.screen != screen) sCut.pending = false;
@@ -552,7 +678,7 @@ static int menuInput(const Button* btns, int n, Screen screen, const Input& in, 
 		for (int i = 0; i < n; i++)
 			if (hit(btns[i], in.tx, in.ty)) focus = i;
 #endif
-	sliceButtons(btns, n, screen, in, wasTouching, focus);
+	sliceButtons(btns, slices, screen, in, wasTouching, focus);
 	if (!sCut.pending && (in.down & KEY_A) && focus >= 0 && focus < n) startCut(btns, focus, screen, -0.6f);
 	return -1;
 }
@@ -586,7 +712,7 @@ static void drawCut(Screen screen) {
 
 // ---------------------------------------------------------------- settings rows
 enum RowKind { ROW_SLIDER, ROW_CHOICE, ROW_ACTION };
-enum RowAction { ACT_NONE, ACT_RESET_AUDIO, ACT_RESET_VISUALS, ACT_RESET_GAMEPLAY, ACT_RESET_SCORES, ACT_RESET_ALL, ACT_SPEED_TEST, ACT_APPLY_DISPLAY, ACT_RESET_DISPLAY, ACT_RESET_ACCESS, ACT_RESET_CONTROLS, ACT_DEV_ADD_COINS, ACT_DEV_CLEAR_COINS };
+enum RowAction { ACT_NONE, ACT_RESET_AUDIO, ACT_RESET_VISUALS, ACT_RESET_GAMEPLAY, ACT_RESET_SCORES, ACT_RESET_ALL, ACT_SPEED_TEST, ACT_APPLY_DISPLAY, ACT_RESET_DISPLAY, ACT_RESET_ACCESS, ACT_RESET_CONTROLS, ACT_DEV_ADD_COINS, ACT_DEV_CLEAR_COINS, ACT_CHECK_UPDATES };
 
 struct Row {
 	RowKind kind;
@@ -609,6 +735,7 @@ static const char* const kSceneNames[kSceneCount] = {"Dusk Orchard", "Morning Me
 static const char* const kArtNames[] = {"2D Stickers", "3D Models"};
 static const char* const kEffectNames[] = {"None", "Low", "Medium", "Full"};
 static const char* const kOffOn[] = {"Off", "On"};
+static const char* const kUpdateNames[] = {"Ask", "On", "Off"};  // by gSave.updConsent
 #if PORT_TWO_SCREENS
 static const char* const kBgNames[] = {"Simple", "Full"};
 #endif
@@ -668,6 +795,8 @@ static const Row kDataRows[] = {
 #if PORT_3DS
 	{ROW_ACTION, "Speed Test", nullptr, 0, 0, nullptr, 0, 0, ACT_SPEED_TEST, "A 90 second test of this console.", "Results go in 3ds/FruitSlicer/bench.txt"},
 #endif
+	{ROW_CHOICE, "Check for Updates", &gSave.updConsent, 1, 2, kUpdateNames, 0, 0, ACT_NONE, "Looks on GitHub once a day", "for a new version."},
+	{ROW_ACTION, "Check Now", nullptr, 0, 0, nullptr, 0, 0, ACT_CHECK_UPDATES, "Looks on GitHub right away.", ""},
 	{ROW_ACTION, "Reset Scores", nullptr, 0, 0, nullptr, 0, 0, ACT_RESET_SCORES, "Erases best scores and totals.", "Settings stay."},
 	{ROW_ACTION, "Reset Everything", nullptr, 0, 0, nullptr, 0, 0, ACT_RESET_ALL, "Erases scores and all settings.", ""},
 };
@@ -951,6 +1080,11 @@ static void rowAction(int index, const Row& r) {
 		return;
 	}
 #endif
+	if (r.action == ACT_CHECK_UPDATES) {
+		audio::click();
+		update::checkNow();
+		return;
+	}
 #ifdef DEV_TOOLS
 	if (r.action == ACT_DEV_ADD_COINS || r.action == ACT_DEV_CLEAR_COINS) {
 		// No second press needed: these are for testing, and adding again is the point.
@@ -2218,6 +2352,224 @@ static void drawBeatTool() {
 }
 #endif
 
+// ---------------------------------------------------------------- update sign
+// What update.cpp has found or done, as a screen of its own: the changelog goes on the top screen (on one
+// screen, the side panel), the choice below it. The answers are fruit like any other sign.
+static Screen sUpdateBack = SCREEN_TITLE;  // where the sign goes back to
+static bool sUpdateQuit = false;           // Restart was chosen: the game closes
+static int sUpdateScroll = 0;              // first changelog line shown
+static const Button kUpdateTwo[] = {{24, 150, 128, 64, nullptr}, {168, 150, 128, 64, nullptr}};
+static const Button kUpdateOne[] = {{96, 150, 128, 64, nullptr}};
+static constexpr int kNoteLines = 9;
+
+// The changelog, wrapped to the panel: up to 200 lines, each a start and a length.
+static int wrapNotes(const char** starts, int* lens, int maxLines) {
+	const char* p = update::notes();
+	int n = 0;
+	while (*p && n < maxLines) {
+		const char* end = strchr(p, '\n');
+		if (!end) end = p + strlen(p);
+		if (end == p) {  // a blank line stays, once
+			if (n > 0 && lens[n - 1] > 0) {
+				starts[n] = p;
+				lens[n++] = 0;
+			}
+			p++;
+			continue;
+		}
+		while (p < end && n < maxLines) {
+			// As many words as fit in 316 units at the panel's text size.
+			int len = (int)(end - p), fit = len;
+			char buf[200];
+			while (fit > 0) {
+				snprintf(buf, sizeof buf, "%.*s", fit, p);
+				if (gfx::textWidth(buf, 0.34f) <= 316) break;
+				int back = fit - 1;
+				while (back > 0 && p[back] != ' ') back--;
+				fit = back > 0 ? back : fit - 1;
+			}
+			if (fit <= 0) fit = 1;
+			starts[n] = p;
+			lens[n++] = fit;
+			p += fit;
+			while (p < end && *p == ' ') p++;
+		}
+		p = *end ? end + 1 : end;
+	}
+	return n;
+}
+
+static int updateButtons(const Button** out, const char** a, const char** b) {
+	*b = nullptr;
+	switch (update::state()) {
+		case update::ASK: *a = "Yes"; *b = "No"; break;
+#if PORT_3DS
+		case update::OFFER: *a = "Install Now"; *b = "Later"; break;
+#else
+		case update::OFFER: *a = "Update Now"; *b = "Later"; break;
+#endif
+		case update::DOWNLOADING: return 0;
+#if PORT_3DS
+		case update::READY: *a = "Close"; break;
+#elif PORT_ANDROID
+		case update::READY: *a = "OK"; break;
+#else
+		case update::READY: *a = "Restart"; break;
+#endif
+		default: *a = "OK"; break;
+	}
+	*out = *b ? kUpdateTwo : kUpdateOne;
+	return *b ? 2 : 1;
+}
+
+static void drawUpdateSign() {
+	char buf[64];
+	const int f = sFocus[SCREEN_UPDATE];
+	const char* head = "Updates";
+	const char* l1 = "";
+	const char* l2 = "";
+	switch (update::state()) {
+		case update::ASK:
+			head = "Check for Updates?";
+			l1 = "The game can look on GitHub once a day";
+			l2 = "for a new version. Options can change this.";
+			break;
+		case update::OFFER:
+		case update::NOTE:
+			snprintf(buf, sizeof buf, "Version %s", update::newVersion());
+			head = buf;
+#if PORT_3DS
+			l1 = update::state() == update::OFFER ? "A new version is ready to install." : "A new version is on GitHub.";
+			l2 = update::state() == update::OFFER ? "What's new is on the top screen." : "Get it with the .cia, or Universal-Updater.";
+#else
+			l1 = update::state() == update::OFFER ? "A new version is ready to install." : "A new version is on GitHub.";
+			l2 = update::state() == update::OFFER ? "Your scores and settings stay." : "This copy can't update itself where it is.";
+#endif
+			break;
+		case update::DOWNLOADING:
+			head = "Updating";
+			l1 = "Downloading the new version.";
+			l2 = "Keep the game open until it's done.";
+			break;
+		case update::READY:
+			head = "Update Ready";
+#if PORT_3DS
+			l1 = "Installed. The game closes to the";
+			l2 = "HOME Menu; open it again to play.";
+#elif PORT_ANDROID
+			l1 = "Android will ask to install it.";
+			l2 = "Allow it, then open the game again.";
+#else
+			l1 = "Restart to play the new version.";
+			l2 = "Your scores and settings stay.";
+#endif
+			break;
+		case update::LATEST:
+			head = "Up to Date";
+			l1 = "This is the newest version.";
+			break;
+		case update::FAILED:
+			head = "No Update";
+			l1 = update::failedDownload() ? "The download didn't finish." : "GitHub didn't answer.";
+			l2 = update::failedDownload() ? "Nothing was changed." : "Check the connection and try again.";
+			break;
+		default: break;
+	}
+	drawHeader(head);
+	gfx::sign(sprites_plank_idx, 20, 52, 280, 78, COL_PLANK);
+	gfx::text(l1, 160, 66, 0.36f, COL_CREAM, ALIGN_CENTER);
+	gfx::text(l2, 160, 88, 0.36f, COL_DIM, ALIGN_CENTER);
+	if (update::state() == update::DOWNLOADING) {
+		gfx::rect(58, 108, 204, 12, gfx::themeBar());
+		gfx::rect(60, 110, 200 * clampf(update::progress(), 0, 1), 8, COL_ACCENT);
+		return;
+	}
+	const Button* btns;
+	const char* a;
+	const char* b;
+	const int n = updateButtons(&btns, &a, &b);
+	for (int i = 0; i < n; i++) drawSign(btns[i], i ? b : a, f == i, sPressed == i, 0.5f, -1, fruitFor(i ? b : a));
+}
+
+// The top screen: the changelog of the new version, scrolled with Up and Down.
+static void drawUpdateTop() {
+	gfx::setDepth(1.0f);
+	gfx::sprite(SHEET_LOGO, logo_logo_idx, 200, 40, 0.5f, 0.5f);
+	topPanel(30, 70, 340, 162);
+	gfx::setDepth(0.7f);
+	const update::State st = update::state();
+	if (st != update::OFFER && st != update::NOTE) {
+		gfx::text(st == update::ASK ? "Nothing about you is sent:" : "Fruit Slicer", 200, 120, 0.4f, COL_ACCENT, ALIGN_CENTER);
+		gfx::text(st == update::ASK ? "only a request for the newest release." : "Version " VERSION_STRING, 200, 144, 0.36f, COL_CREAM, ALIGN_CENTER);
+		return;
+	}
+	char buf[64];
+	snprintf(buf, sizeof buf, "WHAT'S NEW IN %s", update::newVersion());
+	gfx::text(buf, 200, 76, 0.38f, COL_ACCENT, ALIGN_CENTER);
+	static const char* starts[200];
+	static int lens[200];
+	const int n = wrapNotes(starts, lens, 200);
+	if (sUpdateScroll > n - kNoteLines) sUpdateScroll = n - kNoteLines;
+	if (sUpdateScroll < 0) sUpdateScroll = 0;
+	for (int i = 0; i < kNoteLines && sUpdateScroll + i < n; i++) {
+		char line[200];
+		snprintf(line, sizeof line, "%.*s", lens[sUpdateScroll + i], starts[sUpdateScroll + i]);
+		gfx::text(line, 42, 96 + i * 14, 0.34f, COL_CREAM, ALIGN_LEFT);
+	}
+	if (n > kNoteLines) {
+		snprintf(buf, sizeof buf, "%s  LINES %d-%d OF %d", PORT_3DS ? "UP/DOWN SCROLLS" : "UP, DOWN OR THE WHEEL SCROLL", sUpdateScroll + 1, sUpdateScroll + kNoteLines, n);
+		gfx::text(buf, 200, 222, 0.28f, COL_DIM, ALIGN_CENTER);
+	}
+}
+
+// Brings the sign up when there's something to say, on a screen where it fits: first-start questions and
+// offers on the title screen, the answer to Check Now in Options. Never during a run.
+static void updateWatch() {
+	update::tick();
+	if (sScreen == SCREEN_UPDATE || sSliding || sFade > 0 || !update::wantsSign()) return;
+	const update::State st = update::state();
+	const bool here = update::manual() ? sScreen == SCREEN_SECTION : sScreen == SCREEN_TITLE;
+	if (!here || st == update::DOWNLOADING || st == update::READY) return;
+	sUpdateBack = sScreen;
+	sUpdateScroll = 0;
+	sFocus[SCREEN_UPDATE] = 0;
+	goTo(SCREEN_UPDATE, 1);
+}
+
+static void updateSignInput(const Input& in, bool wasTouching) {
+	if (in.repeat & KEY_UP) sUpdateScroll--;
+	if (in.repeat & KEY_DOWN) sUpdateScroll++;
+	sUpdateScroll -= in.wheel;
+	if (sUpdateScroll < 0) sUpdateScroll = 0;
+	Input keys = in;
+	keys.repeat &= ~(u32)(KEY_UP | KEY_DOWN);
+	const Button* btns;
+	const char* a;
+	const char* b;
+	const int n = updateButtons(&btns, &a, &b);
+	if (n == 0) return;  // downloading: nothing to press
+	int t = menuInput(btns, n, SCREEN_UPDATE, keys, wasTouching);
+	if (in.down & KEY_B) {
+		audio::click();
+		t = n - 1;  // the second answer, or the only one
+	}
+	if (t < 0) return;
+	const update::State st = update::state();
+	if (st == update::ASK) update::consent(t == 0);
+	else if (st == update::OFFER && t == 0) {
+		update::install();
+		return;  // stays here while it downloads
+	} else if (st == update::OFFER) update::later();
+	else if (st == update::READY) {
+		update::restart();
+#if !PORT_ANDROID
+		sUpdateQuit = true;  // the port starts the new version (or goes back to HOME) once the game has closed
+#endif
+		return;
+	} else update::dismiss();
+	goTo(sUpdateBack, -1);
+}
+
 static void skipPractice() {
 	sGame.commitScore();
 	toModes();
@@ -2346,6 +2698,9 @@ static void drawTopContent(Screen screen) {
 #endif
 			break;
 #endif
+		case SCREEN_UPDATE:
+			drawUpdateTop();
+			break;
 		case SCREEN_BEAT: {
 			topPanel(30, 96, 340, 134);
 			gfx::setDepth(1.0f);
@@ -2537,7 +2892,10 @@ static void drawBottomContent(Screen screen) {
 			drawMenuBack();
 			// The choices are fruit now, standing on the board: no signpost behind them.
 			int f = sFocus[SCREEN_TITLE];
-			for (int i = 0; i < kTitleCount; i++) drawSign(kTitleButtons[i], kTitleButtons[i].label, f == i, sPressed == i, i == 0 ? 1.0f : 0.46f, -1, fruitFor(kTitleButtons[i].label));
+			for (int i = 0; i < kTitleSigns; i++) drawSign(kTitleButtons[i], kTitleButtons[i].label, f == i, sPressed == i, i == 0 ? 1.0f : 0.46f, -1, fruitFor(kTitleButtons[i].label));
+#if !PORT_3DS
+			for (int i = kTitleSigns; i < kTitleCount; i++) drawLinkIcon(kTitleButtons[i], i - kTitleSigns, f == i);
+#endif
 			break;
 		}
 		case SCREEN_MODES: {
@@ -2587,6 +2945,10 @@ static void drawBottomContent(Screen screen) {
 		case SCREEN_BEAT:
 			drawMenuBack();
 			drawBeatScreen();
+			break;
+		case SCREEN_UPDATE:
+			drawMenuBack();
+			drawUpdateSign();
 			break;
 #if PORT_CUSTOM_MUSIC
 		case SCREEN_BEATTOOL:
@@ -2773,6 +3135,7 @@ static void updateFrame(const Input& in, bool wasTouching) {
 		pauseGame();
 	}
 	updateTransitions();
+	updateWatch();
 	if (sCut.on) {
 		sCut.t += kDt;
 		if (sCut.t > kCutLife) sCut.on = false;
@@ -2792,7 +3155,7 @@ static void updateFrame(const Input& in, bool wasTouching) {
 	switch (sScreen) {
 		case SCREEN_TITLE: {
 			if (blocked) break;
-			int t = menuInput(kTitleButtons, kTitleCount, SCREEN_TITLE, in, wasTouching);
+			int t = menuInput(kTitleButtons, kTitleCount, SCREEN_TITLE, in, wasTouching, kTitleSigns);
 			if (t == 0) {
 				// The very first Play starts the Practice run; it can be skipped from the pause menu.
 				if (!gSave.practiceDone) {
@@ -2811,6 +3174,12 @@ static void updateFrame(const Input& in, bool wasTouching) {
 				goTo(SCREEN_HOWTO, 1);
 			} else if (t == 5) openShop();
 			else if (t == 6) goTo(SCREEN_CREDITS, 1);
+#if !PORT_3DS
+			else if (t >= kTitleSigns) {
+				audio::click();
+				port::openLink(kTitleLinks[t - kTitleSigns]);
+			}
+#endif
 #if PORT_ANDROID
 			if (in.down & KEY_B) sLeaving = true;  // Back on the first screen leaves, as on any phone app
 #endif
@@ -2912,6 +3281,9 @@ static void updateFrame(const Input& in, bool wasTouching) {
 			}
 			break;
 		}
+		case SCREEN_UPDATE:
+			if (!blocked) updateSignInput(in, wasTouching);
+			break;
 #if PORT_CUSTOM_MUSIC
 		case SCREEN_BEATTOOL: {
 			toolTick();
@@ -3244,6 +3616,7 @@ void app::showLoading() {
 
 bool app::init() {
 	saveLoad();
+	update::boot(VERSION_STRING);
 	applyAccessibility();
 #ifdef TEST_ART
 	gSave.artStyle = TEST_ART;
@@ -3345,7 +3718,7 @@ bool app::frame(Input& in, int steps) {
 		gStickInUse = sPointShow > 0;
 		updateFrame(in, sWasTouching);
 		sWasTouching = in.touching;
-		if (sLeaving) return false;
+		if (sLeaving || sUpdateQuit) return false;
 		// A press belongs to the first step only.
 		in.down = 0;
 		in.repeat = 0;
