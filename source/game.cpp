@@ -24,7 +24,7 @@ const ModeInfo kModes[MODE_COUNT] = {
 	{"Minefield", "Bombs everywhere. Misses are free.", "How long can you last?"},
 	{"Combo Rush", "45 seconds. Doubled combo bonus.", "Finish on the big finale fruit!"},
 	{"Daily Fruit", "60 seconds, the same run for everyone.", "A new one every day. Bombs cost 10."},
-	{"Beat Slice", "Fruit flies to the music. 60 seconds.", "Slice on the beat for extra points!"},
+	{"Beat Slice", "Slice to the music. 60 seconds.", "Only slices on the beat score!"},
 };
 const char* modeName(Mode m) { return m < MODE_COUNT ? kModes[m].name : "Practice"; }
 
@@ -987,8 +987,14 @@ void Game::sliceFruit(Obj& o, const Blade& blade) {
 		}
 	}
 	int pts = o.kind == OBJ_GOLD ? 5 : (def.cut == CUT_SHELL ? 3 : (o.kind == OBJ_FRUIT && o.fruit == kJelly ? 2 : 1));
+	if (mode == MODE_BEAT && phase == PHASE_PLAY && !beatSlice(o)) {
+		// Off the beat: the fruit is cut, but scores nothing and ends the combo.
+		sliced++;
+		chain = 0;
+		o.on = false;
+		return;
+	}
 	award(pts);
-	if (mode == MODE_BEAT && phase == PHASE_PLAY) beatSlice(o);
 	sliced++;
 	chain++;
 	if (chain > bestCombo) bestCombo = chain;
@@ -1530,7 +1536,7 @@ void Game::update(Blade& blade) {
 	jobs::wait();
 	phaseT += kDt;
 	updateEffects(kDt);
-	if (mode == MODE_BEAT) beatUpdate();  // keeps time from the very start, and plans throws once playing
+	if (mode == MODE_BEAT) beatUpdate();  // keeps time with the music from the very start
 
 	if (phase == PHASE_READY) {
 		if (phaseT >= 1.3f) {
@@ -1549,7 +1555,6 @@ void Game::update(Blade& blade) {
 		}
 		float objDt = (freezeT > 0 ? kDt * 0.45f : kDt) * (0.7f + slider(gSave.fruitSpeed) * 0.006f) * gameSpeedScale();
 		if (chiliT > 0) objDt *= 1.3f;  // the chili rush
-		if (mode == MODE_BEAT) objDt = beatDt;  // fruit keeps the music's time (beat.cpp)
 		updateTricks(blade);
 		if (slowT > 0) {
 			objDt *= 0.3f;
@@ -1603,7 +1608,7 @@ void Game::update(Blade& blade) {
 					feverMeter = kAfterFrenzy;
 				}
 				feverTimer -= kDt;
-				if (feverTimer <= 0 && mode != MODE_BEAT) {  // Beat Slice throws its Frenzy on the beat
+				if (feverTimer <= 0) {
 					feverTimer = mode == MODE_FRENZY && !sLightFrenzy ? 0.12f : 0.2f;
 					float x = 160, vx = 0, vy = -300;
 					pickThrow(false, 0, x, vx, vy);
@@ -1625,7 +1630,7 @@ void Game::update(Blade& blade) {
 					}
 					queue(0, x, vx, vy, OBJ_FRUIT, normalFruit(gRng));
 				}
-			} else if (mode != MODE_PRACTICE && mode != MODE_BEAT) {
+			} else if (mode != MODE_PRACTICE) {
 				waveTimer -= objDt;
 				if (waveTimer <= 0) spawnWave();
 			}
@@ -1892,6 +1897,7 @@ void Game::drawField(const Blade& blade) const {
 		gfx::sprite(SHEET_SPRITES, p.sprite ? sprites_spark_idx : sprites_drop_idx, p.x, p.y, p.size, p.size, 0,
 		            withAlpha(p.color, clampf(life * 1.6f, 0, 1)));
 	}
+	if (mode == MODE_BEAT) drawBeatPulse();
 	blade.draw();
 	for (const auto& p : popups) {
 		if (!p.on) continue;

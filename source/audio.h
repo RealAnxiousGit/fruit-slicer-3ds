@@ -37,5 +37,9 @@ void musicSpeed(float factor);  // the chili pepper plays the music a little fas
 // Beat Slice: plays this track from its very start, whatever the Game Music choice, until the next music().
 void musicBeat(int track);
 float musicTime();           // seconds into the playing track, or -1 while it is still loading or silent
-float trackBeat(int track);  // seconds per beat; every track starts on the first beat of a bar
+float trackBeat(int track);  // seconds per beat
+float trackFirst(int track); // seconds to the first beat of a bar: 0 for the game's own tracks, which start on one
+int trackCount();            // the game's tracks, then any custom songs (Windows, Linux and Android)
+bool trackHasBeat(int track); // a custom song only once its beat has been found
+float musicLength();         // seconds in the playing track, or -1 while it is still loading
 }  // namespace audio

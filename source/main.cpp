@@ -21,6 +21,9 @@
 #endif
 #include "logo.h"
 #include "port_api.h"
+#if PORT_CUSTOM_MUSIC
+#include "custom_music.h"
+#endif
 
 #define VERSION_STRING "0.4.0-alpha"
 
@@ -32,7 +35,7 @@ static constexpr float kSlideTop = 900, kSlideBottom = 900;
 
 enum Screen {
 	SCREEN_LOADING, SCREEN_TITLE, SCREEN_MODES, SCREEN_OPTIONS, SCREEN_SECTION, SCREEN_CREDITS, SCREEN_HOWTO, SCREEN_SHOP,
-	SCREEN_JOURNAL, SCREEN_STATS, SCREEN_BEAT,
+	SCREEN_JOURNAL, SCREEN_STATS, SCREEN_BEAT, SCREEN_BEATTOOL,
 	SCREEN_GAME, SCREEN_PAUSE, SCREEN_RESULT, SCREEN_BENCH, SCREEN_COUNT
 };
 
@@ -123,9 +126,25 @@ static_assert(sizeof kModeButtons / sizeof kModeButtons[0] == MODE_COUNT + 1, "a
 static const Button kOnlyBack[] = {kBack};
 static const Button kHowtoButtons[] = {kBack, {90, 188, 140, 48, "Practice"}};
 static const Button kPracticeEndButtons[] = {kBack, {90, 170, 140, 52, "Let's Play"}};
-// Beat Slice's track choice: the arrows are taps (or Left and Right), and Play is a fruit like any other.
-static const Button kBeatButtons[] = {kBack, {90, 154, 140, 60, "Play"}};
-static const Button kBeatPrev = {8, 60, 46, 62, nullptr}, kBeatNextSign = {266, 60, 46, 62, nullptr};
+// Beat Slice's track list: a row is a tap (or Up and Down), and Play is a fruit like any other.
+static const Button kBeatButtons[] = {kBack, {216, 46, 96, 76, "Play"}};
+static constexpr int kBeatRows = 5;
+static const Button kBeatUp = {8, 190, 98, 26, nullptr}, kBeatDown = {110, 190, 98, 26, nullptr};
+static Button beatRow(int r) { return {8, 46.0f + r * 28, 200, 26, nullptr}; }
+static int sBeatScroll = 0;  // the first row shown
+#if PORT_CUSTOM_MUSIC
+// Under Play: the Beat Tool for a song of your own, and the folder your songs go in. Taps, like the rows.
+static const Button kBeatTool = {216, 130, 96, 28, "Beat Tool"}, kBeatFolder = {216, 164, 96, 28, "Add Songs"};
+// The Beat Tool: taps that change the beat at once, then Find Again and Play.
+static const Button kToolButtons[] = {kBack, {180, 184, 130, 52, "Play"}};
+static const Button kToolTaps[] = {
+	{12, 112, 70, 30, "Slower"}, {88, 112, 70, 30, "Faster"}, {164, 112, 70, 30, "Half"}, {240, 112, 70, 30, "Double"},
+	{12, 148, 70, 30, "Earlier"}, {88, 148, 70, 30, "Later"}, {164, 148, 70, 30, "Click On"}, {240, 148, 70, 30, "Bar Start"},
+	{12, 192, 130, 38, "Find Again"},
+};
+static constexpr int kToolTapCount = sizeof kToolTaps / sizeof kToolTaps[0];
+static float sFolderNote = 0;  // seconds the folder's path stays up, where it can't be opened
+#endif
 static const Button kResultButtons[] = {kBack, {20, 170, 134, 52, "Again"}, {166, 170, 134, 52, "Modes"}};
 #if PORT_PAUSE_BUTTON
 static const Button kPauseSign = {2, kFieldTop + 2, 36, 36, nullptr};  // in field units: top-left, just under the score sign
@@ -217,7 +236,7 @@ static struct {
 static Screen sDrawing = SCREEN_LOADING;  // the screen whose signs are being drawn, during a slide too
 static Blade sMenuBlade;                  // the trail a swipe leaves across the menus
 static bool menuBladeShown() {
-	return sScreen == SCREEN_TITLE || sScreen == SCREEN_MODES || sScreen == SCREEN_OPTIONS || sScreen == SCREEN_CREDITS || sScreen == SCREEN_HOWTO || sScreen == SCREEN_JOURNAL || sScreen == SCREEN_STATS || sScreen == SCREEN_BEAT || sScreen == SCREEN_PAUSE || sScreen == SCREEN_RESULT;
+	return sScreen == SCREEN_TITLE || sScreen == SCREEN_MODES || sScreen == SCREEN_OPTIONS || sScreen == SCREEN_CREDITS || sScreen == SCREEN_HOWTO || sScreen == SCREEN_JOURNAL || sScreen == SCREEN_STATS || sScreen == SCREEN_BEAT || sScreen == SCREEN_BEATTOOL || sScreen == SCREEN_PAUSE || sScreen == SCREEN_RESULT;
 }
 
 static bool fruit3D() { return gSave.artStyle == ART_3D && m3d::ready(); }
@@ -1897,22 +1916,102 @@ static void drawStatsTop() {
 }
 
 // ---------------------------------------------------------------- Beat Slice track choice
+// The game's tracks you have, then any songs of your own (Windows, Linux and Android).
+static bool beatChoice(int t) { return t < kTrackCount ? trackUnlocked(t) : t < audio::trackCount(); }
+
 static int beatSong() {
 	int t = gSave.beatTrack ? gSave.beatTrack - 1 : 1;
-	return t < kTrackCount && trackUnlocked(t) ? t : 1;
+	return beatChoice(t) ? t : 1;
 }
 
-// The next track you have, either way round. Each one plays from its start as you land on it.
-static void beatPick(int dir) {
-	int t = beatSong();
-	for (int i = 0; i < kTrackCount; i++) {
-		t = (t + dir + kTrackCount) % kTrackCount;
-		if (trackUnlocked(t)) break;
+// Every track in the list, in order. Returns how many.
+static int beatList(int* ids) {
+	int n = 0;
+	for (int i = 0; i < audio::trackCount(); i++)
+		if (beatChoice(i)) ids[n++] = i;
+	return n;
+}
+
+// Keeps the chosen track's row in view.
+static void beatScrollTo(int t) {
+	static int ids[kTrackCount + 64];
+	const int n = beatList(ids);
+	int at = 0;
+	for (int i = 0; i < n; i++)
+		if (ids[i] == t) at = i;
+	if (at < sBeatScroll) sBeatScroll = at;
+	if (at >= sBeatScroll + kBeatRows) sBeatScroll = at - kBeatRows + 1;
+	if (sBeatScroll > n - kBeatRows) sBeatScroll = n - kBeatRows;
+	if (sBeatScroll < 0) sBeatScroll = 0;
+}
+
+#if PORT_CUSTOM_MUSIC
+// A song of your own is listened to for its beat as soon as it is picked, if it has none yet.
+static int sListenSong = -1;   // which of your songs is being listened to, or -1
+static int sListenFailed = -1; // the last one that had no steady beat
+static float sListenP = 0;
+
+static void listenStop() {
+	if (sListenSong >= 0) custom::analyzeCancel();
+	sListenSong = -1;
+}
+
+static void listenFor(int t) {
+	listenStop();
+	if (t < kTrackCount || audio::trackHasBeat(t) || t - kTrackCount == sListenFailed) return;
+	if (custom::analyzeStart(t - kTrackCount)) {
+		sListenSong = t - kTrackCount;
+		sListenP = 0;
+	} else {
+		sListenFailed = t - kTrackCount;
 	}
+}
+
+static void listenTick() {
+	if (sListenSong < 0) return;
+	const float p = custom::analyzeStep();
+	if (p >= 1) {
+		sListenSong = -1;  // found, and kept in beats.txt
+	} else if (p < 0) {
+		sListenFailed = sListenSong;
+		sListenSong = -1;
+	} else {
+		sListenP = p;
+	}
+}
+#endif
+
+// Picks a track: it plays from its start, and comes into view.
+static void beatSelect(int t) {
 	gSave.beatTrack = (u8)(t + 1);
 	audio::click();
 	audio::musicBeat(t);
+	beatScrollTo(t);
+#if PORT_CUSTOM_MUSIC
+	listenFor(t);
+#endif
 }
+
+// The next track you have, either way round.
+static void beatPick(int dir) {
+	int t = beatSong();
+	const int count = audio::trackCount();
+	for (int i = 0; i < count; i++) {
+		t = (t + dir + count) % count;
+		if (beatChoice(t)) break;
+	}
+	beatSelect(t);
+}
+
+#if PORT_CUSTOM_MUSIC
+// A small plank that acts the moment it is tapped: its label fills it, as there is no fruit to fit around.
+static void drawTap(const Button& b, const char* label) {
+	drawPlank(b.x, b.y, b.w, b.h, false, false);
+	float s = 0.36f, w = gfx::textWidth(label, s);
+	if (w > b.w - 10) s *= (b.w - 10) / w;
+	gfx::text(label, b.x + b.w * 0.5f, b.y + b.h * 0.5f - 20 * s - 1, s, COL_CREAM, ALIGN_CENTER);
+}
+#endif
 
 static void drawBeatScreen() {
 	char buf[32];
@@ -1920,29 +2019,204 @@ static void drawBeatScreen() {
 	drawHeader("Beat Slice");
 	drawBackArrow(f == 0, sPressed == 0);
 	const int t = beatSong();
-	int n = 0, at = 0;
-	for (int i = 0; i < kTrackCount; i++) {
-		if (!trackUnlocked(i)) continue;
-		if (i == t) at = n;
-		n++;
+	static int ids[kTrackCount + 64];
+	const int n = beatList(ids);
+	// The list: the chosen track lit, each row with its tempo, or how listening for it is going.
+	for (int r = 0; r < kBeatRows && sBeatScroll + r < n; r++) {
+		const int id = ids[sBeatScroll + r];
+		const Button b = beatRow(r);
+		const bool on = id == t;
+		drawPlank(b.x, b.y, b.w, b.h, on, false);
+		const bool own = id >= kTrackCount;
+		const char* name = kTrackRowNames[own ? 0 : id + 1];
+		buf[0] = 0;
+		if (audio::trackHasBeat(id)) snprintf(buf, sizeof buf, "%d", (int)(60 / audio::trackBeat(id) + 0.5f));
+#if PORT_CUSTOM_MUSIC
+		if (own) {
+			name = custom::name(id - kTrackCount);
+			gfx::sprite(SHEET_SPRITES, sprites_ic_note_idx, b.x + 14, b.y + b.h * 0.5f, 0.5f, 0.5f, 0, on ? COL_ACCENT : COL_CREAM);
+			if (sListenSong == id - kTrackCount) snprintf(buf, sizeof buf, "%d%%", (int)(sListenP * 100));
+			else if (sListenFailed == id - kTrackCount && !audio::trackHasBeat(id)) snprintf(buf, sizeof buf, "NO BEAT");
+			else if (!audio::trackHasBeat(id)) snprintf(buf, sizeof buf, "NEW");
+		}
+#endif
+		const float bw = buf[0] ? gfx::textWidth(buf, 0.3f) + 8 : 0;
+		float s = 0.34f, w = gfx::textWidth(name, s), room = b.w - 34 - bw;
+		if (w > room) s *= room / w;
+		gfx::text(name, b.x + 28, b.y + b.h * 0.5f - 20 * s - 1, s, on ? COL_ACCENT : COL_CREAM, ALIGN_LEFT);
+		if (buf[0]) gfx::text(buf, b.x + b.w - 8, b.y + b.h * 0.5f - 7, 0.3f, COL_DIM, ALIGN_RIGHT);
 	}
-	gfx::sign(sprites_plank_idx, 60, 56, 200, 70, COL_PLANK);
-	snprintf(buf, sizeof buf, "TRACK %d OF %d", at + 1, n);
-	gfx::text(buf, 160, 64, 0.3f, COL_DIM, ALIGN_CENTER);
-	const char* name = kTrackRowNames[t + 1];
-	float s = 0.5f, w = gfx::textWidth(name, s);
-	if (w > 176) s *= 176 / w;
-	gfx::text(name, 160, 80, s, COL_ACCENT, ALIGN_CENTER);
-	snprintf(buf, sizeof buf, "%d BPM", (int)(60 / audio::trackBeat(t) + 0.5f));
-	gfx::text(buf, 160, 104, 0.34f, COL_CREAM, ALIGN_CENTER);
-	for (int side = 0; side < 2; side++) {
-		const Button& b = side ? kBeatNextSign : kBeatPrev;
-		drawPlank(b.x, b.y, b.w, b.h, false, false);
-		gfx::sprite(SHEET_SPRITES, sprites_arrow_idx, b.x + b.w * 0.5f, b.y + b.h * 0.5f, 0.6f, 0.6f, side ? 3.14159265f : 0, COL_ACCENT);
+	if (n > kBeatRows) {
+		for (int side = 0; side < 2; side++) {
+			const Button& b = side ? kBeatDown : kBeatUp;
+			const bool can = side ? sBeatScroll + kBeatRows < n : sBeatScroll > 0;
+			drawPlank(b.x, b.y, b.w, b.h, false, false);
+			gfx::sprite(SHEET_SPRITES, sprites_arrow_idx, b.x + b.w * 0.5f, b.y + b.h * 0.5f, 0.45f, 0.45f, side ? -1.5707963f : 1.5707963f, can ? COL_ACCENT : withAlpha(COL_CREAM, 0.3f));
+		}
 	}
-	drawSign(kBeatButtons[1], kBeatButtons[1].label, f == 1, sPressed == 1, 0.56f, -1, fruitFor("Play"));
-	gfx::text(n < kTrackCount ? "Tracks from the Shop play here too." : "Every track is yours.", 160, 224, 0.3f, COL_DIM, ALIGN_CENTER);
+	const char* play = "Play";
+#if PORT_CUSTOM_MUSIC
+	if (sListenSong >= 0) play = "Listening";
+	else if (!audio::trackHasBeat(t)) play = "Find Beat";
+#endif
+	drawSign(kBeatButtons[1], play, f == 1, sPressed == 1, 0.5f, -1, fruitFor("Play"));
+	const char* hint = n - (audio::trackCount() - kTrackCount) < kTrackCount ? "Tracks from the Shop play here too." : "Every track is yours.";
+#if PORT_CUSTOM_MUSIC
+	if (t >= kTrackCount) drawTap(kBeatTool, kBeatTool.label);
+	drawTap(kBeatFolder, kBeatFolder.label);
+	if (custom::count() == 0) hint = "Add .ogg or .wav songs to the Custom Music folder.";
+	if (sFolderNote > 0) hint = custom::folder();
+#endif
+	float s = 0.28f, w = gfx::textWidth(hint, s);
+	if (w > 304) s *= 304 / w;
+	gfx::text(hint, 160, 224, s, COL_DIM, ALIGN_CENTER);
 }
+
+#if PORT_CUSTOM_MUSIC
+// ---------------------------------------------------------------- Beat Tool
+// Finds the beat of one of your songs, then lets you fix it by ear: a click plays on every beat it has, and
+// the tempo and the first beat move until the clicks land with the music.
+static struct {
+	int song;          // which of your songs
+	float bpm, first;  // the beat so far: tempo, and seconds to the first beat of a bar
+	bool has;          // a beat has been found or set
+	bool dirty;        // changed since it was last kept
+	bool click;        // a click on every beat
+	bool listening;    // the analysis is running
+	bool failed;       // it ran and found no steady beat
+	float progress;
+	int lastBeat;
+} sTool;
+
+static void toolKeep() {
+	if (sTool.listening) custom::analyzeCancel();
+	sTool.listening = false;
+	if (sTool.has && sTool.dirty) custom::setBeat(sTool.song, sTool.bpm, sTool.first);
+	sTool.dirty = false;
+}
+
+static void toolListen() {
+	sTool.listening = custom::analyzeStart(sTool.song);
+	sTool.failed = !sTool.listening;
+	sTool.progress = 0;
+}
+
+static void openBeatTool(int song) {
+	static bool once;
+	if (!once) sTool.click = once = true;  // the click is how the beat is checked, so it starts on
+	sTool.song = song;
+	sTool.has = custom::beat(song, &sTool.bpm, &sTool.first);
+	sTool.dirty = false;
+	sTool.failed = false;
+	sTool.listening = false;
+	sTool.lastBeat = -1;
+	if (!sTool.has) toolListen();
+	sFocus[SCREEN_BEATTOOL] = 1;
+	goTo(SCREEN_BEATTOOL, 1);
+}
+
+// Keeps the first beat within one bar, so nudges wrap round instead of running off.
+static void toolSetFirst(float first) {
+	const float bar = 4 * 60 / sTool.bpm;
+	sTool.first = first - floorf(first / bar) * bar;
+}
+
+static void toolChange(int what) {
+	audio::click();
+	if (what == 6) {
+		sTool.click = !sTool.click;
+		return;
+	}
+	if (what == 8) {
+		toolListen();
+		return;
+	}
+	if (sTool.listening) return;
+	if (!sTool.has) {  // nothing found: start from a common tempo and set it by ear
+		sTool.bpm = 120;
+		sTool.first = 0;
+		sTool.has = true;
+	}
+	switch (what) {
+		case 0: sTool.bpm -= 0.5f; break;
+		case 1: sTool.bpm += 0.5f; break;
+		case 2: sTool.bpm *= 0.5f; break;
+		case 3: sTool.bpm *= 2; break;
+		case 4: sTool.first -= 0.01f; break;
+		case 5: sTool.first += 0.01f; break;
+		case 7: sTool.first += 60 / sTool.bpm; break;  // the bar starts on the next beat
+	}
+	sTool.bpm = clampf(sTool.bpm, 40, 240);
+	toolSetFirst(sTool.first);
+	sTool.failed = false;
+	sTool.dirty = true;
+}
+
+// Runs every frame on the Beat Tool: the analysis a few milliseconds at a time, and the click.
+static void toolTick() {
+	if (sTool.listening) {
+		const float p = custom::analyzeStep();
+		if (p >= 1) {
+			sTool.listening = false;
+			sTool.has = custom::beat(sTool.song, &sTool.bpm, &sTool.first);
+			sTool.dirty = false;
+			sTool.lastBeat = -1;
+		} else if (p < 0) {
+			sTool.listening = false;
+			sTool.failed = true;
+		} else {
+			sTool.progress = p;
+		}
+	}
+	const float t = audio::musicTime();
+	if (!sTool.has || t < 0) return;
+	const int beat = (int)floorf((t - sTool.first) * sTool.bpm / 60);
+	if (beat != sTool.lastBeat && sTool.lastBeat != -1 && sTool.click) audio::play(SFX_CLICK);
+	sTool.lastBeat = beat;
+}
+
+static void drawBeatTool() {
+	char buf[48];
+	const int f = sFocus[SCREEN_BEATTOOL];
+	drawHeader("Beat Tool");
+	drawBackArrow(f == 0, sPressed == 0);
+	gfx::sign(sprites_plank_idx, 30, 44, 260, 62, COL_PLANK);
+	const char* name = custom::name(sTool.song);
+	float s = 0.4f, w = gfx::textWidth(name, s);
+	if (w > 236) s *= 236 / w;
+	gfx::text(name, 160, 50, s, COL_ACCENT, ALIGN_CENTER);
+	if (sTool.listening) {
+		gfx::text("Listening for the beat", 160, 70, 0.34f, COL_CREAM, ALIGN_CENTER);
+		gfx::rect(60, 90, 200, 6, withAlpha(COL_CREAM, 0.25f));
+		gfx::rect(60, 90, 200 * sTool.progress, 6, COL_ACCENT);
+	} else if (sTool.has) {
+		snprintf(buf, sizeof buf, "%.1f BPM", sTool.bpm);
+		gfx::text(buf, 112, 72, 0.44f, COL_CREAM, ALIGN_CENTER);
+		// Four lights, as in the game: the bar the song is in, the first beat in the accent colour.
+		const float t = audio::musicTime();
+		const float beats = t >= 0 ? (t - sTool.first) * sTool.bpm / 60 : 0;
+		const int now = ((int)floorf(beats) % 4 + 4) % 4;
+		const float fresh = t >= 0 ? 1 - (beats - floorf(beats)) : 0;
+		for (int i = 0; i < 4; i++) {
+			const bool lit = t >= 0 && i == now;
+			const float size = lit ? 9 + 4 * fresh * fresh : 8;
+			const float cx = 196 + i * 18;
+			gfx::rect(cx - size * 0.5f, 80 - size * 0.5f, size, size, lit ? (i == 0 ? COL_ACCENT : COL_CREAM) : withAlpha(COL_CREAM, 0.3f));
+		}
+		snprintf(buf, sizeof buf, "FIRST BEAT AT %.2f S%s", sTool.first, sTool.dirty ? ", CHANGED" : "");
+		gfx::text(buf, 160, 92, 0.28f, COL_DIM, ALIGN_CENTER);
+	} else {
+		gfx::text(sTool.failed ? "No steady beat found." : "Can't read this song.", 160, 68, 0.34f, COL_CREAM, ALIGN_CENTER);
+		gfx::text("Slower or Faster sets one by ear.", 160, 88, 0.3f, COL_DIM, ALIGN_CENTER);
+	}
+	for (int i = 0; i < kToolTapCount; i++) {
+		const Button& b = kToolTaps[i];
+		const char* label = i == 6 ? (sTool.click ? "Click On" : "Click Off") : b.label;
+		drawTap(b, label);
+	}
+	drawSign(kToolButtons[1], "Play", f == 1, sPressed == 1, 0.56f, -1, fruitFor("Play"));
+}
+#endif
 
 static void skipPractice() {
 	sGame.commitScore();
@@ -2056,6 +2330,22 @@ static void drawTopContent(Screen screen) {
 		case SCREEN_STATS:
 			drawStatsTop();
 			break;
+#if PORT_CUSTOM_MUSIC
+		case SCREEN_BEATTOOL:
+			topPanel(30, 96, 340, 134);
+			gfx::setDepth(1.0f);
+			gfx::sprite(SHEET_LOGO, logo_logo_idx, 200, 50, 0.62f, 0.62f);
+			gfx::setDepth(0.7f);
+			gfx::text("Beat Tool", 200, 104, 0.6f, COL_ACCENT, ALIGN_CENTER);
+			gfx::text("The game listens to your song for its beat.", 200, 134, 0.36f, COL_CREAM, ALIGN_CENTER);
+			gfx::text("Turn the click on, then nudge the beat", 200, 152, 0.36f, COL_CREAM, ALIGN_CENTER);
+			gfx::text("until every click lands with the music.", 200, 168, 0.36f, COL_CREAM, ALIGN_CENTER);
+#if !PORT_ANDROID
+			gfx::text("Left and Right: earlier or later.  Up and Down: tempo.", 200, 196, 0.3f, COL_DIM, ALIGN_CENTER);
+			gfx::text("X: click on or off.  Y: the bar starts a beat later.", 200, 210, 0.3f, COL_DIM, ALIGN_CENTER);
+#endif
+			break;
+#endif
 		case SCREEN_BEAT: {
 			topPanel(30, 96, 340, 134);
 			gfx::setDepth(1.0f);
@@ -2298,6 +2588,12 @@ static void drawBottomContent(Screen screen) {
 			drawMenuBack();
 			drawBeatScreen();
 			break;
+#if PORT_CUSTOM_MUSIC
+		case SCREEN_BEATTOOL:
+			drawMenuBack();
+			drawBeatTool();
+			break;
+#endif
 		case SCREEN_STATS:
 			drawMenuBack();
 			drawStats();
@@ -2531,7 +2827,13 @@ static void updateFrame(const Input& in, bool wasTouching) {
 			else if (t - 1 == MODE_BEAT) {
 				// Beat Slice picks its track first, playing each one as it is chosen.
 				sFocus[SCREEN_BEAT] = 1;
+#if PORT_CUSTOM_MUSIC
+				custom::scan();  // songs added since last time
+				sListenFailed = -1;
+				listenFor(beatSong());
+#endif
 				audio::musicBeat(beatSong());
+				beatScrollTo(beatSong());
 				goTo(SCREEN_BEAT, 1);
 			} else if (t > 0) {
 				sStartMode = (Mode)(t - 1);
@@ -2540,21 +2842,69 @@ static void updateFrame(const Input& in, bool wasTouching) {
 			break;
 		}
 		case SCREEN_BEAT: {
+#if PORT_CUSTOM_MUSIC
+			listenTick();
+#endif
 			if (blocked) break;
-			if (in.repeat & KEY_LEFT) beatPick(-1);
-			else if (in.repeat & KEY_RIGHT) beatPick(1);
-			if (in.touching && !wasTouching) {
-				if (hit(kBeatPrev, in.tx, in.ty)) beatPick(-1);
-				else if (hit(kBeatNextSign, in.tx, in.ty)) beatPick(1);
+			// The arrows move along the list here, so they don't move between the signs.
+			Input keys = in;
+			keys.repeat &= ~(u32)(KEY_LEFT | KEY_RIGHT | KEY_UP | KEY_DOWN);
+			if (in.repeat & (KEY_UP | KEY_LEFT)) beatPick(-1);
+			else if (in.repeat & (KEY_DOWN | KEY_RIGHT)) beatPick(1);
+			{
+				static int ids[kTrackCount + 64];
+				const int n = beatList(ids);
+				if (in.wheel) {
+					sBeatScroll -= in.wheel;
+					if (sBeatScroll > n - kBeatRows) sBeatScroll = n - kBeatRows;
+					if (sBeatScroll < 0) sBeatScroll = 0;
+				}
+				if (in.touching && !wasTouching) {
+					for (int r = 0; r < kBeatRows && sBeatScroll + r < n; r++)
+						if (hit(beatRow(r), in.tx, in.ty) && ids[sBeatScroll + r] != beatSong()) beatSelect(ids[sBeatScroll + r]);
+					if (n > kBeatRows && hit(kBeatUp, in.tx, in.ty) && sBeatScroll > 0) {
+						audio::click();
+						sBeatScroll--;
+					}
+					if (n > kBeatRows && hit(kBeatDown, in.tx, in.ty) && sBeatScroll + kBeatRows < n) {
+						audio::click();
+						sBeatScroll++;
+					}
+				}
 			}
-			int t = menuInput(kBeatButtons, 2, SCREEN_BEAT, in, wasTouching);
+#if PORT_CUSTOM_MUSIC
+			if (sFolderNote > 0) sFolderNote -= kDt;
+			{
+				const bool own = beatSong() >= kTrackCount;
+				const bool tap = in.touching && !wasTouching;
+				if (own && ((tap && hit(kBeatTool, in.tx, in.ty)) || (in.down & KEY_X))) {
+					audio::click();
+					listenStop();
+					openBeatTool(beatSong() - kTrackCount);
+					break;
+				}
+				if ((tap && hit(kBeatFolder, in.tx, in.ty)) || (in.down & KEY_Y)) {
+					audio::click();
+					if (!custom::openFolder()) sFolderNote = 6;  // no file manager to show it in: the path instead
+				}
+			}
+#endif
+			int t = menuInput(kBeatButtons, 2, SCREEN_BEAT, keys, wasTouching);
 			if (in.down & KEY_B) {
 				audio::click();
 				t = 0;
 			}
 			if (t == 0) {
+#if PORT_CUSTOM_MUSIC
+				listenStop();
+#endif
 				audio::music(MUSIC_MENU);
 				goTo(SCREEN_MODES, -1);
+			} else if (t == 1 && !audio::trackHasBeat(beatSong())) {
+#if PORT_CUSTOM_MUSIC
+				// Still listening: Play waits. Nothing found: the Beat Tool, to set it by ear.
+				if (sListenSong < 0) openBeatTool(beatSong() - kTrackCount);
+#endif
 			} else if (t == 1) {
 				saveWrite();  // keeps the chosen track
 				sStartMode = MODE_BEAT;
@@ -2562,6 +2912,40 @@ static void updateFrame(const Input& in, bool wasTouching) {
 			}
 			break;
 		}
+#if PORT_CUSTOM_MUSIC
+		case SCREEN_BEATTOOL: {
+			toolTick();
+			if (blocked) break;
+			// The arrows change the beat here, so they don't move between the signs.
+			Input keys = in;
+			keys.repeat &= ~(u32)(KEY_LEFT | KEY_RIGHT | KEY_UP | KEY_DOWN);
+			if (in.repeat & KEY_DOWN) toolChange(0);
+			else if (in.repeat & KEY_UP) toolChange(1);
+			else if (in.repeat & KEY_LEFT) toolChange(4);
+			else if (in.repeat & KEY_RIGHT) toolChange(5);
+			if (in.down & KEY_X) toolChange(6);
+			if (in.down & KEY_Y) toolChange(7);
+			if (in.touching && !wasTouching)
+				for (int i = 0; i < kToolTapCount; i++)
+					if (hit(kToolTaps[i], in.tx, in.ty)) toolChange(i);
+			int t = menuInput(kToolButtons, 2, SCREEN_BEATTOOL, keys, wasTouching);
+			if (in.down & KEY_B) {
+				audio::click();
+				t = 0;
+			}
+			if (t == 0) {
+				toolKeep();
+				goTo(SCREEN_BEAT, -1);
+			} else if (t == 1 && sTool.has && !sTool.listening) {
+				toolKeep();
+				gSave.beatTrack = (u8)(kTrackCount + sTool.song + 1);
+				saveWrite();
+				sStartMode = MODE_BEAT;
+				fadeThen(startGame);
+			}
+			break;
+		}
+#endif
 		case SCREEN_OPTIONS: {
 			if (blocked) break;
 			int t = menuInput(sOptionButtons, optionButtons(), SCREEN_OPTIONS, in, wasTouching);

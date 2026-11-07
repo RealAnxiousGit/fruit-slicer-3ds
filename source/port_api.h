@@ -9,6 +9,8 @@ AssetFile* assetOpen(const char* path);
 size_t assetRead(void* out, size_t bytes, AssetFile* f);
 long assetSize(AssetFile* f);
 void assetClose(AssetFile* f);
+// Any file by its whole path, read the same way: the player's own songs (Windows, Linux and Android only).
+AssetFile* fileOpen(const char* fullPath);
 
 // Writable files: saves, and anything a player might want to send in.
 void dataPath(char* out, size_t size, const char* name);

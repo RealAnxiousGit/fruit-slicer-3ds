@@ -222,7 +222,9 @@ void saveLoad() {
 	PORT_CHECK_SETTINGS
 	gSave.menuTrack %= kTrackCount + 1;
 	gSave.gameTrack %= kTrackCount + 1;
-	gSave.beatTrack %= kTrackCount + 1;
+#if !PORT_CUSTOM_MUSIC
+	gSave.beatTrack %= kTrackCount + 1;  // custom songs are checked when Beat Slice starts, as the folder can change
+#endif
 	shopCheckSave();
 	u8* const sliders[] = {&gSave.sfx, &gSave.music, &gSave.menuSfx, &gSave.depth, &gSave.shake, &gSave.stylus, &gSave.fruitSpeed, &gSave.bombs, &gSave.forgiveness, &gSave.frenzyDrain, &gSave.stickSpeed};
 	for (u8* v : sliders)

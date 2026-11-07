@@ -164,10 +164,33 @@ static void autotestInput(Input& in) {
 			return;
 
 		case SCREEN_BEAT:
+#ifdef BOT_CUSTOM
+			if (sBotPhaseFrames < 240 || sSliding || sFade > 0) return;  // long enough for a picture of the list
+#else
 			if (sBotPhaseFrames < 45 || sSliding || sFade > 0) return;
+#endif
 			sBotPhaseFrames = 0;
+#if defined(BOT_CUSTOM) && PORT_CUSTOM_MUSIC
+			// Test builds with songs in Custom Music: pick song BOT_CUSTOM of your own, then Play, which
+			// opens the Beat Tool first when its beat hasn't been found.
+			if (beatSong() != kTrackCount + BOT_CUSTOM && kTrackCount + BOT_CUSTOM < audio::trackCount()) {
+				beatSelect(kTrackCount + BOT_CUSTOM);
+				fprintf(stderr, "[bot] picked your song %s\n", custom::name(BOT_CUSTOM));
+				return;
+			}
+			if (sListenSong >= 0) return;
+			if (audio::trackHasBeat(beatSong())) fprintf(stderr, "[beat] list: %s, %.2f BPM, first beat %.3f s\n", custom::name(BOT_CUSTOM), 60 / audio::trackBeat(beatSong()), audio::trackFirst(beatSong()));
+#endif
 			botTap(kBeatButtons[1]);
 			return;
+#if PORT_CUSTOM_MUSIC
+		case SCREEN_BEATTOOL:
+			if (sBotPhaseFrames < 300 || sSliding || sFade > 0 || sTool.listening) return;  // long enough for a picture
+			sBotPhaseFrames = 0;
+			fprintf(stderr, "[beat] tool: %s, %.2f BPM, first beat %.3f s%s\n", custom::name(sTool.song), sTool.has ? sTool.bpm : 0.0f, sTool.first, sTool.failed ? ", none found" : "");
+			botTap(kToolButtons[1]);
+			return;
+#endif
 
 		case SCREEN_RESULT:
 			if (sBotPhaseFrames < 80) return;

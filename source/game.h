@@ -162,12 +162,11 @@ struct Game {
 	float songT;          // seconds since the track began, never wrapping
 	float beatLen;        // seconds per beat
 	float beatStepLen;    // seconds between throw slots: a beat, or half of one on slow tracks
-	int beatNext;         // the next throw slot not yet planned
 	int beatStreak;       // slices on the beat in a row
 	int beatHits;         // slices on the beat this run
-	float beatSpeed;      // how fast fruit flies against the clock, so flight times can be planned
-	int beatRunBar;       // a bar that throws one fruit on every slot, left to right; -1 for none
-	float beatDt;         // this frame's step for fruit, taken from the song clock so flights keep the music's time
+	float beatFirst;      // seconds into the track of the first beat of a bar: 0 for the game's own tracks
+	float beatLoop;       // seconds before a custom song starts again, once it has loaded
+	int beatPerLoop;      // throw slots in one play of a custom song; 0 for the game's tracks, which run on forever
 #ifdef AUTOTEST
 	// Measures how often a fruit is actually drawn on top of a bomb.
 	u32 statBombFrames, statOverlapFrames, statWaves, statFrenzies, statResets;
@@ -199,6 +198,7 @@ struct Game {
 	void drawSwipeReplay() const;
 	void drawBeat(float x, float y, float s) const;  // Beat Slice: four lights for the beats of the bar
 	float beatOffset() const;  // seconds from the nearest throw slot, negative when early
+	void drawBeatPulse() const;  // Beat Slice: the field's edges glow while a slice would count
 
 private:
 	int diffIndex() const;            // Daily Fruit always plays on Normal
@@ -211,8 +211,7 @@ private:
 	void recordStroke(const Blade& blade);
 	void beatStart();
 	void beatUpdate();
-	void beatPlan(int k, float lead);
-	int beatSlice(const Obj& o);  // the on-beat bonus for a slice, with its popup
+	bool beatSlice(const Obj& o);  // whether a slice is on the beat and scores; adds the streak bonus
 	void spawnWave();
 	bool spawnPattern(float d);
 	void maybeCoin(float d);

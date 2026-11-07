@@ -12,6 +12,9 @@
 #else
 #define FS_OGG 0
 #endif
+#if PORT_CUSTOM_MUSIC
+#include "custom_music.h"
+#endif
 
 namespace audio {
 static Clip sSfx[SFX_COUNT];
@@ -336,11 +339,11 @@ void update(float dt) {
 	} else
 #endif
 	if (sLoadFile) {
-		u32 left = sMusicClip.samples * 2 - sLoadDone;
+		u32 left = sMusicClip.samples * sMusicClip.channels * 2 - sLoadDone;
 		u32 want = left < kReadPerFrame ? left : kReadPerFrame;
 		size_t got = port::assetRead((u8*)sMusicClip.pcm + sLoadDone, want, sLoadFile);
 		sLoadDone += got;
-		if (got != want || sLoadDone >= sMusicClip.samples * 2) {
+		if (got != want || sLoadDone >= sMusicClip.samples * sMusicClip.channels * 2) {
 			port::assetClose(sLoadFile);
 			sLoadFile = nullptr;
 			if (got == want) {
@@ -394,6 +397,73 @@ void refreshVolumes() {
 	audioport::musicVolume(0.6f * level(gSave.music));
 }
 
+#if PORT_CUSTOM_MUSIC
+// Reads a little-endian number from a WAV header.
+static u32 le(const u8* p, int n) {
+	u32 v = 0;
+	for (int i = n - 1; i >= 0; i--) v = v << 8 | p[i];
+	return v;
+}
+
+// A player's song: Ogg arrives and decodes like the Shop's tracks; a 16-bit WAV streams straight in.
+static void startCustom(int song) {
+	port::AssetFile* f = port::fileOpen(custom::path(song));
+	if (!f) return;
+	if (!custom::isWav(song)) {
+		long size = port::assetSize(f);
+		if (size > 0 && size < 64L * 1024 * 1024 && (sOgg = (u8*)malloc((size_t)size))) {
+			sOggSize = (u32)size;
+			sLoadFile = f;
+			sLoadDone = 0;
+			return;
+		}
+		port::assetClose(f);
+		return;
+	}
+	// The header, chunk by chunk, up to the samples.
+	u8 h[64];
+	u32 ch = 0, rate = 0, bits = 0, bytes = 0;
+	bool ok = port::assetRead(h, 12, f) == 12 && memcmp(h, "RIFF", 4) == 0 && memcmp(h + 8, "WAVE", 4) == 0;
+	while (ok) {
+		if (port::assetRead(h, 8, f) != 8) {
+			ok = false;
+			break;
+		}
+		u32 len = le(h + 4, 4);
+		if (memcmp(h, "data", 4) == 0) {
+			bytes = len;
+			break;
+		}
+		while (len > 0 && ok) {  // the format, or a chunk the game doesn't need
+			u32 n = len < sizeof h ? len : (u32)sizeof h;
+			ok = port::assetRead(h, n, f) == n;
+			if (ok && rate == 0 && n >= 16 && len >= 16 && (le(h, 2) == 1 || le(h, 2) == 0xFFFE)) {
+				ch = le(h + 2, 2);
+				rate = le(h + 4, 4);
+				bits = le(h + 14, 2);
+			}
+			len -= n;
+		}
+		if (ok && (len & 1)) ok = port::assetRead(h, 1, f) == 1;
+	}
+	if (!ok || bits != 16 || ch < 1 || ch > 2 || rate < 8000 || rate > 96000 || bytes < ch * 2 || bytes / (ch * 2) > rate * 600) {
+		fprintf(stderr, "[audio] a custom song isn't a 16-bit WAV the game can play\n");
+		port::assetClose(f);
+		return;
+	}
+	sMusicClip.samples = bytes / (ch * 2);
+	sMusicClip.rate = rate;
+	sMusicClip.channels = ch;
+	sMusicClip.pcm = audioport::alloc(sMusicClip.samples * ch * 2);
+	if (!sMusicClip.pcm) {
+		port::assetClose(f);
+		return;
+	}
+	sLoadFile = f;
+	sLoadDone = 0;
+}
+#endif
+
 static void startTrack(int track) {
 	if (!sReady || track == sCurrent) return;
 	sCurrent = track;
@@ -425,6 +495,13 @@ static void startTrack(int track) {
 		sMusicClip.pcm = nullptr;
 	}
 	if (track < 0) return;
+#if PORT_CUSTOM_MUSIC
+	if (track >= kTrackCount) {
+		startCustom(track - kTrackCount);
+		return;
+	}
+#endif
+	if (track >= kTrackCount) return;
 #if FS_OGG
 	{
 		char path[64];
@@ -465,7 +542,7 @@ void music(Music m) {
 void preview(Music m) { startTrack(resolveTrack(m)); }
 
 void musicBeat(int track) {
-	if (track < 0 || track >= kTrackCount) return;
+	if (track < 0 || track >= trackCount()) return;
 	sContext = MUSIC_PLAY;
 	sForced = track;
 	if (!sReady) return;
@@ -490,7 +567,48 @@ float musicTime() {
 	return audioport::musicTime();
 }
 
-float trackBeat(int track) { return 60.0f / kTrackBpm[track >= 0 && track < kTrackCount ? track : 1]; }
+int trackCount() {
+#if PORT_CUSTOM_MUSIC
+	return kTrackCount + custom::count();
+#else
+	return kTrackCount;
+#endif
+}
+
+float trackBeat(int track) {
+#if PORT_CUSTOM_MUSIC
+	float bpm, first;
+	if (track >= kTrackCount && custom::beat(track - kTrackCount, &bpm, &first)) return 60.0f / bpm;
+#endif
+	return 60.0f / kTrackBpm[track >= 0 && track < kTrackCount ? track : 1];
+}
+
+bool trackHasBeat(int track) {
+	if (track >= 0 && track < kTrackCount) return true;
+#if PORT_CUSTOM_MUSIC
+	float bpm, first;
+	return track >= kTrackCount && custom::beat(track - kTrackCount, &bpm, &first);
+#else
+	return false;
+#endif
+}
+
+float trackFirst(int track) {
+#if PORT_CUSTOM_MUSIC
+	float bpm, first;
+	if (track >= kTrackCount && custom::beat(track - kTrackCount, &bpm, &first)) return first;
+#endif
+	(void)track;
+	return 0;
+}
+
+float musicLength() {
+	if (!sReady || !sMusicClip.pcm || sLoadFile || sMusicClip.rate == 0) return -1;
+#if FS_OGG
+	if (sOgg || sOggDec) return -1;
+#endif
+	return (float)sMusicClip.samples / sMusicClip.rate;
+}
 
 void reapply() { startTrack(resolveTrack(sContext)); }
 

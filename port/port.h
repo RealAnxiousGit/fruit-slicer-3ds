@@ -6,6 +6,7 @@
 
 #define PORT_3DS 1
 #define PORT_TWO_SCREENS 1
+#define PORT_CUSTOM_MUSIC 0  // Custom Music is for Windows, Linux and Android only
 #define PORT_HAS_SENSITIVITY 1
 #define PORT_PAUSE_BUTTON 0
 #define PORT_MOUSE 0
