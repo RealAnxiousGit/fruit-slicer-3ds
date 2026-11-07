@@ -2,7 +2,7 @@
 
 A free, fan-made fruit-slicing arcade game for the Nintendo 3DS. Swipe the touch screen to cut fruit out of the air, chain combos and stay away from the bombs.
 
-**Status: Alpha.** Tested in the Azahar emulator. Real-hardware performance, the extra CPU core and the look of stereoscopic 3D are still unconfirmed, so reports are welcome.
+**Version 1.0.0.** Tested on a real New 2DS XL and in the Azahar emulator. Old 3DS hardware and the look of stereoscopic 3D are still unconfirmed, so reports are welcome.
 
 <p>
   <img src="docs/screenshots/title.png" width="150" alt="Title screen with a turning 3D fruit">
@@ -25,6 +25,10 @@ A free, fan-made fruit-slicing arcade game for the Nintendo 3DS. Swipe the touch
 | Sudden Death | One miss or one bomb ends the run. Fruit is worth double. |
 | Minefield | Bombs take over as the run goes on. Missed fruit is free, and one bomb ends the run. |
 | Combo Rush | 45 seconds of big fruit patterns. Swipe bonuses are doubled and bombs cost 10 points, your combo and half the Frenzy meter. Ends on the Sunburst Fruit. |
+| Daily Fruit | 60 seconds, the same run for everyone that day, on every platform. A calendar keeps your daily scores and streak, and each day's first run pays a coin bonus. |
+| Beat Slice | 60 seconds to music. Fruit is thrown as usual, but only slices on the beat score, and a streak of them scores more. The board's edges glow when a slice will count. Pick any track you own from the track list. |
+
+**Practice:** the first Play starts a short, skippable lesson run. How to Play replays it.
 
 **Scoring:** 1 point per fruit, 3 for a coconut and 5 for a rare golden star fruit. The COMBO count rises with every fruit, and each 15 adds a 5-point bonus. A bomb or an empty Frenzy meter resets it. A missed fruit does not.
 
@@ -40,16 +44,28 @@ A free, fan-made fruit-slicing arcade game for the Nintendo 3DS. Swipe the touch
 
 **Difficulty:** speed, gravity, wave size and bomb frequency all rise with time and score, at a different pace in each mode.
 
+## Coins, Shop, Journal and Stats
+
+**Coins** spin through the air now and then. Slicing one is worth 5 points and 5 coins, and every 100 points of a run pays 1 more. A coin is never a strike, and a missed one costs nothing.
+
+**Shop:** spend coins on board themes, blade trails and six recorded music tracks. Items are tried on while selected.
+
+**Fruit Journal:** a sticker book with a page for every fruit. Milestones of 10, 50, 250 and 1000 slices pay coins. **Stats** shows fruit sliced, coins earned, time played, favourite mode, longest combo and your Daily streak.
+
+The menus are fruit: swipe across one with the stylus to pick it, or move the selector and press A.
+
 ## Options
 
 | Section | Settings |
 | --- | --- |
 | Audio | Sound Effects, Music and Menu Sounds sliders. Menu Music and Game Music each choose Auto or a track: Orchard Morning, Picnic Stroll, Sleepy Meadow, Lantern Walk, Still Water, Moss Garden, Bamboo Breeze, Drifting Clouds. |
-| Visuals | Art Style (3D Models or 2D Stickers), Board, Scenery, Blade, Effects (None, Low, Medium, Full), 3D Depth, Screen Shake, and speed savers: Background, 3D Detail, Slice Style and Transitions. |
+| Visuals | Art Style (3D Models or 2D Stickers), Board, Scenery, Blade, Trail, Effects (None, Low, Medium, Full), 3D Depth, and speed savers: Background, 3D Detail, Slice Style and Transitions. |
 | Gameplay | Stylus Sensitivity, Difficulty (Easy, Normal, Hard, Insane), Fruit Speed, Bomb Amount, Slice Forgiveness, Frenzy Drain, Misses Allowed. |
-| Scores and Data | Reset scores or everything, and the Speed Test. |
+| Accessibility | UI Scale, Larger Text, High Contrast, Colour-blind Mode, Calm Effects, Screen Shake, Slice Assist, Game Speed and Sound Captions. |
+| Controls | Stick Slicing (Hold or Flick), Point Speed and Snap Assist for the Circle Pad. |
+| Scores and Data | Check for Updates, Check Now, reset scores or everything, and the Speed Test. |
 
-A New 3DS starts with 3D models and full effects. An Old 3DS starts with 2D stickers and lighter settings, and can still choose 3D. Every section has its own reset. Saves from 0.1.0 and 0.2.0 are upgraded automatically and keep their best scores.
+A New 3DS starts with 3D models and full effects. An Old 3DS starts with 2D stickers and lighter settings, and can still choose 3D. Every section has its own reset. Saves from 0.4 carry over to 1.0: scores and settings are kept, and coins start at 0. Saves from before 0.4 are not carried over.
 
 **Speed Test:** Options > Scores and Data runs six load profiles, including Old 3DS speed on a New 3DS. It shows the results and writes them to `sdmc:/3ds/FruitSlicer/bench.txt`. Its timings only mean something on a real console, because Azahar's emulated clock doesn't show how hard the game is working.
 
@@ -58,7 +74,8 @@ A New 3DS starts with 3D models and full effects. An Old 3DS starts with 2D stic
 | Input | Action |
 | --- | --- |
 | Stylus | Slice, and tap anything in a menu |
-| D-Pad or Circle Pad | Move the selector, change a setting left and right |
+| D-Pad | Move the selector, change a setting left and right |
+| Circle Pad | In menus, the same as the D-Pad. In a run, it moves the blade point: hold L, R or A to slice, or set Stick Slicing to Flick. |
 | A | Select |
 | B | Back one menu |
 | START | Pause and unpause. The pause menu has Resume, Options and Main Menu. |
@@ -77,6 +94,8 @@ Download the files from the [Releases](https://github.com/RealAnxiousGit/fruit-s
 **No sound on real hardware?** Homebrew audio needs a DSP firmware dump at `sdmc:/3ds/dspfirm.cdc`. Create it once with DSP1 or the dump option in the Rosalina menu. The game still runs without it, silently.
 
 Scores and settings are saved to `sdmc:/3ds/FruitSlicer/save.bin`.
+
+**Updates:** from 1.0 on, the game can check GitHub for a newer release over Wi-Fi, once a day and only if you say yes on the first start (Options > Scores and Data changes it, and has Check Now). Nothing about you is sent. The CIA version downloads the new CIA and installs it while it downloads; close the game to the HOME Menu and open it again. The 3DSX version only tells you a new version is out. 0.4 has no update check, so install 1.0 by hand.
 
 ## Test in Azahar (Windows)
 
@@ -149,6 +168,7 @@ Programming by Claude. Prompt engineering by RealAnxiousGit.
 **Libraries and build tools:**
 
 - [devkitPro](https://devkitpro.org): devkitARM, libctru, citro2d, citro3d and tex3ds
+- [libcurl](https://curl.se) (curl license), [Mbed TLS](https://www.trustedfirmware.org/projects/mbed-tls/) (Apache 2.0) and [zlib](https://zlib.net) (zlib license), from devkitPro's portlibs, which download updates over HTTPS. The CA certificate bundle in the build comes from the build machine (Mozilla's list).
 - [bannertool](https://github.com/Steveice10/bannertool) and [makerom](https://github.com/3DSGuy/Project_CTR)
 - [Azahar](https://azahar-emu.org), for testing
 - [Python](https://www.python.org), [Pillow](https://python-pillow.org) and [numpy](https://numpy.org), which generate the art, sound and music
@@ -164,6 +184,6 @@ See [CHANGELOG.md](CHANGELOG.md) for what changed, and [docs/qa](docs/qa) for ho
 
 ## License
 
-Code and assets are licensed under [CC BY-NC 4.0](LICENSE): free to share and adapt with credit, not for commercial use. The Shop music tracks keep their own CC BY 4.0 license from their author.
+Code and assets are licensed under [CC BY-NC 4.0](LICENSE): free to share and adapt with credit, not for commercial use. The Shop music tracks keep their own CC BY 4.0 license from their author. libcurl, Mbed TLS and zlib are linked in under their own licenses (curl, Apache 2.0 and zlib).
 
 This is an independent fan project, not affiliated with or endorsed by Nintendo or any game publisher. Nintendo 3DS is a trademark of Nintendo.

@@ -20,8 +20,8 @@
 #define PORT_PRACTICE_SKIP "START to skip the lessons"
 #define PORT_CONFIRM_TEXT "Tap again to confirm"
 #define PORT_RESET_VISUALS
-#define PORT_CREDITS_TOOLS_1 "devkitARM, libctru, citro2d, citro3d"
-#define PORT_CREDITS_TOOLS_2 "tex3ds, bannertool, makerom, Azahar"
+#define PORT_CREDITS_TOOLS_1 "devkitARM, libctru, citro2d, citro3d, libcurl"
+#define PORT_CREDITS_TOOLS_2 "Mbed TLS, zlib, tex3ds, bannertool, makerom, Azahar"
 #define PORT_CHECK_SETTINGS
 #define PORT_RESET_DISPLAY
 #define PORT_UPGRADE_V4(data, size)
