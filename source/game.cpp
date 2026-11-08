@@ -724,7 +724,7 @@ void Game::award(int points) {
 }
 
 void Game::addFever(float amount) {
-	if (feverT > 0 || phase != PHASE_PLAY) return;
+	if (feverT > 0 || phase != PHASE_PLAY || !meterLive()) return;
 	feverMeter += amount * kDifficulty[diffIndex()].feverGain * (mode == MODE_PRACTICE ? 3.0f : 1.0f);  // a lesson fills it fast
 	if (feverMeter >= 1) {
 		feverMeter = 0;
@@ -999,7 +999,7 @@ void Game::sliceFruit(Obj& o, const Blade& blade) {
 	}
 	award(pts);
 	sliced++;
-	chain++;
+	if (meterLive()) chain++;  // the lessons start counting at the Frenzy lesson
 	if (chain > bestCombo) bestCombo = chain;
 	addFever(o.kind == OBJ_GOLD ? 0.14f : 0.065f);
 	if (pts > 1) {
@@ -1011,7 +1011,7 @@ void Game::sliceFruit(Obj& o, const Blade& blade) {
 		audio::play(SFX_GOLD, 0.9f, pan);
 		emitSparks(o.x, o.y, rgba(255, 226, 120), juiceCount(14), 180);
 	}
-	if (chain % 15 == 0) {
+	if (chain > 0 && chain % 15 == 0) {
 		award(5);
 		char buf[24];
 		snprintf(buf, sizeof buf, "COMBO %d +5", chain);
@@ -1981,7 +1981,7 @@ void Game::drawHud() const {
 	gfx::setDepth(0.7f);
 	snprintf(buf, sizeof buf, "%lu", (unsigned long)score);
 	float px = 24 + gfx::textWidth(buf, 1.25f) + 14;
-	if (chain >= 2 || comboFadeT > 0) {
+	if ((chain >= 2 || comboFadeT > 0) && meterLive()) {
 		const int shown = chain >= 2 ? chain : fadingChain;
 		char line[20];
 		snprintf(line, sizeof line, "COMBO %d", shown);
@@ -2000,11 +2000,13 @@ void Game::drawHud() const {
 		gfx::text(buf, 46, 54, 0.44f, COL_CREAM);
 	}
 
-	// The Fruit Frenzy meter.
+	// The Fruit Frenzy meter (hidden in the lessons before the Frenzy one).
 	gfx::setDepth(0.6f);
 	const float bx = 24, by = 80, bw = 352;
-	gfx::rect(bx - 2, by - 2, bw + 4, 11, gfx::themeBar());
-	if (feverT > 0) {
+	if (meterLive()) gfx::rect(bx - 2, by - 2, bw + 4, 11, gfx::themeBar());
+	if (!meterLive()) {
+		// No meter yet: the lessons before the Frenzy one leave it out.
+	} else if (feverT > 0) {
 		gfx::rect(bx, by, bw * clampf(feverT / kFrenzySeconds, 0, 1), 7, cycleColor(elapsed * 0.7f));
 		gfx::text("FRUIT FRENZY X2", 200, by + 9, 0.42f, cycleColor(elapsed * 0.7f), ALIGN_CENTER);
 	} else {
@@ -2060,7 +2062,7 @@ void Game::drawHud() const {
 	snprintf(buf, sizeof buf, "%lu", (unsigned long)score);
 	gfx::text(buf, 16, 3 * u - (pulse - 1) * 10, 0.58f * u * pulse, feverT > 0 ? cycleColor(elapsed * 0.6f) : COL_ACCENT);
 	float px = 16 + gfx::textWidth(buf, 0.58f * u) + 10;
-	if (chain >= 2 || comboFadeT > 0) {
+	if ((chain >= 2 || comboFadeT > 0) && meterLive()) {
 		snprintf(buf, sizeof buf, "COMBO %d", chain >= 2 ? chain : fadingChain);
 		gfx::text(buf, px, 9 * u, 0.32f * u, chain >= 2 ? COL_CREAM : withAlpha(COL_CREAM, comboFadeT / kComboFade));
 		px += gfx::textWidth(buf, 0.32f * u) + 10;
@@ -2094,8 +2096,10 @@ void Game::drawHud() const {
 	gfx::text(buf, rx, 9 * u, 0.3f * u, COL_DIM, ALIGN_RIGHT);
 
 	const float bx = 12, by = 28 * u, bw = kFieldW - 24;
-	gfx::rect(bx - 1, by - 1, bw + 2, 6, gfx::themeBar());
-	if (feverT > 0) {
+	if (meterLive()) gfx::rect(bx - 1, by - 1, bw + 2, 6, gfx::themeBar());
+	if (!meterLive()) {
+		// No meter yet: the lessons before the Frenzy one leave it out.
+	} else if (feverT > 0) {
 		gfx::rect(bx, by, bw * clampf(feverT / kFrenzySeconds, 0, 1), 4, cycleColor(elapsed * 0.7f));
 		gfx::text("FRUIT FRENZY X2", kFieldW * 0.5f, by + 6, 0.3f, cycleColor(elapsed * 0.7f), ALIGN_CENTER);
 	} else {

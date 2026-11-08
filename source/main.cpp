@@ -575,6 +575,9 @@ static void drawMenuBack() {}  // one screen, one board: it's already behind eve
 // Press highlights, release on the same sign activates: a swipe that ends on a sign does nothing.
 // A sign clicks the moment a finger or stylus lands on it, since a tap takes a tenth of a second to
 // lift, and acts on release, so sliding off still cancels. It plays the click itself.
+// The back arrow makes no click of its own: it is cut like a menu fruit (backCut).
+static bool isBackButton(const Button& b) { return !b.label && b.x == kBack.x && b.y == kBack.y; }
+
 static int touchButtons(const Button* btns, int n, const Input& in, bool wasTouching, int& focus) {
 	static bool clicked;
 	int result = -1;
@@ -584,13 +587,13 @@ static int touchButtons(const Button* btns, int n, const Input& in, bool wasTouc
 			for (int i = 0; i < n; i++)
 				if (hit(btns[i], in.tx, in.ty)) sPressed = focus = i;
 			clicked = sPressed >= 0;
-			if (clicked) audio::click();
+			if (clicked && !isBackButton(btns[sPressed])) audio::click();
 		} else if (sPressed >= 0 && !hit(btns[sPressed], in.tx, in.ty)) {
 			sPressed = -1;
 		}
 	} else if (wasTouching) {
 		if (sPressed >= 0) result = sPressed;
-		if (result >= 0 && !clicked) audio::click();  // pressed while the screen was still locked
+		if (result >= 0 && !clicked && !isBackButton(btns[result])) audio::click();  // pressed while the screen was still locked
 		sPressed = -1;
 		clicked = false;
 	}
@@ -763,6 +766,41 @@ static int menuInput(const Button* btns, int n, Screen screen, const Input& in, 
 	sliceButtons(btns, slices, screen, in, wasTouching, focus);
 	if (!sCut.pending && (in.down & KEY_A) && focus >= 0 && focus < n) startCut(btns, focus, screen, -0.6f);
 	return -1;
+}
+
+// The back arrow on screens that run their own controls (the Shop, the Journal, an Options section). Like
+// every other menu, a swipe across it or a click, tap or confirm cuts its berry, and the screen goes back
+// once the berry has split. Call backCut first each frame: while it returns true the screen does nothing
+// else, and *leave turns true on the frame to go back. cutBack is for the screen's own picks of the arrow.
+static void cutBack(Screen screen) {
+	if (sCut.pending) return;
+	startCut(kOnlyBack, 0, screen, -0.6f);
+	sPressed = -1;
+}
+static bool backCut(Screen screen, const Input& in, bool wasTouching, bool* leave) {
+	static float lastX, lastY, length;
+	*leave = false;
+	if (sCut.pending && sCut.screen == screen) {
+		if (sCut.t >= kCutDelay) {
+			sCut.pending = false;
+			*leave = true;
+		}
+		return true;
+	}
+	if (!in.touching) return false;
+	if (!wasTouching) length = 0;
+	const float dx = in.tx - lastX, dy = in.ty - lastY, d = sqrtf(dx * dx + dy * dy);
+	const int steps = wasTouching ? (int)(d / 4) + 1 : 0;
+	for (int s = 1; s <= steps; s++) {
+		length += d / steps;
+		if (length < (gSave.sliceAssist ? 12.0f : 30.0f) || !hit(kBack, (int)(lastX + dx * s / steps), (int)(lastY + dy * s / steps))) continue;
+		startCut(kOnlyBack, 0, screen, atan2f(dy, dx));
+		sPressed = -1;
+		return true;
+	}
+	lastX = in.tx;
+	lastY = in.ty;
+	return false;
 }
 
 // The halves and juice of a cut sign, drawn over the screen it was on.
@@ -1366,6 +1404,11 @@ static void updateShop(const Input& in, bool wasTouching) {
 		leaveShop();
 		return;
 	}
+	bool leave;
+	if (backCut(SCREEN_SHOP, in, wasTouching, &leave)) {
+		if (leave) leaveShop();
+		return;
+	}
 	if (in.down & KEY_L) { audio::click(0.5f); shopSetTab(sShopTab - 1); }
 	if (in.down & KEY_R) { audio::click(0.5f); shopSetTab(sShopTab + 1); }
 
@@ -1412,7 +1455,7 @@ static void updateShop(const Input& in, bool wasTouching) {
 	(void)before;
 	if (t < 0 && (in.down & KEY_A)) t = f;
 	if (t == 0) {
-		leaveShop();
+		cutBack(SCREEN_SHOP);
 	} else if (t >= kShopTab0 && t < kShopTile0) {
 		shopSetTab(t - kShopTab0);
 	} else if (t >= kShopTile0 && t < kShopAct && t - kShopTile0 < n) {
@@ -1529,7 +1572,7 @@ static void drawShopPreview() {
 	gfx::text(it.line, 200, 52, 0.38f, COL_CREAM, ALIGN_CENTER);
 	if (sShopTab == SHOP_THEMES) {
 		gfx::setDepth(0.5f);
-		gfx::image(SHEET_BOARD, 0, 120, 80, 160, 120);
+		gfx::image(SHEET_BOARD, 0, 122, 74, 156, 117);
 	} else if (sShopTab == SHOP_TRAILS) {
 		gfx::setDepth(0.5f);
 		sPreviewBlade.draw();
@@ -1537,7 +1580,17 @@ static void drawShopPreview() {
 		gfx::text("Now playing as a preview", 200, 120, 0.36f, COL_DIM, ALIGN_CENTER);
 		gfx::text("Use it to make it the menu music.", 200, 140, 0.36f, COL_DIM, ALIGN_CENTER);
 	}
-	if (sShopNoteT > 0) gfx::text(sShopNote, 200, 212, 0.46f, withAlpha(COL_CREAM, clampf(sShopNoteT * 2, 0, 1)), ALIGN_CENTER);
+	// What the item costs against the purse, or that it is already yours.
+	char buf[48];
+	const bool owned = shopOwned(sShopTab, sShopItem);
+	const bool inUse = (sShopTab == SHOP_THEMES && sKeepBoard == kBaseBoards + sShopItem) || (sShopTab == SHOP_TRAILS && sKeepTrail == sShopItem + 1) ||
+	                   (sShopTab == SHOP_MUSIC && sKeepTrack == kBaseTracks + sShopItem + 1);
+	if (owned) snprintf(buf, sizeof buf, "%s", inUse ? "Yours, and in use" : "Yours to use");
+	else if (gSave.coins >= it.price) snprintf(buf, sizeof buf, "%u coins. You have %lu.", (unsigned)it.price, (unsigned long)gSave.coins);
+	else snprintf(buf, sizeof buf, "%u coins. %lu more to go.", (unsigned)it.price, (unsigned long)(it.price - gSave.coins));
+	gfx::sprite(SHEET_SPRITES, sprites_coin_idx, 200 - gfx::textWidth(buf, 0.4f) * 0.5f - 12, 205, 0.4f, 0.4f);
+	gfx::text(buf, 200, 197, 0.4f, owned ? COL_ACCENT : COL_CREAM, ALIGN_CENTER);
+	if (sShopNoteT > 0) gfx::text(sShopNote, 200, 214, 0.46f, withAlpha(COL_CREAM, clampf(sShopNoteT * 2, 0, 1)), ALIGN_CENTER);
 }
 
 static void updateSection(const Input& in, bool wasTouching) {
@@ -1564,6 +1617,11 @@ static void updateSection(const Input& in, bool wasTouching) {
 		return;
 	}
 #endif
+	bool leave;
+	if (backCut(SCREEN_SECTION, in, wasTouching, &leave)) {
+		if (leave) leaveSection(true);
+		return;
+	}
 	if (in.down & KEY_B) {
 		leaveSection();
 		return;
@@ -1609,7 +1667,7 @@ static void updateSection(const Input& in, bool wasTouching) {
 			if (bottom > sScroll + room) sScroll = bottom - room;
 		}
 	} else if (in.down & KEY_A) {
-		leaveSection();
+		cutBack(SCREEN_SECTION);
 		return;
 	}
 
@@ -1621,7 +1679,6 @@ static void updateSection(const Input& in, bool wasTouching) {
 				sTouchMode = TOUCH_BACK;
 				sPressed = 0;
 				focus = -1;
-				audio::click();
 			} else if (in.ty >= kListTop) {
 				int row = (int)((in.ty - kListTop + sScroll) / kRowH);
 				if (row >= 0 && row < sec.count) {
@@ -1670,7 +1727,7 @@ static void updateSection(const Input& in, bool wasTouching) {
 		sPressed = -1;
 		if (sTouchMode == TOUCH_BACK) {
 			sTouchMode = TOUCH_NONE;
-			leaveSection(true);
+			cutBack(SCREEN_SECTION);
 			return;
 		}
 		if (sTouchMode == TOUCH_SLIDER) {
@@ -2022,6 +2079,11 @@ static void updateJournal(const Input& in, bool wasTouching) {
 		goTo(SCREEN_TITLE, -1);
 		return;
 	}
+	bool leave;
+	if (backCut(SCREEN_JOURNAL, in, wasTouching, &leave)) {
+		if (leave) goTo(SCREEN_TITLE, -1);
+		return;
+	}
 	dpadNav(btns, n, in.repeat, f);
 	int t = touchButtons(btns, n, in, wasTouching, f);
 #if PORT_MOUSE
@@ -2030,7 +2092,7 @@ static void updateJournal(const Input& in, bool wasTouching) {
 			if (hit(btns[i], in.tx, in.ty)) f = i;
 #endif
 	if (t < 0 && (in.down & KEY_A) && f == 0) t = 0;
-	if (t == 0) goTo(SCREEN_TITLE, -1);
+	if (t == 0) cutBack(SCREEN_JOURNAL);
 }
 
 static void drawJournal() {
@@ -2744,6 +2806,10 @@ static void drawTopContent(Screen screen) {
 				gfx::text(buf, 200, 20, 0.5f, COL_CREAM, ALIGN_CENTER);
 				snprintf(buf, sizeof buf, "BEST COMBO %lu", (unsigned long)gSave.bestCombo);
 				gfx::text(buf, 200, 50, 0.5f, COL_CREAM, ALIGN_CENTER);
+			} else {
+				// No preview for this row: the logo fills the space above the hint, as on the Options screen.
+				gfx::setDepth(1.0f);
+				gfx::sprite(SHEET_LOGO, logo_logo_idx, 200, 50, 0.62f, 0.62f);
 			}
 			topPanel(30, 100, 340, 130);
 			gfx::setDepth(0.7f);
@@ -3858,7 +3924,7 @@ bool app::init() {
 #ifdef TEST_DIFF
 	gSave.difficulty = TEST_DIFF;
 #endif
-#if defined(AUTOTEST) && !defined(TEST_PRACTICE)
+#if defined(AUTOTEST) && !defined(TEST_PRACTICE) && !defined(LAB)  // the Lab plays the lessons too
 	gSave.practiceDone = 1;
 #endif
 #ifdef TEST_FX

@@ -206,6 +206,8 @@ private:
 	float slider(u8 value) const;     // a Gameplay slider, 0-100; Daily Fruit holds them at the middle
 	void practiceStart();
 	void practiceUpdate();
+	// The Frenzy meter and COMBO count only run once the lessons reach the Frenzy lesson, so the earlier ones stay calm.
+	bool meterLive() const { return mode != MODE_PRACTICE || practiceStep >= PS_FRENZY; }
 	void practiceSliced(const Obj& o);
 	void practiceSwipe(int n);
 	void practiceBomb();

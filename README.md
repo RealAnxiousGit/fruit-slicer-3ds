@@ -144,6 +144,8 @@ make cia    # FruitSlicer3DS.cia
 
 `make AUTOTEST=1` builds a version that plays every mode by itself and logs the results, for unattended emulator runs.
 
+`make LAB=1` builds the Lab, a developer-only check of the whole game: it walks every menu, buys and uses Shop items, plays the lessons and every mode (cut short), and writes PASS or FAIL for each check to `sdmc:/3ds/FruitSlicerLab/lab.txt`, apart from your save. New features add their check to [`source/lab.inc`](source/lab.inc).
+
 ## How it works
 
 - **Rendering:** all drawing goes through the PICA200 using citro2D on citro3D. The 3D fruit are code-generated meshes in two detail levels, drawn with a small vertex shader, and each eye gets its own per-vertex disparity so that depth is true volume. A New 3DS runs at 804 MHz with L2 cache.

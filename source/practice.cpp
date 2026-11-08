@@ -81,6 +81,12 @@ void Game::practiceUpdate() {
 		practiceFail = false;
 		if (ok) {
 			practiceStep++;
+			if (practiceStep == PS_FRENZY) {
+				// The meter and the COMBO count start here, from nothing.
+				chain = 0;
+				feverMeter = 0;
+				comboFadeT = 0;
+			}
 			DLOG("[practice] lesson %d done after %.1fs\n", practiceStep, elapsed);
 			static const char* const kPraise[] = {"NICE!", "GREAT!", "WELL DONE!", "GOOD!", "NICE!"};
 			setCallout(kPraise[(practiceStep - 1) % 5], rgba(140, 240, 150));

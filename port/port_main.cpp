@@ -35,10 +35,19 @@ void assetClose(AssetFile* a) {
 	a->f = nullptr;
 }
 
-void dataPath(char* out, size_t size, const char* name) { snprintf(out, size, "sdmc:/3ds/FruitSlicer/%s", name); }
+// The Lab keeps its own folder, so a test run never touches a player's save.
+#ifdef LAB
+#define DATA_DIR "sdmc:/3ds/FruitSlicerLab"
+#else
+#define DATA_DIR "sdmc:/3ds/FruitSlicer"
+#endif
+void dataPath(char* out, size_t size, const char* name) { snprintf(out, size, DATA_DIR "/%s", name); }
 void ensureDataDir() {
 	mkdir("sdmc:/3ds", 0777);
-	mkdir("sdmc:/3ds/FruitSlicer", 0777);
+	mkdir(DATA_DIR, 0777);
+#ifdef LAB
+	remove(DATA_DIR "/save.bin");  // every Lab run starts fresh
+#endif
 }
 bool running() { return aptMainLoop(); }
 }  // namespace port

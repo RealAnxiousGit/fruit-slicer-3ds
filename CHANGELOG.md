@@ -29,6 +29,9 @@ The first full release. Saves from 0.4 carry over: your scores and settings are 
 - Letter outlines no longer cut into the letter beside them.
 - The 3D menu labels sway gently instead of spinning, and are easier to read.
 - The Shop picks an item when you click or tap it, not when you point at it.
+- Every back arrow is a berry you slice, the Shop's, the Journal's and the Options pages' too.
+- The lessons leave the Frenzy meter and the COMBO count off until the Frenzy lesson, which only ends once you have started a Frenzy.
+- The Shop shows what an item costs against your coins, or that it is already yours. Options pages without a preview show the logo.
 - Swipe and combo popups that land together are stacked instead of overlapping.
 - The README no longer says the game was only tested in an emulator: 0.4.0 ran well on a real New 2DS XL.
 

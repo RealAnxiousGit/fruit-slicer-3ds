@@ -47,6 +47,11 @@ static void botTapXY(int x, int y) {
 	sBotSwipe = false;
 }
 
+#ifdef LAB
+#include "lab.inc"
+static bool sLabFinishing = false;
+#endif
+
 #ifdef BOT_TOUR
 static constexpr int kBotDwell = 200;
 #else
@@ -57,6 +62,10 @@ static void autotestMenus(Input& in) {
 	// A scripted walk: title, each top-level screen, each settings section and its controls.
 	if (sBotPhaseFrames < kBotDwell || sSliding || sFade > 0) return;
 	sBotPhaseFrames = 0;
+#ifdef LAB
+	labMenus();
+	return;
+#endif
 	const float firstRowY = kListTop + kRowH * 0.5f;
 	switch (sBotMenuStep++) {
 		case 0: botTap(kTitleButtons[4]); return;   // How to Play
@@ -122,6 +131,12 @@ static void autotestInput(Input& in) {
 		}
 		return;
 	}
+#ifdef LAB
+	if (sLabFinishing) {
+		labFinish(in);
+		return;
+	}
+#endif
 
 #ifdef TEST_SPEED
 	static bool started = false;
@@ -153,6 +168,11 @@ static void autotestInput(Input& in) {
 			if (sBotMode != BOT_ONLY) {
 #else
 			if (sBotMode >= MODE_COUNT) {
+#endif
+#ifdef LAB
+				sLabFinishing = true;  // then the quit checks (lab.inc)
+				fprintf(stderr, "[bot] all modes finished\n");
+				return;
 #endif
 				sBotDone = true;
 				fprintf(stderr, "[bot] all modes finished\n");
@@ -195,6 +215,9 @@ static void autotestInput(Input& in) {
 		case SCREEN_RESULT:
 			if (sBotPhaseFrames < 80) return;
 			sBotPhaseFrames = 0;
+#ifdef LAB
+			labResult();
+#endif
 			if (sGame.mode == MODE_PRACTICE) {
 				fprintf(stderr, "[bot] practice finished, slicing Let's Play\n");
 				botTap(kPracticeEndButtons[1]);
@@ -240,7 +263,13 @@ static void autotestInput(Input& in) {
 	}
 
 	sBotModeFrames++;
-	if (sBotModeFrames == 600) {
+#ifdef LAB
+	labWatchGame();
+	const u32 kPauseAt = 240;  // the lab plays short games
+#else
+	const u32 kPauseAt = 600;
+#endif
+	if (sBotModeFrames == kPauseAt) {
 		in.down |= KEY_START;  // exercise the pause path once per mode
 		sBotPhaseFrames = 0;
 		return;
@@ -288,7 +317,12 @@ static void autotestInput(Input& in) {
 #ifdef TEST_LATEBOMB
 	bool suicide = sGame.timeLeft > 0 && sGame.timeLeft <= 5;
 #else
-	bool suicide = sBotModeFrames > 1500 && sGame.timeLeft <= 0 && sGame.mode != MODE_PRACTICE;  // lessons want bombs left alone
+#ifdef LAB
+	const u32 kSeekBombsAt = 480;
+#else
+	const u32 kSeekBombsAt = 1500;
+#endif
+	bool suicide = sBotModeFrames > kSeekBombsAt && sGame.timeLeft <= 0 && sGame.mode != MODE_PRACTICE;  // lessons want bombs left alone
 #endif
 #endif
 	if (sBotStroke > 0) {
@@ -308,6 +342,8 @@ static void autotestInput(Input& in) {
 	}
 	if (!t) t = sGame.botTarget(false);
 	if (!t) return;
+	// In the lessons, wait for the fruit to come down within reach (on a 3DS they peak on the top screen).
+	if (sGame.mode == MODE_PRACTICE && t->y < 12) return;
 	// A short horizontal stroke through the target, staying clear of nearby bombs.
 	int inRow = 0;
 	bool bombInRow = false;
@@ -325,7 +361,14 @@ static void autotestInput(Input& in) {
 	}
 	sBotY = t->y + t->vy * kDt * 3;
 	sBotDY = 0;
-	if (inRow >= 3 && !bombInRow) {
+	if (PORT_3DS && inRow >= 3 && !bombInRow && sGame.mode == MODE_PRACTICE) {
+		// The three-fruit lesson: a steadier sweep near the top of the throw, which the 3DS touch filter
+		// follows (it takes very long jumps between frames for noise).
+		if (fabsf(t->vy) > 160) return;
+		sBotX = 6;
+		sBotDX = 13;
+		sBotStroke = 24;
+	} else if (inRow >= 3 && !bombInRow) {
 		// Several fruit level with each other: one long sweep to earn a combo.
 		sBotX = 6;
 		sBotDX = 26;

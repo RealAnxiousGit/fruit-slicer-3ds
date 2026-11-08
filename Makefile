@@ -4,6 +4,7 @@
 #   make cia         -> FruitSlicer3DS.cia (needs makerom and bannertool on PATH)
 #   make AUTOTEST=1  -> a build that plays itself for emulator test runs
 #   make DEV=1       -> developer tools in Options (coins on demand); never for releases
+#   make LAB=1       -> the Lab: plays through every feature and writes PASS/FAIL to lab.txt (developer only)
 #---------------------------------------------------------------------------------
 .SUFFIXES:
 
@@ -32,6 +33,11 @@ ARCH	:=	-march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
 
 CFLAGS	:=	-g -Wall -O2 -mword-relocations -ffunction-sections -fdata-sections $(ARCH)
 CFLAGS	+=	$(INCLUDE) -D__3DS__
+ifneq ($(strip $(LAB)),)
+AUTOTEST := 1
+DEV := 1
+TESTDEFS += -DLAB
+endif
 ifneq ($(strip $(AUTOTEST)),)
 CFLAGS	+=	-DAUTOTEST $(TESTDEFS)
 endif
