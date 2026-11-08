@@ -5,13 +5,13 @@ A free, fan-made fruit-slicing arcade game for the Nintendo 3DS. Swipe the touch
 **Version 1.0.0.** Tested on a real New 2DS XL and in the Azahar emulator. Old 3DS hardware and the look of stereoscopic 3D are still unconfirmed, so reports are welcome.
 
 <p>
-  <img src="docs/screenshots/title.png" width="150" alt="Title screen with a turning 3D fruit">
-  <img src="docs/screenshots/gameplay.png" width="150" alt="Slicing 3D fruit on the picnic blanket board">
-  <img src="docs/screenshots/frenzy.png" width="150" alt="Fruit Frenzy with fruit on both screens">
-  <img src="docs/screenshots/plate.png" width="150" alt="The plate board during a Frenzy">
-  <img src="docs/screenshots/modes.png" width="150" alt="Game mode menu">
-  <img src="docs/screenshots/visuals.png" width="150" alt="Visuals options">
-  <img src="docs/screenshots/pause.png" width="150" alt="Pause menu">
+  <img src="docs/screenshots/title.png" width="150" alt="Title screen with the logo on top and a menu of fruit to slice below">
+  <img src="docs/screenshots/gameplay.png" width="150" alt="Slicing 3D fruit on the picnic blanket board, with a combo bonus">
+  <img src="docs/screenshots/frenzy.png" width="150" alt="A Fruit Frenzy starting on the picnic blanket board">
+  <img src="docs/screenshots/plate.png" width="150" alt="A Fruit Frenzy on the plate board">
+  <img src="docs/screenshots/combo.png" width="150" alt="A swipe combo on the plate board">
+  <img src="docs/screenshots/power.png" width="150" alt="Collecting the Bomb Shield power-up in Arcade mode">
+  <img src="docs/screenshots/result.png" width="150" alt="The result sign with a new best score">
 </p>
 
 ## Modes
@@ -153,7 +153,7 @@ make cia    # FruitSlicer3DS.cia
 - **Touch:** a speed-adaptive low-pass filter smooths slow movement and stays close to the stylus on fast swipes. It also rejects pressure spikes, and curve interpolation smooths the trail. Hits are tested along the whole swept segment, so fast swipes can't skip over fruit.
 - **Memory:** fruit, halves, particles, splats, popups and spawn queues live in fixed static pools, so gameplay never allocates memory. Newly cut meshes are flushed from the CPU cache before the GPU reads them, and draws stop short of filling the GPU's command list.
 - **Shared code:** `source/` is shared with the Windows, Linux and Android port and `port/` holds what is specific to the 3DS. `shared-files.txt` lists the shared files.
-- **Audio:** sound effects load at boot and play through `ndsp`, using one music channel, one looping fuse channel and 12 sound-effect channels. Only the current music track is in memory, and it loads a little each frame so that starting one never stalls the game. Cut sounds are synthesized from layers (blade tick, fibre grains, body thump, droplets and spray), balanced differently for each type of fruit.
+- **Audio:** sound effects load at boot and play through `ndsp`, using one music channel, one looping fuse channel and 12 sound-effect channels. Only the current music track is in memory, and it loads on a background thread so that reading it never holds up a frame. Cut sounds are synthesized from layers (blade tick, fibre grains, body thump, droplets and spray), balanced differently for each type of fruit.
 
 ## Assets
 

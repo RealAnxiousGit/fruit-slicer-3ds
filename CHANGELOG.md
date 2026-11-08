@@ -24,7 +24,7 @@ The first full release. Saves from 0.4 carry over: your scores and settings are 
 ### Changed
 
 - Text that would run past the edge of its sign is made smaller to fit.
-- **Auto music** shuffles: when a track ends, another one you own starts. A track you pick loops. Music starts as soon as its first half second is ready, so Shop previews play straight away.
+- **Auto music** shuffles: when a track ends, another one you own starts. A track you pick loops. Music loads in the background and starts when it's ready, in about a second.
 - **Blade and Trail** are separate: Blade sets the colour of the cutting edge, Trail is the Shop streak behind it.
 - Letter outlines no longer cut into the letter beside them.
 - The 3D menu labels sway gently instead of spinning, and are easier to read.
@@ -41,9 +41,13 @@ The first full release. Saves from 0.4 carry over: your scores and settings are 
 - The Fruit Journal shows its fruit pictures with 3D Models chosen, not only with 2D Stickers.
 - The coin counter in a game sits beside the score instead of on top of it.
 - A tap with the stylus picks a menu choice, so the game modes no longer need a slice to start.
-- **Picked music plays straight away.** Choosing a track in Options or trying one in the Shop now switches to it at once; before, the old track could keep playing. The first song after starting the game also plays properly.
+- **Picked music now plays.** Choosing a track in Options or trying one in the Shop switches to it as soon as it has loaded; before, the old track could keep playing. The first song after starting the game also plays properly.
 - **Daily Fruit's calendar** counts your own days: Day 1 is the first day you play, and today's box moves along the row each day instead of always sitting on the seventh. Day 8 starts the next row.
 - The pause screen no longer shows a lesson or "TRY AGAIN" line behind the PAUSED sign.
+
+### Known issues
+
+- The black background a real console showed in long Frenzy runs on 0.4 is not proven fixed. It has never appeared in an emulator, so please report it if you see it.
 
 ## 0.4.0-alpha
 
