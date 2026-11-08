@@ -413,12 +413,15 @@ static constexpr float kCutDelay = 0.2f, kCutLife = 0.75f;
 static struct {
 	bool on, pending;
 	float t;
-	const Button* btn;
+	Button btn;  // a copy: menus may hand over a rebuilt list, so cut signs are matched by place, not address
 	int index, fruit;
 	float x, y, ang;
 	Screen screen;
 } sCut;
 static Screen sDrawing = SCREEN_LOADING;  // the screen whose signs are being drawn, during a slide too
+static bool isCut(const Button& b) {
+	return sCut.on && sCut.screen == sDrawing && sCut.btn.x == b.x && sCut.btn.y == b.y && sCut.btn.w == b.w && sCut.btn.h == b.h;
+}
 static Blade sMenuBlade;                  // the trail a swipe leaves across the menus
 static bool menuBladeShown() {
 	return sScreen == SCREEN_TITLE || sScreen == SCREEN_MODES || sScreen == SCREEN_OPTIONS || sScreen == SCREEN_CREDITS || sScreen == SCREEN_HOWTO || sScreen == SCREEN_JOURNAL || sScreen == SCREEN_STATS || sScreen == SCREEN_BEAT || sScreen == SCREEN_BEATTOOL || sScreen == SCREEN_UPDATE || sScreen == SCREEN_PAUSE || sScreen == SCREEN_RESULT;
@@ -493,7 +496,7 @@ static void drawFruitChoice(const Button& b, const char* label, bool focused, bo
 	float x, y, d;
 	fruitSpot(b, &x, &y, &d);
 	float dy = pressed ? 2 : 0;
-	bool cut = sCut.on && sCut.btn == &b;
+	bool cut = isCut(b);
 	if (focused) gfx::sprite(SHEET_SPRITES, sprites_ring_idx, x, y + dy, d / 34, d / 34, 0, withAlpha(COL_ACCENT, 0.9f));
 	float bob = focused && !gSave.calmFx ? sinf(sTime * 4) * 1.5f : 0;
 	float spin = sTime * 0.8f + b.x * 0.05f;
@@ -648,7 +651,7 @@ static void startCut(const Button* btns, int i, Screen screen, float ang) {
 	bool hasFruit = i == 0 || screen != SCREEN_MODES;  // mode signs show their icon, not a fruit
 	sCut = {};
 	sCut.on = sCut.pending = true;
-	sCut.btn = &b;
+	sCut.btn = b;
 	sCut.index = i;
 	sCut.fruit = hasFruit ? fruit : -1;
 	sCut.screen = screen;
@@ -783,7 +786,7 @@ static void drawCut(Screen screen) {
 		gfx::rect(px - s * 0.5f, py - s * 0.5f, s, s, withAlpha(juice, a));
 	}
 	if (sCut.fruit < 0) return;
-	float size = sCut.index == 0 ? 18 : fruitSize(*sCut.btn);
+	float size = sCut.index == 0 ? 18 : fruitSize(sCut.btn);
 	float off = 4 + 70 * t, fall = 300 * t * t, spin = gSave.calmFx ? 0 : t * 3;
 	drawMenuFruit(sCut.fruit, sCut.x - ux * off, sCut.y - uy * off + fall, size, 0, r0 - spin, 1);
 	drawMenuFruit(sCut.fruit, sCut.x + ux * off, sCut.y + uy * off + fall, size, 0, r0 + spin, 2);
@@ -2927,7 +2930,11 @@ static void drawTopContent(Screen screen) {
 // then the game closes. It is the last of the title's buttons, an icon like the links.
 static constexpr int kTitleQuit = kTitleCount;
 static constexpr float kQuitBlast = 1.25f;  // seconds of explosion before the game closes
-static float sQuitT = -1;                   // time since the bomb was picked, or -1
+static constexpr float kQuitHold = 3;       // seconds the bomb (or Escape) must be held to light it
+static float sQuitT = -1;                   // time since the bomb went off, or -1
+static float sQuitHold = 0;                 // how long it has been held so far
+static float sQuitTick = 0;                 // time since the last tick of the fuse
+static int sQuitTicks = 0;
 static Button sTitleBtns[kTitleCount + 1];
 
 static Button quitButton() {
@@ -2962,13 +2969,45 @@ static void startQuit() {
 	PORT_VIBRATE(1.0f, 400);
 }
 
+// Holding the bomb down (mouse or finger), Escape, or Enter or A while the bomb is selected lights its fuse.
+// The fuse ticks faster and faster; let go before kQuitHold and nothing happens. True when it goes off.
+static bool holdQuit(const Input& in, int focus) {
+	const Button b = quitButton();
+	// A key counts only if it went down on the title, so the Escape that backed out of Options can't light it.
+	static bool keyArmed = false;
+	const bool escape = (in.held & (KEY_B | KEY_START)) == (KEY_B | KEY_START);
+	const bool enter = focus == kTitleQuit && (in.held & KEY_A);
+	if (in.down & (KEY_B | KEY_A)) keyArmed = true;
+	if (!escape && !enter) keyArmed = false;
+	const bool held = (in.touching && hit(b, in.tx, in.ty)) || (keyArmed && (escape || enter));
+	if (!held) {
+		sQuitHold = sQuitTick = 0;
+		sQuitTicks = 0;
+		return false;
+	}
+	sQuitHold += kDt;
+	sQuitTick += kDt;
+	const float gap = 0.5f - 0.36f * clampf(sQuitHold / kQuitHold, 0, 1);  // half a second down to a seventh
+	if (sQuitHold == kDt || sQuitTick >= gap) {
+		sQuitTick = 0;
+		audio::play(SFX_KNOCK, 0.7f, -0.6f, sQuitTicks++ % 2 ? 1.5f : 1.85f);  // tick, tock
+		PORT_VIBRATE(0.25f, 20);
+	}
+	if (sQuitHold < kQuitHold) return false;
+	sQuitHold = 0;
+	return true;
+}
+
 // The bomb and its label, in the corner. alpha fades it with a slide.
 static void drawQuitBomb(bool focused, float alpha) {
 	if (alpha <= 0) return;
 	const Button b = quitButton();
-	const float cx = b.x + b.w * 0.5f, cy = b.y + 22, wob = gSave.calmFx ? 0 : sinf(sTime * 2.2f) * 0.12f;
+	const float lit = clampf(sQuitHold / kQuitHold, 0, 1);  // 0 until held, 1 just before it goes off
+	const float shake = gSave.calmFx ? lit * 0.6f : lit * 2.5f;
+	const float cx = b.x + b.w * 0.5f + sinf(sTime * 53) * shake, cy = b.y + 22 + cosf(sTime * 47) * shake;
+	const float wob = gSave.calmFx ? 0 : sinf(sTime * 2.2f) * 0.12f;
 	if (sQuitT < 0) {
-		if (focused) gfx::sprite(SHEET_SPRITES, sprites_ring_idx, cx, cy, 0.62f, 0.62f, 0, withAlpha(COL_ACCENT, 0.9f * alpha));
+		if (focused || lit > 0) gfx::sprite(SHEET_SPRITES, sprites_ring_idx, cx, cy, 0.62f + 0.12f * lit, 0.62f + 0.12f * lit, 0, withAlpha(lit > 0 ? rgba(255, (u8)(200 - 150 * lit), 40, 255) : COL_ACCENT, 0.9f * alpha));
 		if (fruit3D() && alpha >= 1) {
 			m3d::begin(320, gfx::stereoPerZ());
 			m3d::Pose pose = {cx, cy, 0, 0.25f, sTime * 0.7f, wob, 0.72f, 0, 0, 0};
@@ -2977,8 +3016,19 @@ static void drawQuitBomb(bool focused, float alpha) {
 		} else {
 			gfx::sprite(SHEET_FRUIT, fruit_bomb_idx, cx, cy, 0.62f, 0.62f, wob, withAlpha(WHITE, alpha));
 		}
-		const u32 lc = withAlpha(focused ? COL_ACCENT : COL_CREAM, alpha);
-		gfx::text(b.label, cx, b.y + 44, 0.3f, lc, ALIGN_CENTER);
+		if (lit > 0) {
+			// The lit fuse: a spark at the top of the bomb that flickers and grows as the time runs out.
+			const float s = (0.35f + 0.45f * lit) * (0.85f + 0.15f * sinf(sTime * 40));
+			gfx::sprite(SHEET_SPRITES, sprites_spark_idx, cx + 7, cy - 16, s, s, sTime * 9, rgba(255, 200, 60, 255));
+			gfx::sprite(SHEET_SPRITES, sprites_spark_idx, cx + 7, cy - 16, s * 0.5f, s * 0.5f, -sTime * 7, WHITE);
+		}
+		char label[24];
+		if (lit > 0) snprintf(label, sizeof label, "Quitting in %d", (int)ceilf(kQuitHold - sQuitHold));
+		else snprintf(label, sizeof label, "%s", focused ? "Hold to Quit" : b.label);
+		const u32 lc = withAlpha(focused || lit > 0 ? COL_ACCENT : COL_CREAM, alpha);
+		// Centred under the bomb, but a long label is moved right so it never runs off the window's edge.
+		const float lx = fmaxf(b.x + b.w * 0.5f, b.x + gfx::textWidth(label, 0.3f) * 0.5f);
+		gfx::text(label, lx, b.y + 44, 0.3f, lc, ALIGN_CENTER);
 	}
 	if (sQuitT >= 0) {
 		float x, y, w, h;
@@ -2997,6 +3047,7 @@ static constexpr float kQuitBlast = 1;
 static float sQuitT = -1;
 static const Button* titleButtons() { return kTitleButtons; }
 static void startQuit() {}
+static bool holdQuit(const Input&, int) { return false; }
 #endif
 static constexpr int kTitleAll = PORT_3DS ? kTitleCount : kTitleCount + 1;  // with the Quit Game bomb
 
@@ -3323,9 +3374,13 @@ static void updateFrame(const Input& in, bool wasTouching) {
 		case SCREEN_TITLE: {
 			if (blocked) break;
 			if (sQuitT >= 0) break;  // the game is closing
+			if (holdQuit(in, sFocus[SCREEN_TITLE])) {
+				startQuit();
+				break;
+			}
 			int t = menuInput(titleButtons(), kTitleAll, SCREEN_TITLE, in, wasTouching, kTitleSigns);
 			if (t == kTitleQuit) {
-				startQuit();
+				// A click or Enter alone does nothing: the bomb has to be held (holdQuit).
 			} else if (t == 0) {
 				// The very first Play starts the Practice run; it can be skipped from the pause menu.
 				if (!gSave.practiceDone) {
@@ -3898,6 +3953,9 @@ bool app::frame(Input& in, int steps) {
 		updateFrame(in, sWasTouching);
 		sWasTouching = in.touching;
 		if (sScreen != SCREEN_PAUSE) boom::update(kDt);
+#if !PORT_3DS
+		if (sScreen != SCREEN_TITLE) sQuitHold = 0;  // a fuse lit on the title goes out when you leave it
+#endif
 #ifdef TEST_SLOWBOOM
 		if (sQuitT >= 0) sQuitT += kDt * 0.12f;
 #else
