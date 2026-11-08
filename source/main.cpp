@@ -3074,9 +3074,11 @@ static void drawQuitBomb(bool focused, float alpha) {
 	const float wob = gSave.calmFx ? 0 : sinf(sTime * 2.2f) * 0.12f;
 	if (sQuitT < 0) {
 		if (focused || lit > 0) gfx::sprite(SHEET_SPRITES, sprites_ring_idx, cx, cy, 0.62f + 0.12f * lit, 0.62f + 0.12f * lit, 0, withAlpha(lit > 0 ? rgba(255, (u8)(200 - 150 * lit), 40, 255) : COL_ACCENT, 0.9f * alpha));
-		if (fruit3D() && alpha >= 1) {
+		if (fruit3D()) {
+			// A model can't fade, so during a slide the 3D bomb shrinks away instead of turning into the sticker.
+			const float grow = alpha * alpha * (3 - 2 * alpha);
 			m3d::begin(320, gfx::stereoPerZ());
-			m3d::Pose pose = {cx, cy, 0, 0.25f, sTime * 0.7f, wob, 0.72f, 0, 0, 0};
+			m3d::Pose pose = {cx, cy, 0, 0.25f, sTime * 0.7f, wob, 0.72f * grow, 0, 0, 0};
 			m3d::draw(m3d::MESH_BOMB, m3d::PART_WHOLE, pose);
 			m3d::end();
 		} else {
