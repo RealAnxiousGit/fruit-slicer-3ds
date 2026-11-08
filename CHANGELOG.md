@@ -41,6 +41,8 @@ The first full release. Saves from 0.4 carry over: your scores and settings are 
 - The Fruit Journal shows its fruit pictures with 3D Models chosen, not only with 2D Stickers.
 - The coin counter in a game sits beside the score instead of on top of it.
 - A tap with the stylus picks a menu choice, so the game modes no longer need a slice to start.
+- **Picked music plays straight away.** Choosing a track in Options or trying one in the Shop now switches to it at once; before, the old track could keep playing. The first song after starting the game also plays properly.
+- **Daily Fruit's calendar** counts your own days: Day 1 is the first day you play, and today's box moves along the row each day instead of always sitting on the seventh. Day 8 starts the next row.
 - The pause screen no longer shows a lesson or "TRY AGAIN" line behind the PAUSED sign.
 
 ## 0.4.0-alpha

@@ -16,12 +16,19 @@ static long daysFromCivil(long y, unsigned m, unsigned d) {
 }
 static const long kDay2000 = daysFromCivil(2000, 1, 1);
 
+#ifdef DEV_TOOLS
+static u32 sDevDays;
+void devSkipDay() { sDevDays++; }
+#else
+static constexpr u32 sDevDays = 0;
+#endif
+
 u32 today() {
 	time_t now = time(nullptr);
 	struct tm* t = localtime(&now);
 	if (!t) return 1;
 	long d = daysFromCivil(t->tm_year + 1900L, (unsigned)t->tm_mon + 1, (unsigned)t->tm_mday) - kDay2000;
-	return d < 1 ? 1 : (u32)d;  // 0 means "never" in the save
+	return (d < 1 ? 1 : (u32)d) + sDevDays;  // 0 means "never" in the save
 }
 
 void dayToDate(u32 day, int* year, int* month, int* dayOfMonth) {
@@ -60,6 +67,7 @@ static u32 bonusFor(int streak) {
 u32 dailyRecord(u32 day, u32 score) {
 	Settings& s = gSave;
 	const u32 stored = score + 1 > score ? score + 1 : score;
+	if (s.dailyFirstDay == 0) s.dailyFirstDay = (u16)(s.dailyDay ? s.dailyDay : day);
 	if (s.dailyDay != 0 && day < s.dailyDay) {
 		// The clock went back: file the score on its day if it's still on the calendar, and pay nothing.
 		u32 back = s.dailyDay - day;
@@ -94,6 +102,13 @@ int dailyStreak(u32 day) {
 	const Settings& s = gSave;
 	if (s.dailyDay == 0 || day > s.dailyDay + 1) return 0;
 	return s.dailyStreak;
+}
+
+int dailyNumber(u32 day) {
+	const Settings& s = gSave;
+	const u32 first = s.dailyFirstDay ? s.dailyFirstDay : s.dailyDay;
+	if (first == 0 || day <= first) return 1;
+	return (int)(day - first) + 1;
 }
 
 u32 dailyBonusPreview(u32 day) {

@@ -52,6 +52,7 @@ void saveResetScores() {
 	gSave.playSeconds = 0;
 	memset(gSave.fruitSliced, 0, sizeof gSave.fruitSliced);
 	gSave.dailyDay = 0;
+	gSave.dailyFirstDay = 0;
 	memset(gSave.dailyScore, 0, sizeof gSave.dailyScore);
 	gSave.dailyStreak = gSave.dailyBestStreak = 0;
 	memset(gSave.beatBest, 0, sizeof gSave.beatBest);

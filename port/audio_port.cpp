@@ -94,7 +94,8 @@ void musicRate(float factor) {
 	ndspChnSetRate(kMusicChannel, sMusicRate * factor);
 }
 
-void musicStop() { ndspChnWaveBufClear(kMusicChannel); }
+// A full channel reset: clearing the queue alone left a looping track playing until something else took over.
+void musicStop() { ndspChnReset(kMusicChannel); }
 
 float musicTime() {
 	if (!ndspChnIsPlaying(kMusicChannel) || sMusicRate <= 0) return -1;

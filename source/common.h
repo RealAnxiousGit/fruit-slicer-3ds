@@ -121,7 +121,8 @@ struct Settings {
 	u8 trail;        // Shop blade trail, 0 none
 	u8 beatTrack;     // Beat Slice: 0 picks Picnic Stroll, otherwise the track number + 1
 	u16 modePlays[kMaxModes];  // runs started, for the Stats page's favourite mode
-	u8 reserved[40];  // sized so the port block starts on a 4-byte boundary
+	u16 dailyFirstDay;  // the day (as dailyDay) the Daily Fruit calendar began, 0 = not yet
+	u8 reserved[38];  // sized so the port block starts on a 4-byte boundary
 	// The port's own settings, in a fixed-size block so shared fields never move.
 	union {
 		struct { u8 portRev; PORT_SETTINGS_FIELDS };

@@ -834,7 +834,7 @@ static void drawCut(Screen screen) {
 
 // ---------------------------------------------------------------- settings rows
 enum RowKind { ROW_SLIDER, ROW_CHOICE, ROW_ACTION };
-enum RowAction { ACT_NONE, ACT_RESET_AUDIO, ACT_RESET_VISUALS, ACT_RESET_GAMEPLAY, ACT_RESET_SCORES, ACT_RESET_ALL, ACT_SPEED_TEST, ACT_APPLY_DISPLAY, ACT_RESET_DISPLAY, ACT_RESET_ACCESS, ACT_RESET_CONTROLS, ACT_DEV_ADD_COINS, ACT_DEV_CLEAR_COINS, ACT_CHECK_UPDATES };
+enum RowAction { ACT_NONE, ACT_RESET_AUDIO, ACT_RESET_VISUALS, ACT_RESET_GAMEPLAY, ACT_RESET_SCORES, ACT_RESET_ALL, ACT_SPEED_TEST, ACT_APPLY_DISPLAY, ACT_RESET_DISPLAY, ACT_RESET_ACCESS, ACT_RESET_CONTROLS, ACT_DEV_ADD_COINS, ACT_DEV_CLEAR_COINS, ACT_DEV_NEXT_DAY, ACT_CHECK_UPDATES };
 
 struct Row {
 	RowKind kind;
@@ -933,6 +933,7 @@ static const Row kDevRows[] = {
 	{ROW_CHOICE, "Amount", &sDevAmount, 0, 4, kDevAmountNames, 0, 0, ACT_NONE, "How many coins Add Coins gives.", "Developer builds only."},
 	{ROW_ACTION, "Add Coins", nullptr, 0, 0, nullptr, 0, 0, ACT_DEV_ADD_COINS, "Adds the amount to your coins.", "Developer builds only."},
 	{ROW_ACTION, "Clear Coins", nullptr, 0, 0, nullptr, 0, 0, ACT_DEV_CLEAR_COINS, "Sets your coins back to 0.", "Developer builds only."},
+	{ROW_ACTION, "Next Day", nullptr, 0, 0, nullptr, 0, 0, ACT_DEV_NEXT_DAY, "Daily Fruit thinks it is a day later,", "until the game closes. Developer builds only."},
 };
 #endif
 
@@ -1208,6 +1209,11 @@ static void rowAction(int index, const Row& r) {
 		return;
 	}
 #ifdef DEV_TOOLS
+	if (r.action == ACT_DEV_NEXT_DAY) {
+		audio::click();
+		progress::devSkipDay();
+		return;
+	}
 	if (r.action == ACT_DEV_ADD_COINS || r.action == ACT_DEV_CLEAR_COINS) {
 		// No second press needed: these are for testing, and adding again is the point.
 		audio::click();
@@ -2031,25 +2037,26 @@ static void drawDailyTop() {
 	if (progress::dailyPlayed(today)) snprintf(buf, sizeof buf, "TODAY'S BEST %lu", (unsigned long)progress::dailyScore(today));
 	else snprintf(buf, sizeof buf, "First run today pays %lu coins", (unsigned long)progress::dailyBonusPreview(today));
 	gfx::text(buf, 200, 126, 0.4f, COL_CREAM, ALIGN_CENTER);
-	// The last seven days, today on the right: the date on top, the score below once played.
+	// A week of the player's own calendar: day 1 is the first day they played, and today's box moves along
+	// the row. Day 8 starts the next row of seven. The day number on top, the score below once played.
+	const int number = progress::dailyNumber(today);
+	const int todayCell = (number - 1) % 7;
 	static constexpr float kCell = 42, kGap = 4;
 	const float x0 = 200 - (7 * kCell + 6 * kGap) / 2;
 	for (int i = 0; i < 7; i++) {
-		if (today < (u32)(7 - i)) continue;
-		const u32 day = today - 6 + i;
+		const u32 day = today - todayCell + i;
 		const float x = x0 + i * (kCell + kGap), y = 150;
 		const bool played = progress::dailyPlayed(day);
-		gfx::rect(x, y, kCell, 44, played ? withAlpha(COL_ACCENT, 0.3f) : rgba(0, 0, 0, 60));
+		const bool ahead = day > today;
+		gfx::rect(x, y, kCell, 44, played ? withAlpha(COL_ACCENT, 0.3f) : rgba(0, 0, 0, ahead ? 30 : 60));
 		if (day == today) {
 			gfx::rect(x, y, kCell, 2, COL_ACCENT);
 			gfx::rect(x, y + 42, kCell, 2, COL_ACCENT);
 			gfx::rect(x, y, 2, 44, COL_ACCENT);
 			gfx::rect(x + kCell - 2, y, 2, 44, COL_ACCENT);
 		}
-		int yy, mm, dd;
-		progress::dayToDate(day, &yy, &mm, &dd);
-		snprintf(buf, sizeof buf, "%d", dd);
-		gfx::text(buf, x + kCell / 2, y + 4, 0.3f, COL_DIM, ALIGN_CENTER);
+		snprintf(buf, sizeof buf, "%d", number - todayCell + i);
+		gfx::text(buf, x + kCell / 2, y + 4, 0.3f, ahead ? withAlpha(COL_DIM, 0.5f) : COL_DIM, ALIGN_CENTER);
 		if (played) {
 			u32 sc = progress::dailyScore(day);
 			if (sc >= 10000) snprintf(buf, sizeof buf, "%luK", (unsigned long)(sc / 1000));
@@ -2057,7 +2064,7 @@ static void drawDailyTop() {
 			gfx::text(buf, x + kCell / 2, y + 21, 0.36f, COL_CREAM, ALIGN_CENTER);
 		}
 	}
-	snprintf(buf, sizeof buf, "STREAK %d   BEST %d", progress::dailyStreak(today), (int)gSave.dailyBestStreak);
+	snprintf(buf, sizeof buf, "DAY %d   STREAK %d   BEST %d", number, progress::dailyStreak(today), (int)gSave.dailyBestStreak);
 	gfx::text(buf, 200, 204, 0.34f, COL_DIM, ALIGN_CENTER);
 }
 

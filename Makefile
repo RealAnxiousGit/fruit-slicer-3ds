@@ -39,8 +39,9 @@ DEV := 1
 TESTDEFS += -DLAB
 endif
 ifneq ($(strip $(AUTOTEST)),)
-CFLAGS	+=	-DAUTOTEST $(TESTDEFS)
+CFLAGS	+=	-DAUTOTEST
 endif
+CFLAGS	+=	$(TESTDEFS)
 ifneq ($(strip $(DEV)),)
 CFLAGS	+=	-DDEV_TOOLS
 endif

@@ -119,7 +119,7 @@ static void onApt(APT_HookType hook, void*) {
 
 int main() {
 	romfsInit();
-#ifdef AUTOTEST
+#if defined(AUTOTEST) || defined(TEST_DLOG)
 	consoleDebugInit(debugDevice_SVC);  // stderr goes to svcOutputDebugString, visible in Azahar's log
 #endif
 	osSetSpeedupEnable(true);  // New 3DS: 804 MHz + L2 cache; no effect on Old 3DS

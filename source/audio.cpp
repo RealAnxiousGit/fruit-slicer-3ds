@@ -347,7 +347,7 @@ static void arrived(u32 fromFrame, u32 avail) {
 	if (avail > fromFrame)
 		audioport::ready(sMusicClip.pcm + fromFrame * sMusicClip.channels, (avail - fromFrame) * sMusicClip.channels * 2);
 	if (sStarted) audioport::musicAvail(sMusicClip.pcm, avail, sMusicClip.samples);
-	else if (avail >= sMusicClip.samples || avail >= sMusicClip.rate * kStartAhead) startMixer(avail);
+	else if (avail >= sMusicClip.samples || (!PORT_3DS && avail >= sMusicClip.rate * kStartAhead)) startMixer(avail);  // the 3DS waits for all of it
 }
 
 // Loading broke off part way: whatever had started stops, and the track is let go.
@@ -577,6 +577,7 @@ static void startTrack(int track, bool autoPick = false, int context = MUSIC_NON
 	sAutoPick = autoPick;
 	sAutoContext = context;
 	sLoop = !autoPick;
+	DLOG("[audio] asked for track %d (now %d)\n", track, sCurrent);
 	if (!sReady || track == sCurrent) return;
 	sCurrent = track;
 	sAskedAt = sClock;
@@ -683,6 +684,9 @@ void musicBeat(int track) {
 	}
 	startTrack(track, false, MUSIC_PLAY);  // it starts from the top as soon as its start is in
 }
+
+int currentTrack() { return sCurrent; }
+bool musicPending() { return sReady && sCurrent >= 0 && !sStarted; }
 
 float musicTime() {
 	if (!sReady || !sMusicClip.pcm || !sStarted) return -1;

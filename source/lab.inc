@@ -48,13 +48,34 @@ static void labExpect(Screen want, const char* name) {
 static u32 sLabCoins;
 static u8 sLabArt;
 
+// Daily Fruit's calendar, on a scratch copy of the save.
+static void labDaily() {
+	static Settings keep;
+	memcpy((void*)&keep, (const void*)&gSave, sizeof keep);
+	gSave.dailyDay = gSave.dailyFirstDay = 0;
+	gSave.dailyStreak = gSave.dailyBestStreak = 0;
+	memset(gSave.dailyScore, 0, sizeof gSave.dailyScore);
+	labCheck(progress::dailyNumber(9000) == 1 && progress::dailyNumber(9040) == 1, "a fresh save's Daily Fruit is day 1 until it is played");
+	progress::dailyRecord(9000, 10);
+	labCheck(progress::dailyNumber(9000) == 1, "the first day played is day 1");
+	labCheck(progress::dailyNumber(9001) == 2 && progress::dailyNumber(9006) == 7, "the day number goes up each day");
+	labCheck(progress::dailyNumber(9007) == 8 && progress::dailyNumber(9020) == 21, "the day number carries on past 7");
+	progress::dailyRecord(9001, 20);
+	labCheck(progress::dailyStreak(9001) == 2 && progress::dailyPlayed(9000) && progress::dailyPlayed(9001), "two days in a row make a streak and both keep their scores");
+	progress::dailyRecord(9004, 30);
+	labCheck(progress::dailyNumber(9004) == 5 && progress::dailyStreak(9004) == 1 && !progress::dailyPlayed(9003), "a skipped day still counts and ends the streak");
+	labCheck(progress::dailyNumber(8990) == 1, "a clock set back doesn't go below day 1");
+	memcpy((void*)&gSave, (const void*)&keep, sizeof keep);
+}
+
 // The menu part, one step each time the screen has settled. A step checks what the last one did, then acts.
 static void labMenus() {
 	const float firstRowY = kListTop + kRowH * 0.5f;
 	switch (sBotMenuStep++) {
 		case 0:
 			labExpect(SCREEN_TITLE, "boots to the title");
-			labCheck(audio::musicTime() >= 0, "menu music plays");
+			labDaily();
+			labCheck(audio::musicTime() >= 0 || audio::musicPending(), "menu music plays");
 			botTap(kTitleButtons[4]);
 			return;
 		case 1: labExpect(SCREEN_HOWTO, "How to Play opens"); botTap(kBack); return;
@@ -94,7 +115,7 @@ static void labMenus() {
 			botTap(shopButton(kShopTab0 + SHOP_MUSIC));
 			return;
 		case 14: labCheck(sShopTab == SHOP_MUSIC, "Shop music tab opens"); botTap(shopButton(kShopTile0)); return;
-		case 15: labCheck(audio::musicTime() >= 0, "Shop music preview plays"); botTap(kBack); return;
+		case 15: labCheck(audio::musicTime() >= 0 || audio::musicPending(), "Shop music preview plays"); labCheck(audio::currentTrack() == kBaseTracks, "Shop preview switches to the track on the tile"); botTap(kBack); return;
 		case 16: labExpect(SCREEN_TITLE, "Shop back arrow cuts its berry and goes back"); botTap(kTitleButtons[1]); return;
 		case 17: labExpect(SCREEN_OPTIONS, "Options opens"); botTap(optionButtonFor(SID_AUDIO)); return;
 		case 18: labExpect(SCREEN_SECTION, "Audio section opens"); botTapXY((int)((kTrackX0 + kTrackX1) / 2), (int)firstRowY); return;
