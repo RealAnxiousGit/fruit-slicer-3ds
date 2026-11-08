@@ -31,6 +31,10 @@ u32 boardColor(int board, int part);  // part 0 plank, 1 accent, 2 bar: a board'
 // Keeps the chosen scenery and board loaded, and the 2D fruit sheet only while the 2D art style
 // needs it. Replaced textures are freed a few frames later, once the GPU is done with them.
 void sync();
+// The 2D fruit sheet stays loaded with 3D art too while this is on: the Fruit Journal and High Contrast
+// draw stickers whichever art style is chosen. A no-op where the sheet is always loaded.
+void keepStickers(bool on);
+bool stickersLoaded();  // for the Lab: is the 2D fruit sheet in right now
 
 void beginFrame();
 void endFrame();

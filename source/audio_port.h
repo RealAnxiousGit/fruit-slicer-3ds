@@ -28,4 +28,7 @@ float musicTime();  // seconds into the music, wrapping with its loop; -1 when n
 void fuseStart(const Clip& c);
 void fuseMix(float left, float right);
 void fuseStop();
+#ifdef TEST_RECORD
+void recordStep();  // trailer capture: mix one 60th of a second straight into the recording
+#endif
 }  // namespace audioport

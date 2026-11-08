@@ -1992,12 +1992,12 @@ void Game::drawHud() const {
 		snprintf(line, sizeof line, "SWIPE X%d", comboCount);
 		gfx::text(line, px, 38, 0.42f, cycleColor(comboCount * 0.09f));
 	}
-	// Coins made this run, under the score.
+	// Coins made this run: to the right of the score, under the combo lines, so they never sit on its digits.
 	if (mode != MODE_PRACTICE) {
 		float cp = 1.0f + clampf(coinPulse, 0, 1) * 0.3f;
 		snprintf(buf, sizeof buf, "%lu", (unsigned long)runCoins());
-		gfx::sprite(SHEET_SPRITES, sprites_coin_idx, 33, 61, 0.42f * cp, 0.42f * cp);
-		gfx::text(buf, 46, 54, 0.44f, COL_CREAM);
+		gfx::sprite(SHEET_SPRITES, sprites_coin_idx, px + 7, 62, 0.42f * cp, 0.42f * cp);
+		gfx::text(buf, px + 19, 55, 0.44f, COL_CREAM);
 	}
 
 	// The Fruit Frenzy meter (hidden in the lessons before the Frenzy one).
@@ -2037,7 +2037,7 @@ void Game::drawHud() const {
 		bool go = phaseT > 0.9f;
 		float s = go ? 1.8f : 1.2f + 0.1f * sinf(phaseT * 8);
 		gfx::text(go ? "GO!" : "READY", 200, 118 - s * 20, s, go ? rgba(140, 240, 150) : rgba(255, 230, 140), ALIGN_CENTER);
-	} else if (calloutT > 0) {
+	} else if (calloutT > 0 && !gHudPaused) {
 		gfx::setDepth(1.6f);
 		float in = clampf((1.4f - calloutT) * 8, 0, 1);
 		float s = calloutSize + (1 - in) * 0.5f;

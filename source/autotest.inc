@@ -54,6 +54,8 @@ static bool sLabFinishing = false;
 
 #ifdef BOT_TOUR
 static constexpr int kBotDwell = 200;
+#elif defined(TEST_RECORD)
+static constexpr int kBotDwell = 110;  // trailer capture: long enough on each menu to see it
 #else
 static constexpr int kBotDwell = 30;
 #endif
@@ -61,6 +63,9 @@ static constexpr int kBotDwell = 30;
 static void autotestMenus(Input& in) {
 	// A scripted walk: title, each top-level screen, each settings section and its controls.
 	if (sBotPhaseFrames < kBotDwell || sSliding || sFade > 0) return;
+#ifdef TEST_RECORD
+	if (sBotMenuStep == 0 && sBotPhaseFrames < 360) return;  // trailer capture: a long look at the title first
+#endif
 	sBotPhaseFrames = 0;
 #ifdef LAB
 	labMenus();
@@ -117,6 +122,27 @@ static void autotestInput(Input& in) {
 #endif
 	sBotPhaseFrames++;
 	static Screen lastScreen = SCREEN_LOADING;
+#ifdef TEST_RECORD
+	static u32 recFrame = 0;
+	recFrame++;
+	static int lastMode = -2;
+	const int modeNow = sScreen == SCREEN_GAME ? (int)sGame.mode : -1;
+	if (sScreen != lastScreen || modeNow != lastMode) {
+		// Where each screen starts in the recording, for cutting it into clips.
+		static FILE* marks = nullptr;
+		if (!marks) {
+			const char* dir = getenv("FRUIT_SLICER_RECORD");
+			char path[400];
+			snprintf(path, sizeof path, "%s/markers.txt", dir ? dir : ".");
+			marks = fopen(path, "w");
+		}
+		if (marks) {
+			fprintf(marks, "%u %d %s %s\n", recFrame, (int)sScreen, modeNow >= 0 ? modeName(sGame.mode) : "-", gSave.artStyle == ART_2D ? "2D" : "3D");
+			fflush(marks);
+		}
+		lastMode = modeNow;
+	}
+#endif
 	if (sScreen != lastScreen) {
 		lastScreen = sScreen;
 		sBotPhaseFrames = 0;
@@ -180,6 +206,24 @@ static void autotestInput(Input& in) {
 			}
 			fprintf(stderr, "[bot] starting %s\n", kModes[sBotMode].name);
 			sBotModeFrames = 0;
+#if defined(LAB) && PORT_3DS
+			{
+				// The stylus: a plain tap on a mode sign starts it, with no swipe. Three tries, then a swipe.
+				static int tries = 0, forMode = -1;
+				if (forMode != sBotMode) {
+					forMode = sBotMode;
+					tries = 0;
+				}
+				const Button& b = kModeButtons[sBotMode + 1];
+				if (tries++ < 3) {
+					sLabTapped = true;
+					botTapXY((int)(b.x + b.w / 2), (int)(b.y + b.h / 2));
+					return;
+				}
+				labCheck(false, "a stylus tap on a mode sign starts it", kModes[sBotMode].name);
+				sLabTapped = false;
+			}
+#endif
 			botTap(kModeButtons[sBotMode + 1]);
 			return;
 

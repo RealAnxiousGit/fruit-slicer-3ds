@@ -59,7 +59,12 @@ static void labMenus() {
 			return;
 		case 1: labExpect(SCREEN_HOWTO, "How to Play opens"); botTap(kBack); return;
 		case 2: labExpect(SCREEN_TITLE, "How to Play back arrow"); botTap(kTitleButtons[2]); return;
-		case 3: labExpect(SCREEN_JOURNAL, "Journal opens"); botTap(kBack); return;
+		case 3:
+			labExpect(SCREEN_JOURNAL, "Journal opens");
+			// The Journal draws 2D pictures whichever art style is chosen; the 3DS used to drop them with 3D art.
+			labCheck(gfx::stickersLoaded(), gSave.artStyle == ART_3D ? "Journal has its fruit pictures with 3D models" : "Journal has its fruit pictures with 2D stickers");
+			botTap(kBack);
+			return;
 		case 4: labExpect(SCREEN_TITLE, "Journal back arrow cuts its berry and goes back"); botTap(kTitleButtons[3]); return;
 		case 5: labExpect(SCREEN_STATS, "Stats opens"); botTap(kBack); return;
 		case 6: labExpect(SCREEN_TITLE, "Stats back arrow"); botTap(kTitleButtons[6]); return;
@@ -116,12 +121,21 @@ static void labMenus() {
 
 // Checks made every frame of a game.
 static bool sLabMeterEarly, sLabBlastSeen, sLabBlastMissed;
+static bool sLabTapped, sLabTapSeen;  // 3DS: a mode was started with a plain stylus tap
 static u32 sLabBombHits;
 static void labWatchGame() {
+	if (sBotModeFrames == 1 && sLabTapped && !sLabTapSeen && sGame.mode != MODE_PRACTICE) {
+		sLabTapSeen = true;
+		labCheck(true, "a stylus tap on a mode sign starts it", modeName(sGame.mode));
+	}
 	if (sBotModeFrames == 1) {
 		// Every mode cut short, and every other one played with the 2D stickers.
 		if (sGame.mode != MODE_PRACTICE) {
+#ifdef TEST_RECORD
+			if (sGame.timeLeft > 25) sGame.timeLeft = 25;  // trailer capture: a little longer
+#else
 			if (sGame.timeLeft > 12) sGame.timeLeft = 12;
+#endif
 			gSave.artStyle = (sBotMode % 2) ? ART_2D : ART_3D;
 		}
 		sLabBombHits = sGame.statBombHits;

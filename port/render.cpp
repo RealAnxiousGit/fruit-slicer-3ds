@@ -86,6 +86,10 @@ void loadStep(int i) {
 	sync();  // one sheet per call, so the loading bar keeps moving
 }
 
+static bool sKeepStickers;
+void keepStickers(bool on) { sKeepStickers = on; }
+bool stickersLoaded() { return sSheets[SHEET_FRUIT] != nullptr; }
+
 void sync() {
 	for (int i = 0; i < 3; i++) {
 		if (sRetired[i] && --sRetiredFrames[i] <= 0) {
@@ -114,7 +118,7 @@ void sync() {
 		sLoadedBoard = gSave.board;
 		return;
 	}
-	bool wantFruit = gSave.artStyle == 0 || !m3d::usable();
+	bool wantFruit = gSave.artStyle == 0 || !m3d::usable() || sKeepStickers;
 	if (wantFruit && !sSheets[SHEET_FRUIT]) {
 		sSheets[SHEET_FRUIT] = load("romfs:/gfx/fruit.t3x");
 	} else if (!wantFruit && sSheets[SHEET_FRUIT]) {

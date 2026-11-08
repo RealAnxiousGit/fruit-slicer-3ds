@@ -1,5 +1,6 @@
 // The shared game: application flow and menus. Each port's main loop drives it through app.h.
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "app.h"
@@ -674,8 +675,8 @@ static void startCut(const Button* btns, int i, Screen screen, float ang) {
 	audio::play(SFX_JUICY0, 0.8f * v, 0, 1.1f);
 }
 
-// A swipe across a sign picks it. A plain tap only counts with a mouse, with Slice Assist, or on the
-// back sign, since on a touch screen it may be a stray touch. Taps keep working on settings rows.
+// A swipe across a sign picks it. A plain tap only counts with a mouse, with Slice Assist, on the back
+// sign, or with the 3DS stylus, since on a phone it may be a stray touch. Taps keep working on settings rows.
 static int sliceButtons(const Button* btns, int n, Screen screen, const Input& in, bool wasTouching, int& focus) {
 	static float lastX, lastY, length;
 	static int downOn = -1;
@@ -716,7 +717,8 @@ static int sliceButtons(const Button* btns, int n, Screen screen, const Input& i
 		lastX = in.tx;
 		lastY = in.ty;
 	} else if (wasTouching) {
-		bool tapOk = mouse || gSave.sliceAssist || downOn == 0;
+		// A stylus touch is always on purpose, so on the 3DS a tap picks as well.
+		bool tapOk = mouse || gSave.sliceAssist || downOn == 0 || PORT_3DS;
 		if (!done && downOn >= 0 && length < minSwipe && tapOk && hit(btns[downOn], (int)lastX, (int)lastY))
 			startCut(btns, downOn, screen, -0.6f);
 		sPressed = downOn = -1;
@@ -3767,6 +3769,7 @@ static void drawStickPoint();
 #if PORT_TWO_SCREENS
 static void drawFrame() {
 	float e = sSlideT * sSlideT * (3 - 2 * sSlideT);  // eases in and out
+	gHudPaused = sScreen == SCREEN_PAUSE;  // no lesson callout over the PAUSED sign
 	gfx::beginFrame();
 	for (int eye = 0; eye < 2; eye++) {
 		if (!gfx::beginTop(eye)) continue;
@@ -4007,6 +4010,9 @@ static void drawStickPoint() {
 }
 
 bool app::frame(Input& in, int steps) {
+#if PORT_3DS && defined(TEST_PROF)
+	const u64 profStart = svcGetSystemTick();
+#endif
 	for (int i = 0; i < steps; i++) {
 #ifdef AUTOTEST
 		autotestInput(in);
@@ -4036,12 +4042,61 @@ bool app::frame(Input& in, int steps) {
 		in.wheel = 0;
 	}
 
-	// New scenery, boards and models load here, between frames.
+	// New scenery, boards and models load here, between frames. The Journal (also while it slides away) and
+	// High Contrast draw 2D stickers even with 3D art, so the sticker sheet stays in for them.
+	gfx::keepStickers(sScreen == SCREEN_JOURNAL || (sSliding && sSlideFrom == SCREEN_JOURNAL) || gSave.highContrast);
+#if PORT_3DS && defined(TEST_PROF)
+	const u64 profLogic = svcGetSystemTick();
+#endif
 	gfx::sync();
+#if PORT_3DS && defined(TEST_PROF)
+	const u64 profGfx = svcGetSystemTick();
+#endif
 	m3d::sync();
+#if PORT_3DS && defined(TEST_PROF)
+	const u64 profModels = svcGetSystemTick();
+#endif
 	audio::update(steps * kDt);
+#if PORT_3DS && defined(TEST_PROF)
+	const u64 profSync = svcGetSystemTick();
+#endif
 
 	drawFrame();
+#if PORT_3DS && defined(TEST_PROF)
+	{
+		// Profiling builds: each second, how long the game's own work took on this screen. In Azahar the clock
+		// counts emulated CPU work, so it ranks what costs most even though it isn't the console's real speed.
+		static u64 profPrev, profFrom;
+		static float logicSum, logicMax, syncSum, syncMax, cpuSum, cpuMax, gapMax, gfxMax, modelMax, audioMax;
+		static int frames, slow;
+		const u64 end = svcGetSystemTick();
+		const float tick = (float)CPU_TICKS_PER_MSEC;
+		const float logic = (profLogic - profStart) / tick, sync = (profSync - profLogic) / tick, cpu = C3D_GetProcessingTime();
+		const float gap = profPrev ? (end - profPrev) / tick : 16.7f;
+		profPrev = end;
+		if (!profFrom) profFrom = end;
+		logicSum += logic;
+		syncSum += sync;
+		cpuSum += cpu;
+		logicMax = fmaxf(logicMax, logic);
+		syncMax = fmaxf(syncMax, sync);
+		cpuMax = fmaxf(cpuMax, cpu);
+		gapMax = fmaxf(gapMax, gap);
+		gfxMax = fmaxf(gfxMax, (profGfx - profLogic) / tick);
+		modelMax = fmaxf(modelMax, (profModels - profGfx) / tick);
+		audioMax = fmaxf(audioMax, (profSync - profModels) / tick);
+		frames++;
+		slow += gap > 17.5f;
+		if ((end - profFrom) / tick >= 1000) {
+			fprintf(stderr, "[prof] scr %d %s %s | logic %.2f/%.2f sync %.2f/%.2f draw %.2f/%.2f | sheets %.1f models %.1f music %.1f | gap max %.1f slow %d/%d\n", (int)sScreen,
+			        sScreen == SCREEN_GAME ? modeName(sGame.mode) : "-", gSave.artStyle == ART_2D ? "2D" : "3D", logicSum / frames, logicMax,
+			        syncSum / frames, syncMax, cpuSum / frames, cpuMax, gfxMax, modelMax, audioMax, gapMax, slow, frames);
+			logicSum = logicMax = syncSum = syncMax = cpuSum = cpuMax = gapMax = gfxMax = modelMax = audioMax = 0;
+			frames = slow = 0;
+			profFrom = end;
+		}
+	}
+#endif
 #if PORT_3DS
 	if (sScreen == SCREEN_BENCH && !sBenchDone) benchMeasure();
 

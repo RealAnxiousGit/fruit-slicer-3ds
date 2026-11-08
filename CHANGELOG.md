@@ -35,6 +35,14 @@ The first full release. Saves from 0.4 carry over: your scores and settings are 
 - Swipe and combo popups that land together are stacked instead of overlapping.
 - The README no longer says the game was only tested in an emulator: 0.4.0 ran well on a real New 2DS XL.
 
+### Fixed
+
+- **No more slowdowns from music.** Music now loads in the background, so a slow cartridge or SD card read never holds up a frame. Reading music used to take up to a tenth of a second at a time.
+- The Fruit Journal shows its fruit pictures with 3D Models chosen, not only with 2D Stickers.
+- The coin counter in a game sits beside the score instead of on top of it.
+- A tap with the stylus picks a menu choice, so the game modes no longer need a slice to start.
+- The pause screen no longer shows a lesson or "TRY AGAIN" line behind the PAUSED sign.
+
 ## 0.4.0-alpha
 
 ### Fixed

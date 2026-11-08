@@ -421,6 +421,28 @@ void update(float dt) {
 #endif
 	if (sLoadFile) {
 		const u32 frameBytes = sMusicClip.channels * 2, from = sLoadDone / frameBytes;
+#if PORT_3DS
+		// A cartridge read can take longer than a whole frame, so the 3DS reads music on a background thread
+		// that runs while the game waits for the screen, and the track starts playing as soon as enough is in.
+		const u32 total = sMusicClip.samples * frameBytes;
+		port::streamStart(sLoadFile, sMusicClip.pcm, total);
+		const long done = port::streamDone(sLoadFile);
+		if (done < 0) {
+			port::assetClose(sLoadFile);
+			sLoadFile = nullptr;
+			loadFailed();
+		} else {
+			sLoadDone = (u32)done;
+			if (sLoadDone >= total) {
+				port::assetClose(sLoadFile);
+				sLoadFile = nullptr;
+				arrived(from, sMusicClip.samples);
+			} else {
+				arrived(from, sLoadDone / frameBytes);
+			}
+		}
+	}
+#else
 		u32 left = sMusicClip.samples * frameBytes - sLoadDone;
 		u32 want = left < kReadPerFrame ? left : kReadPerFrame;
 		size_t got = port::assetRead((u8*)sMusicClip.pcm + sLoadDone, want, sLoadFile);
@@ -434,6 +456,7 @@ void update(float dt) {
 			arrived(from, sLoadDone / frameBytes);
 		}
 	}
+#endif
 	// A track that has played to its end: Auto's shuffle picks the next one; anything else starts over.
 	if (sStarted && !loading() && sClock - sStartedAt > 1.0f && audioport::musicTime() < 0) {
 		if (sAutoPick) autoNext();

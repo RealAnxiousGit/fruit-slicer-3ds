@@ -8,7 +8,12 @@ struct AssetFile;
 AssetFile* assetOpen(const char* path);
 size_t assetRead(void* out, size_t bytes, AssetFile* f);
 long assetSize(AssetFile* f);
-void assetClose(AssetFile* f);
+void assetClose(AssetFile* f);  // also stops a stream on it first
+// 3DS only: music arrives on a background thread, so a slow cartridge read never holds up a frame.
+// streamStart begins reading `bytes` into `out` (once per file; later calls do nothing), and streamDone
+// gives how many bytes have arrived so far, or -1 if a read failed.
+void streamStart(AssetFile* f, void* out, size_t bytes);
+long streamDone(AssetFile* f);
 // Any file by its whole path, read the same way: the player's own songs (Windows, Linux and Android only).
 AssetFile* fileOpen(const char* fullPath);
 

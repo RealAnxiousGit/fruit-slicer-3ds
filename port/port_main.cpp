@@ -9,6 +9,13 @@
 namespace port {
 struct AssetFile {
 	FILE* f;
+	// A stream (music): a lower-priority thread reads into `out` while the game waits for the screen.
+	Thread reader;
+	bool streaming;
+	u8* out;
+	size_t want;
+	volatile size_t done;
+	volatile bool failed, stop;
 };
 static AssetFile sAssets[8];
 
@@ -17,10 +24,54 @@ AssetFile* assetOpen(const char* path) {
 	snprintf(full, sizeof full, "romfs:/%s", path);
 	for (auto& a : sAssets) {
 		if (a.f) continue;
+		a = {};
 		a.f = fopen(full, "rb");
 		return a.f ? &a : nullptr;
 	}
 	return nullptr;
+}
+
+static constexpr size_t kStreamChunk = 16 * 1024;  // small, so stopping a stream never waits long
+
+static void streamMain(void* arg) {
+	AssetFile* a = (AssetFile*)arg;
+	while (!a->stop && a->done < a->want) {
+		size_t n = a->want - a->done;
+		if (n > kStreamChunk) n = kStreamChunk;
+		size_t got = fread(a->out + a->done, 1, n, a->f);
+		__sync_synchronize();  // the bytes are in before the count says so
+		a->done = a->done + got;
+		if (got != n) {
+			a->failed = true;
+			break;
+		}
+	}
+}
+
+void streamStart(AssetFile* a, void* out, size_t bytes) {
+	if (a->streaming) return;
+	a->streaming = true;
+	a->out = (u8*)out;
+	a->want = bytes;
+	a->done = 0;
+	a->failed = a->stop = false;
+	// Just below the game's own priority, on the game's core: it only runs while the game is waiting.
+	s32 prio = 0x30;
+	svcGetThreadPriority(&prio, CUR_THREAD_HANDLE);
+	a->reader = threadCreate(streamMain, a, 16 * 1024, prio < 0x3F ? prio + 1 : 0x3F, -2, false);
+}
+
+long streamDone(AssetFile* a) {
+	if (!a->streaming) return 0;
+	if (!a->reader && !a->failed && a->done < a->want) {
+		// No thread to spare: read a piece a frame, as before.
+		size_t n = a->want - a->done;
+		if (n > 24 * 1024) n = 24 * 1024;
+		size_t got = fread(a->out + a->done, 1, n, a->f);
+		a->done = a->done + got;
+		if (got != n) a->failed = true;
+	}
+	return a->failed ? -1 : (long)a->done;
 }
 size_t assetRead(void* out, size_t bytes, AssetFile* a) { return fread(out, 1, bytes, a->f); }
 long assetSize(AssetFile* a) {
@@ -31,6 +82,14 @@ long assetSize(AssetFile* a) {
 	return n;
 }
 void assetClose(AssetFile* a) {
+	if (a->reader) {
+		// The reader is still writing into memory the caller is about to free: stop it first.
+		a->stop = true;
+		threadJoin(a->reader, U64_MAX);
+		threadFree(a->reader);
+		a->reader = nullptr;
+	}
+	a->streaming = false;
 	fclose(a->f);
 	a->f = nullptr;
 }
