@@ -24,6 +24,19 @@ void Game::practiceStart() {
 // Launch speed for a throw from below the field that peaks at height `apexY`.
 static float launchFor(float gravity, float apexY) { return -sqrtf(2.0f * gravity * (Game::kThrowY - apexY)); }
 
+// Where a lesson's throw peaks. `high` is how far below the top of the field it would peak on two screens,
+// where the lesson sits above the field. On one screen the lesson plank hangs in the field, so throws
+// peak just under it instead (see drawPractice), keeping the fruit in clear view.
+static float lessonApex(float u, float high) {
+#if PORT_TWO_SCREENS
+	(void)u;
+	return kFieldTop + high;
+#else
+	const float plankBottom = 30 * u + 28 + 64 * fminf(u, (kFieldW - 24) / 300.0f);
+	return plankBottom + 26 + (high - 50) * 0.6f;
+#endif
+}
+
 void Game::practiceUpdate() {
 	practiceT += kDt;
 	if (practiceStep >= PS_DONE) return;
@@ -45,7 +58,7 @@ void Game::practiceUpdate() {
 			}
 		} else if (practiceT > kReadTime) {
 			practiceT = kReadTime - 1.1f;
-			float vy = launchFor(gravity, kFieldTop + 70);
+			float vy = launchFor(gravity, lessonApex(uiScale(), 70));
 			queue(0, mid - 90 + gRng.range(-20, 20), 20, vy, OBJ_FRUIT, gRng.below(kCoconut));
 			queue(0.25f, mid + 90 + gRng.range(-20, 20), -20, vy, OBJ_FRUIT, gRng.below(kCoconut));
 		}
@@ -83,28 +96,28 @@ void Game::practiceUpdate() {
 	practiceThrown = true;
 	switch (practiceStep) {
 		case PS_SLICE:
-			queue(0, mid, 0, launchFor(gravity, kFieldTop + 60), OBJ_FRUIT, kApple);
+			queue(0, mid, 0, launchFor(gravity, lessonApex(uiScale(), 60)), OBJ_FRUIT, kApple);
 			break;
 		case PS_THREE: {
 			// Level, side by side: one flat stroke takes all three.
-			const float vy = launchFor(gravity, kFieldTop + 80);
+			const float vy = launchFor(gravity, lessonApex(uiScale(), 80));
 			const int fruit[3] = {kOrange, kLemon, kPear};
 			for (int i = 0; i < 3; i++) queue(0, mid + (i - 1) * 64, 0, vy, OBJ_FRUIT, fruit[i]);
 			break;
 		}
 		case PS_COCONUT:
-			queue(0, mid, 0, launchFor(gravity, kFieldTop + 50), OBJ_FRUIT, kCoconut);
+			queue(0, mid, 0, launchFor(gravity, lessonApex(uiScale(), 50)), OBJ_FRUIT, kCoconut);
 			break;
 		case PS_BOMB: {
 			// A bomb in the middle and a fruit either side: slice around it.
-			const float vy = launchFor(gravity, kFieldTop + 70);
+			const float vy = launchFor(gravity, lessonApex(uiScale(), 70));
 			queue(0, mid, 0, vy, OBJ_BOMB, 0);
-			queue(0.15f, mid - 120, 10, launchFor(gravity, kFieldTop + 90), OBJ_FRUIT, kApple);
-			queue(0.15f, mid + 120, -10, launchFor(gravity, kFieldTop + 90), OBJ_FRUIT, kOrange);
+			queue(0.15f, mid - 120, 10, launchFor(gravity, lessonApex(uiScale(), 90)), OBJ_FRUIT, kApple);
+			queue(0.15f, mid + 120, -10, launchFor(gravity, lessonApex(uiScale(), 90)), OBJ_FRUIT, kOrange);
 			break;
 		}
 		case PS_COIN:
-			queue(0, mid, 0, launchFor(gravity, kFieldTop + 60), OBJ_COIN, 0);
+			queue(0, mid, 0, launchFor(gravity, lessonApex(uiScale(), 60)), OBJ_COIN, 0);
 			break;
 		default:
 			break;
@@ -157,12 +170,19 @@ const char* Game::practicePrompt(int line) const {
 	return (gStickInUse ? kStick : kTouch)[s][line & 1];
 }
 
-// The lesson on a plank at the top of the field, see-through enough to keep fruit behind it in view.
+// The lesson on a plank near the top of the field, see-through enough to keep fruit behind it in view.
+// On one screen it sits below the score sign and its meter, and is drawn over them and everything
+// else. It grows with UI Scale but never past the edges of the field.
 void Game::drawPractice() const {
 	if (phase != PHASE_PLAY && phase != PHASE_READY) return;
-	const float s = uiScale();
+	const float s = fminf(uiScale(), (kFieldW - 24) / 300.0f);
 	const float w = 300 * s, h = 64 * s;
-	const float x = kFieldW * 0.5f - w / 2, y = kFieldTop + 6;
+#if PORT_TWO_SCREENS
+	const float y = kFieldTop + 6;
+#else
+	const float y = 30 * uiScale() + 28;  // under the score sign, its meter and the power-up row
+#endif
+	const float x = kFieldW * 0.5f - w / 2;
 	gfx::sign(sprites_plank_idx, x, y, w, h, withAlpha(COL_PLANK, 0.82f));
 	char head[24];
 	snprintf(head, sizeof head, "LESSON %d OF 7", (practiceStep > PS_DONE ? PS_DONE : practiceStep) + 1);

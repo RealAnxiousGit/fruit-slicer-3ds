@@ -72,7 +72,7 @@ void musicVolume(float v) {
 	ndspChnSetMix(kMusicChannel, mix);
 }
 
-void musicStart(const Clip& c) {
+void musicStart(const Clip& c, bool loop) {
 	ndspChnSetInterp(kMusicChannel, NDSP_INTERP_LINEAR);
 	sMusicRate = (float)c.rate;
 	ndspChnSetRate(kMusicChannel, sMusicRate * sMusicSpeed);
@@ -81,9 +81,13 @@ void musicStart(const Clip& c) {
 	memset(&sMusicBuf, 0, sizeof sMusicBuf);
 	sMusicBuf.data_vaddr = c.pcm;
 	sMusicBuf.nsamples = c.samples;
-	sMusicBuf.looping = true;
+	sMusicBuf.looping = loop;
 	ndspChnWaveBufAdd(kMusicChannel, &sMusicBuf);
 }
+
+// The DSP reads the whole buffer itself. A track is read in many times faster than it plays, and each
+// piece is flushed as it lands (ready), so the DSP never reaches a part that is not there yet.
+void musicAvail(const s16*, u32, u32) {}
 
 void musicRate(float factor) {
 	sMusicSpeed = factor;

@@ -30,7 +30,7 @@ static int sLoadedScene = -1, sLoadedBoard = -1;
 // Pixels of total disparity at full slider per unit of depth.
 static constexpr float kMaxDisparity = 5.0f;
 static constexpr float kZ = 0.5f;
-static constexpr u32 kMaxObjects = 3072;
+static constexpr u32 kMaxObjects = 4096;  // text draws each letter twice: its outline, then its fill
 
 static C2D_SpriteSheet load(const char* p) {
 	C2D_SpriteSheet s = C2D_SpriteSheetLoad(p);

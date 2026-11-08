@@ -2,7 +2,9 @@
 
 #include "render.h"
 
-static constexpr float kTrailLife = 0.17f;
+static constexpr float kTrailLife = 0.17f;   // the plain stroke, with no Shop trail
+static constexpr float kStyledLife = 0.3f;   // a Shop trail lingers a little longer behind the blade
+static float trailLife();
 static constexpr float kMaxHalfWidth = 4.2f;
 
 void Blade::reset() {
@@ -20,7 +22,7 @@ void Blade::pushPoint(float nx, float ny) {
 
 void Blade::update(const Input& in) {
 	for (int i = 0; i < count; i++) trail[(head - 1 - i + kTrail) % kTrail].age += kDt;
-	while (count > 0 && trail[(head - count + kTrail) % kTrail].age > kTrailLife) count--;
+	while (count > 0 && trail[(head - count + kTrail) % kTrail].age > trailLife()) count--;
 	if (swishCooldown > 0) swishCooldown -= kDt;
 
 	strokeStart = false;
@@ -109,32 +111,53 @@ u32 trailSwatch(int trail, float t) {
 	}
 }
 
+// Blade and trail are two layers. The trail (Shop) streaks behind and lingers a little; the blade's
+// edge (Options) is the bright stroke at the front, always in the blade colour, drawn over the trail.
+static constexpr float kEdgeLife = 0.09f;
+static float trailLife() { return gSave.trail > 0 && gSave.trail < kTrailCount ? kStyledLife : kTrailLife; }
+
 void Blade::draw() const {
 	if (count < 2) return;
+	const int style = gBladeDull > 0 || gSave.trail >= kTrailCount ? TR_PLAIN : gSave.trail;
+	if (style == TR_PLAIN) {
+		drawStroke(TR_PLAIN, kTrailLife, 1.0f, true);
+		return;
+	}
+	drawStroke(style, kStyledLife, 1.15f, false);
+	if (style == TR_SPARKLE || style == TR_COMET) drawExtras(style);
+	drawStroke(TR_PLAIN, kEdgeLife, 0.8f, true);
+}
+
+// One tapered strip through the points younger than `life`, thick at the head.
+void Blade::drawStroke(int style, float life, float width, bool tip) const {
 	static const u32 kColors[kBladeCount] = {0xFF3A8CFFu, 0xFFFFD060u, 0xFFA070FFu, 0xFF70F090u, 0xFF30C0FFu, 0};
 	const bool rainbow = gSave.blade == kBladeCount - 1 && gBladeDull <= 0;
 	const u32 baseColor = gBladeDull > 0 ? rgba(130, 130, 140) : kColors[gSave.blade % kBladeCount];
-	const int style = gBladeDull > 0 || gSave.trail >= kTrailCount ? TR_PLAIN : gSave.trail;
-	// Rebuilt every frame as a tapered triangle strip in citro2D's dynamic vertex buffer.
+	// Only the points young enough for this layer: the newest ones are at the end.
+	int first = 0;
+	while (first < count && trail[(head - count + first + kTrail) % kTrail].age > life) first++;
+	const int n = count - first;
+	if (n < 2) return;
+	auto at = [&](int i) -> const Point& { return trail[(head - n + i + kTrail) % kTrail]; };
 	float prevLx = 0, prevLy = 0, prevRx = 0, prevRy = 0;
 	u32 prevCol = 0, prevCore = 0;
-	for (int i = 0; i < count; i++) {
-		const Point& p = trail[(head - count + i + kTrail) % kTrail];
-		const Point& n = trail[(head - count + (i + 1 < count ? i + 1 : i) + kTrail) % kTrail];
-		const Point& b = trail[(head - count + (i > 0 ? i - 1 : i) + kTrail) % kTrail];
-		float dx = n.x - b.x, dy = n.y - b.y;
+	for (int i = 0; i < n; i++) {
+		const Point& p = at(i);
+		const Point& nx_ = at(i + 1 < n ? i + 1 : i);
+		const Point& b = at(i > 0 ? i - 1 : i);
+		float dx = nx_.x - b.x, dy = nx_.y - b.y;
 		float len = sqrtf(dx * dx + dy * dy);
 		if (len < 0.01f) len = 0.01f;
 		float nx = -dy / len, ny = dx / len;
-		float t = (float)i / (count - 1);  // 0 tail, 1 head
-		float fade = 1.0f - p.age / kTrailLife;
-		float w = kMaxHalfWidth * sinf(clampf(t, 0.02f, 1.0f) * kPi * 0.62f) * clampf(fade + 0.2f, 0, 1);
+		float t = (float)i / (n - 1);  // 0 tail, 1 head
+		float fade = 1.0f - p.age / life;
+		float w = width * kMaxHalfWidth * sinf(clampf(t, 0.02f, 1.0f) * kPi * 0.62f) * clampf(fade + 0.2f, 0, 1);
 		switch (style) {
 			case TR_INK: w *= 1.5f + 0.2f * sinf(i * 1.7f + strokeId); break;
 			case TR_FLAME: w *= 1.25f * (0.85f + 0.15f * sinf(p.age * 90 + i * 2.1f)); break;
 			case TR_RAINBOW: w *= 1.3f; break;
 			case TR_RIBBON: w *= 0.35f + 0.85f * fabsf(sinf(t * 9 + strokeId)); break;
-			case TR_COMET: w = kMaxHalfWidth * 1.5f * t * t * t * clampf(fade + 0.2f, 0, 1); break;
+			case TR_COMET: w = width * kMaxHalfWidth * 1.5f * t * t * t * clampf(fade + 0.2f, 0, 1); break;
 			default: break;
 		}
 		float lx = p.x + nx * w, ly = p.y + ny * w;
@@ -146,7 +169,7 @@ void Blade::draw() const {
 			case TR_FLAME: color = trailSwatch(TR_FLAME, t); coreColor = rgba(255, 246, 200); break;
 			case TR_RAINBOW: color = hueColor(t * 1.4f + (float)strokeId * 0.13f); break;
 			case TR_RIBBON: color = trailSwatch(TR_RIBBON, t + strokeId * 0.05f); coreColor = color; break;
-			case TR_SPARKLE: color = baseColor; break;
+			case TR_SPARKLE: color = trailSwatch(TR_SPARKLE, t); break;
 			case TR_COMET: color = trailSwatch(TR_COMET, t); break;
 			default: break;
 		}
@@ -168,9 +191,10 @@ void Blade::draw() const {
 		prevCol = col;
 		prevCore = core;
 	}
+	if (!tip) return;
 	// A pointed tip, so the head of the stroke doesn't end in a flat edge.
-	const Point& last = trail[(head - 1 + kTrail) % kTrail];
-	const Point& before = trail[(head - 2 + kTrail) % kTrail];
+	const Point& last = at(n - 1);
+	const Point& before = at(n - 2);
 	float dx = last.x - before.x, dy = last.y - before.y;
 	float len = sqrtf(dx * dx + dy * dy);
 	if (len < 0.01f) return;
@@ -179,7 +203,6 @@ void Blade::draw() const {
 	float tipX = last.x + dx / len * reach, tipY = last.y + dy / len * reach;
 	gfx::tri(prevLx, prevLy, prevCol, prevRx, prevRy, prevCol, tipX, tipY, prevCol);
 	gfx::tri(last.x + wx * 0.45f, last.y + wy * 0.45f, prevCore, last.x - wx * 0.45f, last.y - wy * 0.45f, prevCore, tipX, tipY, prevCore);
-	if (style == TR_SPARKLE || style == TR_COMET) drawExtras(style);
 }
 
 // Sparkle leaves little four-point stars along the stroke; Comet gets a bright glowing head.
@@ -196,7 +219,7 @@ void Blade::drawExtras(int style) const {
 	}
 	for (int i = 0; i < count; i += 3) {
 		const Point& p = trail[(head - count + i + kTrail) % kTrail];
-		float fade = 1.0f - p.age / kTrailLife;
+		float fade = 1.0f - p.age / kStyledLife;
 		float tw = 0.5f + 0.5f * sinf(i * 7.3f + p.age * 60 + strokeId);
 		float r = (1.5f + 2.5f * tw) * fade;
 		if (r < 0.4f) continue;

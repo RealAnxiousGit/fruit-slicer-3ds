@@ -4,7 +4,7 @@
 #include <stdio.h>
 
 // Logging costs real time on a console and even more in an emulator, so release builds drop it.
-#ifdef AUTOTEST
+#if defined(AUTOTEST) || defined(TEST_DLOG)
 #define DLOG(...) fprintf(stderr, __VA_ARGS__)
 #else
 #define DLOG(...) ((void)0)

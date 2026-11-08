@@ -8,7 +8,7 @@ u32 trailSwatch(int trail, float t);  // a Shop trail's colour along its length,
 
 // Turns raw resistive touch samples into a smooth blade stroke.
 struct Blade {
-	static constexpr int kTrail = 32;
+	static constexpr int kTrail = 48;
 	struct Point {
 		float x, y, age;
 	};
@@ -28,10 +28,11 @@ struct Blade {
 
 	void reset();
 	void update(const Input& in);
-	void draw() const;  // uses the blade chosen in Options and the Shop trail
+	void draw() const;  // the Shop trail behind, then the blade's edge on top in the colour chosen in Options
 
 private:
 	void drawExtras(int style) const;
+	void drawStroke(int style, float life, float width, bool tip) const;
 	void pushPoint(float nx, float ny);
 	float hx[3], hy[3];  // recent filtered samples, for curve interpolation
 	int hn = 0;

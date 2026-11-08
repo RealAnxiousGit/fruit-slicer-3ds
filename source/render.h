@@ -37,6 +37,10 @@ void endFrame();
 // eye: 0 = left, 1 = right. Returns false if that eye does not need drawing.
 bool beginTop(int eye);
 void beginBottom();
+// Windows, Linux and Android only (the Quit Game bomb): the whole window in sign-side units, which on a
+// wide window reaches left of and above the signs. beginCorner draws in those units anywhere in the window.
+void windowArea(float* x, float* y, float* w, float* h);
+void beginCorner();
 bool onTop();
 // Stereo plane for following top-screen draws: >0 pops out, <0 sinks behind the screen.
 void setDepth(float depth);
@@ -65,6 +69,10 @@ void rect(float x, float y, float w, float h, u32 color);
 void tri(float x0, float y0, u32 c0, float x1, float y1, u32 c1, float x2, float y2, u32 c2);
 float textWidth(const char* s, float scale);
 void text(const char* s, float x, float y, float scale, u32 color = WHITE, Align align = ALIGN_LEFT);
+// One letter centred on x, top at y, sx and sy its width and height scales. Text laid out by hand (the
+// ring round a menu fruit) draws all its letters with fill false, then all again with fill true.
+void glyph(char c, float x, float y, float sx, float sy, u32 color, bool fill);
+float glyphWidth(char c, float scale);
 
 // High Contrast draws signs as solid panels and outlines text; Larger Text makes all text a step bigger.
 extern bool gHighContrast;

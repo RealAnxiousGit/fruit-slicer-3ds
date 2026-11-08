@@ -19,10 +19,16 @@ The first full release. Saves from 0.4 carry over: your scores and settings are 
 - **Circle Pad slicing:** the Circle Pad moves the blade point; hold L, R or A to slice, or flick.
 - **Update check:** with your OK, the game looks on GitHub over Wi-Fi once a day for a newer release and shows what's new. The CIA version installs it while it downloads; the 3DSX version says a new version is out. Nothing about you is sent.
 - **Splash lines** over the logo, a new one each time.
+- **New bomb blasts:** a fireball, a shockwave, smoke and flying shards.
 
 ### Changed
 
 - Text that would run past the edge of its sign is made smaller to fit.
+- **Auto music** shuffles: when a track ends, another one you own starts. A track you pick loops. Music starts as soon as its first half second is ready, so Shop previews play straight away.
+- **Blade and Trail** are separate: Blade sets the colour of the cutting edge, Trail is the Shop streak behind it.
+- Letter outlines no longer cut into the letter beside them.
+- The 3D menu labels sway gently instead of spinning, and are easier to read.
+- The Shop picks an item when you click or tap it, not when you point at it.
 - Swipe and combo popups that land together are stacked instead of overlapping.
 - The README no longer says the game was only tested in an emulator: 0.4.0 ran well on a real New 2DS XL.
 

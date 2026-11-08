@@ -56,13 +56,14 @@ float textWidth(const char* s, float scale) {
 	return w * scale * gTextBoost;
 }
 
-static void textRun(const char* s, float x, float y, float scale, u32 color) {
+// fill 0 draws whole letters, outline and all; FONT_FILL draws only their insides.
+static void textRun(const char* s, float x, float y, float scale, u32 color, int fill = 0) {
 	const float cell = FONT_CELL * scale;
 	for (; *s; s++) {
 		int slot = glyphSlot(*s);
 		float adv = kFontAdvance[slot] * scale;
 		int g = kFontIndex[slot];
-		if (g >= 0) image(SHEET_FONT, g, x + (adv - cell) * 0.5f, y, cell, cell, color);
+		if (g >= 0) image(SHEET_FONT, g + fill, x + (adv - cell) * 0.5f, y, cell, cell, color);
 		x += adv;
 	}
 }
@@ -126,7 +127,9 @@ void text(const char* s, float x, float y, float scale, u32 color, Align align) 
 		textRun(s, x, y - o, scale, edge);
 		textRun(s, x, y + o, scale, edge);
 	}
+	// Every outline first, then every fill over them: a letter's outline never cuts into the one beside it.
 	textRun(s, x, y, scale, color);
+	textRun(s, x, y, scale, color, FONT_FILL);
 }
 
 // High Contrast signs: a solid dark panel with a light edge. The focus frame stays an edge only.
@@ -141,4 +144,16 @@ void contrastSign(int idx, float x, float y, float w, float h, u32 color) {
 	rect(x, y + k, k, h - k * 2, edge);
 	rect(x + w - k, y + k, k, h - k * 2, edge);
 }
+}  // namespace gfx
+
+namespace gfx {
+void glyph(char c, float x, float y, float sx, float sy, u32 color, bool fill) {
+	const int g = kFontIndex[glyphSlot(c)];
+	if (g < 0) return;
+	sx *= gTextBoost;
+	sy *= gTextBoost;
+	image(SHEET_FONT, g + (fill ? FONT_FILL : 0), x - FONT_CELL * sx * 0.5f, y, FONT_CELL * sx, FONT_CELL * sy, color);
+}
+
+float glyphWidth(char c, float scale) { return kFontAdvance[glyphSlot(c)] * scale * gTextBoost; }
 }  // namespace gfx

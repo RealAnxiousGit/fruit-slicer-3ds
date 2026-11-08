@@ -10,10 +10,12 @@
 #include "progress.h"
 #include "render.h"
 #include "sprites.h"
+#include "boom.h"
 
 Rng gRng;
 Rng gSpawn;
 bool gStickInUse = false;
+bool gHudPaused = false;
 
 const ModeInfo kModes[MODE_COUNT] = {
 	{"Classic", "Three misses and you are out.", "A bomb ends the run."},
@@ -224,6 +226,7 @@ static inline bool use3D() { return gSave.artStyle == ART_3D && m3d::ready(); }
 
 // ---------------------------------------------------------------- lifecycle
 void Game::start(Mode m) {
+	boom::clear();
 	clearCaptions();
 	jobs::wait();
 	m3d::cutReleaseAll();
@@ -1044,9 +1047,8 @@ void Game::hitBomb(Obj& o) {
 	shake = 0.6f;
 	chain = 0;
 	feverMeter *= 0.5f;
-	emitSparks(o.x, o.y, rgba(255, 170, 60), juiceCount(42), 280);
-	emitSparks(o.x, o.y, rgba(255, 240, 200), juiceCount(16), 180);
-	addRing(o.x, o.y, rgba(255, 190, 90), 4, 0.45f);
+	boom::start(o.x, o.y);
+	emitSparks(o.x, o.y, rgba(255, 170, 60), juiceCount(14), 260);
 	audio::play(SFX_BOOM, 1.0f, fieldPan(o.x));
 	PORT_VIBRATE(0.8f, 260);
 	switch (mode) {
@@ -1897,6 +1899,7 @@ void Game::drawField(const Blade& blade) const {
 		gfx::sprite(SHEET_SPRITES, p.sprite ? sprites_spark_idx : sprites_drop_idx, p.x, p.y, p.size, p.size, 0,
 		            withAlpha(p.color, clampf(life * 1.6f, 0, 1)));
 	}
+	boom::draw();
 	if (mode == MODE_BEAT) drawBeatPulse();
 	blade.draw();
 	for (const auto& p : popups) {
@@ -1904,7 +1907,9 @@ void Game::drawField(const Blade& blade) const {
 		gfx::text(p.text, p.x, p.y - 12, p.scale * uiScale(), withAlpha(p.color, clampf(p.life * 2.5f, 0, 1)), ALIGN_CENTER);
 	}
 	drawSwipeReplay();
-	if (mode == MODE_PRACTICE) drawPractice();
+#if PORT_TWO_SCREENS
+	if (mode == MODE_PRACTICE) drawPractice();  // one screen: drawn over the score sign instead, in drawHud
+#endif
 	if (flash > 0) gfx::rect(kFillX, 0, kFillW, 240, withAlpha(flashColor, clampf(flash, 0, 1) * (gSave.calmFx ? 0.25f : 1.0f)));
 	drawCaptions(240 - 4, kFieldW * 0.5f);
 }
@@ -2116,6 +2121,10 @@ void Game::drawHud() const {
 		mx += 80;
 	}
 
+	// The lesson goes over everything else, with the big words below it so the two never meet.
+	const bool lesson = mode == MODE_PRACTICE && (phase == PHASE_PLAY || phase == PHASE_READY) && !gHudPaused;
+	if (lesson) drawPractice();
+	const float midY = lesson ? 30 * u + 28 + 64 * fminf(u, (kFieldW - 24) / 300.0f) + 26 : 96;
 	const float cx = kFieldW * 0.5f;
 	if (phase == PHASE_FINALE && finaleHits > 0) {
 		snprintf(buf, sizeof buf, "%d", finaleHits);
@@ -2125,13 +2134,13 @@ void Game::drawHud() const {
 	if (phase == PHASE_READY) {
 		bool go = phaseT > 0.9f;
 		float s = go ? 1.8f : 1.2f + 0.1f * sinf(phaseT * 8);
-		gfx::text(go ? "GO!" : "READY", cx, 118 - s * 20, s, go ? rgba(140, 240, 150) : rgba(255, 230, 140), ALIGN_CENTER);
+		gfx::text(go ? "GO!" : "READY", cx, midY + 22 - s * 20, s, go ? rgba(140, 240, 150) : rgba(255, 230, 140), ALIGN_CENTER);
 	} else if (calloutT > 0) {
 		float in = clampf((1.4f - calloutT) * 8, 0, 1);
 		float s = calloutSize + (1 - in) * 0.5f;
 		float w = gfx::textWidth(callout, s);
 		if (w > kFieldW - 20) s *= (kFieldW - 20) / w;
-		gfx::text(callout, cx, phase == PHASE_FINALE ? 192 : 96, s, withAlpha(calloutColor, clampf(calloutT * 2.5f, 0, 1)), ALIGN_CENTER);
+		gfx::text(callout, cx, phase == PHASE_FINALE ? 192 : midY, s, withAlpha(calloutColor, clampf(calloutT * 2.5f, 0, 1)), ALIGN_CENTER);
 	}
 }
 #endif

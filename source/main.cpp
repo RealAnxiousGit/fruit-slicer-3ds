@@ -5,6 +5,7 @@
 #include "app.h"
 #include "audio.h"
 #include "blade.h"
+#include "boom.h"
 #include "common.h"
 #include "fruit.h"
 #include "game.h"
@@ -443,49 +444,49 @@ static float fruitSize(const Button& b) {
 	return d;
 }
 
-// The name on a tilted ring round the fruit, turning slowly. Letters on the far side are smaller and
-// dimmer, and pass behind the fruit: back is drawn before the fruit, front after it.
-static void drawRingText(const char* label, float cx, float cy, float d, float maxW, float scale, bool back) {
+// The name on a tilted ring round the fruit, swaying gently to and fro so the whole word always faces
+// the front and reads in one go. Each letter narrows as it turns away and fades before the side of the
+// ring, so letters never crowd there, and nothing is drawn on the far side, so nothing reads backwards.
+// All the outlines go down first and every fill on top, so the letters join up like printed text.
+static void drawRingText(const char* label, float cx, float cy, float d, float maxW, float scale, u32 color) {
 	int n = (int)strlen(label);
 	if (n == 0 || n > 31) return;
 	float w = gfx::textWidth(label, scale);
-	// Wide enough that the whole name fits on the near half of the ring, so it reads in one go.
-	float rx = fmaxf(d * 0.5f + 10, w / 2.0f);
+	// Wide enough that the name spans about a third of the ring, so it reads in one go at the front.
+	float rx = fmaxf(d * 0.5f + 10, w / 1.7f);
 	if (rx > maxW * 0.5f - 4) rx = maxW * 0.5f - 4;
-	float room = rx * 2.0f;
-	if (w > room) {
-		scale *= room / w;
-		w = room;
+	// A long name shrinks to fit the front of the ring with room to sway.
+	if (w > rx * 1.5f) {
+		scale *= rx * 1.5f / w;
+		w = rx * 1.5f;
 	}
-	float ry = rx * 0.22f;
-	// Calm Effects stops the turning and holds the name facing front.
-	float spin = gSave.calmFx ? 0 : sTime * 0.5f;
-	// The name goes round as many times as fits, evenly spaced, so one copy always faces the player.
-	const float turn = 2 * 3.14159265f;
-	int copies = (int)(turn * rx / (w + 16 * scale));
-	if (copies < 1) copies = 1;
-	char one[2] = {0, 0};
-	float a = 0;
-	for (int k = 0; k < copies * n; k++) {
-		int i = k % n;
-		if (i == 0) {
-			// Letters run clockwise seen from above, so across the near side they read left to right.
-			a = 1.5707963f + spin + (k / n) * turn / copies + (w * 0.5f) / rx;
+	const float ry = rx * 0.2f;
+	// Calm Effects stops the sway and holds the name facing front.
+	const float spin = gSave.calmFx ? 0 : sinf(sTime * 0.9f) * 0.32f;
+	struct Letter {
+		char c;
+		float x, y, sx, sy;
+		u32 col;
+	};
+	Letter out[64];
+	int count = 0;
+	{
+		// Letters run clockwise seen from above, so across the near side they read left to right.
+		float a = 1.5707963f + spin + (w * 0.5f) / rx;
+		for (int i = 0; i < n; i++) {
+			const float adv = gfx::glyphWidth(label[i], scale);
+			const float ang = a - (adv * 0.5f) / rx;
+			a -= adv / rx;
+			const float s = sinf(ang);  // 1 at the front
+			const float fade = clampf((s - 0.1f) / 0.3f, 0, 1);
+			if (fade <= 0 || label[i] == ' ' || count >= 64) continue;
+			const float depth = 0.92f + 0.08f * s;
+			out[count++] = {label[i], cx + cosf(ang) * rx, cy + d * 0.2f + s * ry - 20 * scale * depth, scale * depth * (0.25f + 0.75f * s), scale * depth,
+			                withAlpha(color, fade)};
 		}
-		one[0] = label[i];
-		float adv = gfx::textWidth(one, scale);
-		float ang = a - (adv * 0.5f) / rx;
-		a -= adv / rx;
-		float s = sinf(ang);  // 1 at the front
-		if ((s < 0) != back) continue;
-		float depth = 0.5f + 0.5f * s;
-		float cs = scale * (0.78f + 0.22f * depth);
-		float px = cx + cosf(ang) * rx, py = cy + d * 0.18f + s * ry;
-		// Faint on the far side, where it reads backwards, and thinning out towards the edges where letters crowd.
-		float edge = clampf(fabsf(s) * 3, 0, 1);
-		u32 col = withAlpha(COL_CREAM, (s < 0 ? 0.18f : 1.0f) * edge);
-		gfx::text(one, px - gfx::textWidth(one, cs) * 0.5f, py - 20 * cs, cs, col);
 	}
+	for (int pass = 0; pass < 2; pass++)
+		for (int i = 0; i < count; i++) gfx::glyph(out[i].c, out[i].x, out[i].y, out[i].sx, out[i].sy, out[i].col, pass == 1);
 }
 
 static void drawFruitChoice(const Button& b, const char* label, bool focused, bool pressed, float scale, int fruit) {
@@ -498,9 +499,8 @@ static void drawFruitChoice(const Button& b, const char* label, bool focused, bo
 	float spin = sTime * 0.8f + b.x * 0.05f;
 	if (fruit3D()) {
 		float ts = scale * 0.9f;
-		drawRingText(label, x, y + dy, d, b.w, ts, true);
 		if (!cut) drawMenuFruit(fruit, x, y + dy + bob, d, spin);
-		drawRingText(label, x, y + dy, d, b.w, ts, false);
+		drawRingText(label, x, y + dy, d, b.w, ts, focused ? COL_ACCENT : COL_CREAM);
 	} else {
 		if (!cut) drawMenuFruit(fruit, x, y + dy + bob, d, spin);
 		float ts = 0.4f, w = gfx::textWidth(label, ts);
@@ -554,8 +554,8 @@ static void drawPurse(float x, float y, float s, bool right = true) {
 	char buf[16];
 	snprintf(buf, sizeof buf, "%lu", (unsigned long)gSave.coins);
 	const float k = s / 0.44f, w = gfx::textWidth(buf, s);
-	if (!right) x += 24 * k + w;
-	gfx::sprite(SHEET_SPRITES, sprites_coin_idx, x - w - 12 * k, y + 8 * k, 0.5f * k, 0.5f * k);
+	if (!right) x += 27 * k + w;
+	gfx::sprite(SHEET_SPRITES, sprites_coin_idx, x - w - 15 * k, y + 8 * k, 0.5f * k, 0.5f * k);
 	gfx::text(buf, x, y, s, COL_CREAM, ALIGN_RIGHT);
 }
 
@@ -830,8 +830,8 @@ static const Row kAudioRows[] = {
 	{ROW_SLIDER, "Sound Effects", &gSave.sfx, 0, 100, nullptr, 0, 100, ACT_NONE, "Slices, combos and bombs.", ""},
 	{ROW_SLIDER, "Music", &gSave.music, 0, 100, nullptr, 0, 100, ACT_NONE, "Menu and game music.", ""},
 	{ROW_SLIDER, "Menu Sounds", &gSave.menuSfx, 0, 100, nullptr, 0, 100, ACT_NONE, "The tap when you press a sign.", ""},
-	{ROW_CHOICE, "Menu Music", &gSave.menuTrack, 0, kTrackCount, kTrackRowNames, 0, 0, ACT_NONE, "What plays in the menus.", "Auto uses Orchard Morning."},
-	{ROW_CHOICE, "Game Music", &gSave.gameTrack, 0, kTrackCount, kTrackRowNames, 0, 0, ACT_NONE, "What plays during a game.", "Auto suits each mode."},
+	{ROW_CHOICE, "Menu Music", &gSave.menuTrack, 0, kTrackCount, kTrackRowNames, 0, 0, ACT_NONE, "What plays in the menus. Auto", "shuffles every track you own."},
+	{ROW_CHOICE, "Game Music", &gSave.gameTrack, 0, kTrackCount, kTrackRowNames, 0, 0, ACT_NONE, "What plays during a game. Auto", "shuffles them; Zen keeps it calm."},
 	{ROW_ACTION, "Reset Audio", nullptr, 0, 0, nullptr, 0, 0, ACT_RESET_AUDIO, "Puts these back to their defaults.", ""},
 };
 static const Row kVisualRows[] = {
@@ -840,8 +840,8 @@ static const Row kVisualRows[] = {
 #if PORT_TWO_SCREENS
 	{ROW_CHOICE, "Scenery", &gSave.scene, 0, kSceneCount - 1, kSceneNames, 0, 0, ACT_NONE, "The view on the top screen.", ""},
 #endif
-	{ROW_CHOICE, "Blade", &gSave.blade, 0, kBladeCount - 1, kBladeNames, 0, 0, ACT_NONE, "The colour of your slice.", ""},
-	{ROW_CHOICE, "Trail", &gSave.trail, 0, kTrailCount - 1, kTrailNames, 0, 0, ACT_NONE, "Trails bought in the Shop.", ""},
+	{ROW_CHOICE, "Blade", &gSave.blade, 0, kBladeCount - 1, kBladeNames, 0, 0, ACT_NONE, "The colour of the cutting edge,", "at the front of every slice."},
+	{ROW_CHOICE, "Trail", &gSave.trail, 0, kTrailCount - 1, kTrailNames, 0, 0, ACT_NONE, "What streaks out behind the blade.", "More trails are in the Shop."},
 #if !PORT_HAS_DISPLAY
 	{ROW_CHOICE, "Effects", &gSave.effects, 0, 3, kEffectNames, 0, 0, ACT_NONE, "Juice, sparks and rings.", "Lower saves the most speed."},
 #endif
@@ -1406,18 +1406,23 @@ static void updateShop(const Input& in, bool wasTouching) {
 		audio::click(0.5f);
 	}
 
-	// Focusing a tile picks that item, so it is tried on straight away.
-	if (f != before && f >= kShopTile0 && f < kShopAct && f - kShopTile0 < n && f - kShopTile0 != sShopItem) {
-		sShopItem = f - kShopTile0;
-		sShopArmT = 0;
-		shopTryOn();
-	}
+	(void)before;
 	if (t < 0 && (in.down & KEY_A)) t = f;
 	if (t == 0) {
 		leaveShop();
 	} else if (t >= kShopTab0 && t < kShopTile0) {
 		shopSetTab(t - kShopTab0);
-	} else if (t == kShopAct || (t >= kShopTile0 && t < kShopAct && (in.down & KEY_A))) {
+	} else if (t >= kShopTile0 && t < kShopAct && t - kShopTile0 < n) {
+		// Pointing at a tile only highlights it. A click, tap or A picks it and tries it on;
+		// the same again on the picked tile does what the action sign says.
+		if (t - kShopTile0 != sShopItem) {
+			sShopItem = t - kShopTile0;
+			sShopArmT = 0;
+			shopTryOn();
+		} else {
+			shopAct();
+		}
+	} else if (t == kShopAct) {
 		shopAct();
 	}
 
@@ -1478,7 +1483,10 @@ static void drawShop() {
 	for (int k = 0; k < n; k++) {
 		Button b = shopButton(kShopTile0 + k);
 		bool sel = k == sShopItem;
-		drawPlank(b.x, b.y, b.w, b.h, f == kShopTile0 + k || (sel && f >= kShopAct), sPressed == kShopTile0 + k);
+		// The picked item keeps the gold frame; a tile only pointed at gets a faint one.
+		const bool pressed = sPressed == kShopTile0 + k;
+		drawPlank(b.x, b.y, b.w, b.h, sel, pressed);
+		if (!sel && f == kShopTile0 + k) gfx::sign(sprites_plank_focus_idx, b.x - 2, b.y - 2 + (pressed ? 2 : 0), b.w + 4, b.h + 4, withAlpha(COL_CREAM, 0.5f));
 		drawShopIcon(sShopTab, k, b.x + b.w / 2, b.y + 17);
 		const ShopItem& it = shopItem(sShopTab, k);
 		float s = 0.3f, tw = gfx::textWidth(it.name, s);
@@ -1729,19 +1737,18 @@ static void pickSplash() {
 }
 
 // Tilted over the logo's lower right corner, gently pulsing. Text can't turn, so the letters step up
-// along the slope instead.
-static void drawTilted(const char* s, int len, float x, float y, float scale) {
+// along the slope instead. Called twice: every outline, then every fill, so neighbours never clip.
+static void drawTilted(const char* s, int len, float x, float y, float scale, bool fill) {
 	const float slope = -0.22f;
 	char buf[64];
 	if (len > 63) len = 63;
 	memcpy(buf, s, len);
 	buf[len] = 0;
 	float cx = x - gfx::textWidth(buf, scale) * 0.5f;
-	char one[2] = {0, 0};
 	for (int i = 0; i < len; i++) {
-		one[0] = buf[i];
-		gfx::text(one, cx, y + (cx - x) * slope - 20 * scale, scale, COL_ACCENT);
-		cx += gfx::textWidth(one, scale);
+		const float adv = gfx::glyphWidth(buf[i], scale);
+		gfx::glyph(buf[i], cx + adv * 0.5f, y + (cx - x) * slope - 20 * scale, scale, scale, COL_ACCENT, fill);
+		cx += adv;
 	}
 }
 
@@ -1759,7 +1766,7 @@ static void drawSplash(float x, float y) {
 	if (cut < 0) {
 		float w = gfx::textWidth(s, scale);
 		if (w > room) scale *= room / w;
-		drawTilted(s, len, x, y, scale * pulse);
+		for (int pass = 0; pass < 2; pass++) drawTilted(s, len, x, y, scale * pulse, pass == 1);
 		return;
 	}
 	char first[64];
@@ -1767,8 +1774,10 @@ static void drawSplash(float x, float y) {
 	float w = fmaxf(gfx::textWidth(first, scale), gfx::textWidth(s + cut + 1, scale));
 	if (w > room) scale *= room / w;
 	float gap = 9 * scale / 0.42f;
-	drawTilted(s, cut, x, y - gap, scale * pulse);
-	drawTilted(s + cut + 1, len - cut - 1, x + 6, y + gap, scale * pulse);
+	for (int pass = 0; pass < 2; pass++) {
+		drawTilted(s, cut, x, y - gap, scale * pulse, pass == 1);
+		drawTilted(s + cut + 1, len - cut - 1, x + 6, y + gap, scale * pulse, pass == 1);
+	}
 }
 
 static void topPanel(float x, float y, float w, float h) {
@@ -2912,6 +2921,85 @@ static void drawTopContent(Screen screen) {
 	}
 }
 
+// ---------------------------------------------------------------- quit bomb (Windows, Linux and Android)
+#if !PORT_3DS
+// A bomb in the window's top-left corner, labelled Quit Game. Picking it blows up the whole screen,
+// then the game closes. It is the last of the title's buttons, an icon like the links.
+static constexpr int kTitleQuit = kTitleCount;
+static constexpr float kQuitBlast = 1.25f;  // seconds of explosion before the game closes
+static float sQuitT = -1;                   // time since the bomb was picked, or -1
+static Button sTitleBtns[kTitleCount + 1];
+
+static Button quitButton() {
+	float x, y, w, h;
+	gfx::windowArea(&x, &y, &w, &h);
+	return {x + 4, y + 4, 70, 58, "Quit Game"};
+}
+
+static const Button* titleButtons() {
+	for (int i = 0; i < kTitleCount; i++) sTitleBtns[i] = kTitleButtons[i];
+	sTitleBtns[kTitleQuit] = quitButton();
+	return sTitleBtns;
+}
+
+static void startQuit() {
+	const Button b = quitButton();
+	float x, y, w, h;
+	gfx::windowArea(&x, &y, &w, &h);
+	sQuitT = 0;
+	boom::clear();
+	const float bx = b.x + b.w * 0.5f, by = b.y + 22;
+	boom::start(bx, by, 1.6f);
+	// Then a chain of blasts runs out from the corner across the whole window, the farthest last.
+	const float reach = sqrtf(w * w + h * h);
+	for (int i = 0; i < 12; i++) {
+		const float px = x + w * ((i % 4) + 0.5f + 0.3f * sinf(i * 2.7f)) / 4, py = y + h * ((i / 4) + 0.5f + 0.3f * cosf(i * 1.9f)) / 3;
+		const float d = sqrtf((px - bx) * (px - bx) + (py - by) * (py - by));
+		boom::start(px, py, 2.2f + 0.8f * ((i * 7) % 5) / 4.0f, 0.06f + 0.5f * d / reach);
+	}
+	audio::play(SFX_BOOM, 1.0f, -0.6f);
+	audio::play(SFX_FINALE_BURST, 0.8f);
+	PORT_VIBRATE(1.0f, 400);
+}
+
+// The bomb and its label, in the corner. alpha fades it with a slide.
+static void drawQuitBomb(bool focused, float alpha) {
+	if (alpha <= 0) return;
+	const Button b = quitButton();
+	const float cx = b.x + b.w * 0.5f, cy = b.y + 22, wob = gSave.calmFx ? 0 : sinf(sTime * 2.2f) * 0.12f;
+	if (sQuitT < 0) {
+		if (focused) gfx::sprite(SHEET_SPRITES, sprites_ring_idx, cx, cy, 0.62f, 0.62f, 0, withAlpha(COL_ACCENT, 0.9f * alpha));
+		if (fruit3D() && alpha >= 1) {
+			m3d::begin(320, gfx::stereoPerZ());
+			m3d::Pose pose = {cx, cy, 0, 0.25f, sTime * 0.7f, wob, 0.72f, 0, 0, 0};
+			m3d::draw(m3d::MESH_BOMB, m3d::PART_WHOLE, pose);
+			m3d::end();
+		} else {
+			gfx::sprite(SHEET_FRUIT, fruit_bomb_idx, cx, cy, 0.62f, 0.62f, wob, withAlpha(WHITE, alpha));
+		}
+		const u32 lc = withAlpha(focused ? COL_ACCENT : COL_CREAM, alpha);
+		gfx::text(b.label, cx, b.y + 44, 0.3f, lc, ALIGN_CENTER);
+	}
+	if (sQuitT >= 0) {
+		float x, y, w, h;
+		gfx::windowArea(&x, &y, &w, &h);
+		// A white flash, the blasts, then everything goes dark just before the game closes.
+		const float flash = 1 - clampf(sQuitT / 0.25f, 0, 1);
+		boom::draw();
+		if (flash > 0) gfx::rect(x, y, w, h, withAlpha(WHITE, flash * (gSave.calmFx ? 0.4f : 0.9f)));
+		const float dark = clampf((sQuitT - (kQuitBlast - 0.45f)) / 0.4f, 0, 1);
+		if (dark > 0) gfx::rect(x, y, w, h, rgba(0, 0, 0, (u8)(255 * dark)));
+	}
+}
+#else
+static constexpr int kTitleQuit = -2;  // the 3DS has no Quit Game bomb: HOME closes the game there
+static constexpr float kQuitBlast = 1;
+static float sQuitT = -1;
+static const Button* titleButtons() { return kTitleButtons; }
+static void startQuit() {}
+#endif
+static constexpr int kTitleAll = PORT_3DS ? kTitleCount : kTitleCount + 1;  // with the Quit Game bomb
+
 // ---------------------------------------------------------------- screens: bottom
 static void drawRows() {
 	const Section& sec = kSections[sSection];
@@ -3046,10 +3134,8 @@ static void drawBottomContent(Screen screen) {
 			drawHeader("Credits");
 			drawBackArrow(true, sPressed == 0);
 			gfx::sign(sprites_plank_idx, 10, 50, 300, 176, COL_PLANK);
-			gfx::text("PROGRAMMING", 90, 57, 0.3f, COL_ACCENT, ALIGN_CENTER);
-			gfx::text("Claude", 90, 69, 0.46f, COL_CREAM, ALIGN_CENTER);
-			gfx::text("PROMPT ENGINEERING", 225, 57, 0.3f, COL_ACCENT, ALIGN_CENTER);
-			gfx::text("RealAnxiousGit", 225, 69, 0.46f, COL_CREAM, ALIGN_CENTER);
+			gfx::text("PROGRAMMING", 160, 57, 0.3f, COL_ACCENT, ALIGN_CENTER);
+			gfx::text("NickBin", 160, 69, 0.46f, COL_CREAM, ALIGN_CENTER);
 			{
 				const auto line = [](const char* s, float y, u32 color) {
 					float w = gfx::textWidth(s, 0.3f);
@@ -3063,7 +3149,7 @@ static void drawBottomContent(Screen screen) {
 				line("Claude Code, Graphify", 165, COL_CREAM);
 				line("Claude Code Game Studios by Donchitos", 178, COL_CREAM);
 				line("Anti Slop by miqdadbadjuber", 191, COL_CREAM);
-				line("Shop music: Of Far Different Nature (CC BY 4.0)", 207, COL_DIM);
+				line("Music sold in the Shop: Of Far Different Nature (CC BY 4.0)", 207, COL_DIM);
 			}
 			break;
 		case SCREEN_HOWTO: {
@@ -3236,8 +3322,11 @@ static void updateFrame(const Input& in, bool wasTouching) {
 	switch (sScreen) {
 		case SCREEN_TITLE: {
 			if (blocked) break;
-			int t = menuInput(kTitleButtons, kTitleCount, SCREEN_TITLE, in, wasTouching, kTitleSigns);
-			if (t == 0) {
+			if (sQuitT >= 0) break;  // the game is closing
+			int t = menuInput(titleButtons(), kTitleAll, SCREEN_TITLE, in, wasTouching, kTitleSigns);
+			if (t == kTitleQuit) {
+				startQuit();
+			} else if (t == 0) {
 				// The very first Play starts the Practice run; it can be skipped from the pause menu.
 				if (!gSave.practiceDone) {
 					sStartMode = MODE_PRACTICE;
@@ -3602,6 +3691,7 @@ static void drawFrame() {
 	if (field) {
 		gfx::beginField();
 		sGame.drawField(sBlade);
+		gHudPaused = sScreen != SCREEN_GAME;
 		sGame.drawHud();
 		drawStickPoint();
 #if PORT_PAUSE_BUTTON
@@ -3629,6 +3719,14 @@ static void drawFrame() {
 			content(sScreen);
 		}
 		if (pass == 1 && menuBladeShown()) sMenuBlade.draw();
+	}
+	// The Quit Game bomb sits in the window's own corner, outside both sides, and fades with a slide.
+	{
+		const float quitIn = sScreen == SCREEN_TITLE ? (sSliding ? e : 1) : (sSliding && sSlideFrom == SCREEN_TITLE ? 1 - e : 0);
+		if (quitIn > 0 || sQuitT >= 0) {
+			gfx::beginCorner();
+			drawQuitBomb(sFocus[SCREEN_TITLE] == kTitleQuit, sQuitT >= 0 ? 1 : quitIn);
+		}
 	}
 	// A message from starting up, such as the chosen renderer not working, shows under the logo for a while.
 	static int noticeFrames = 0;
@@ -3799,7 +3897,13 @@ bool app::frame(Input& in, int steps) {
 		gStickInUse = sPointShow > 0;
 		updateFrame(in, sWasTouching);
 		sWasTouching = in.touching;
-		if (sLeaving || sUpdateQuit) return false;
+		if (sScreen != SCREEN_PAUSE) boom::update(kDt);
+#ifdef TEST_SLOWBOOM
+		if (sQuitT >= 0) sQuitT += kDt * 0.12f;
+#else
+		if (sQuitT >= 0) sQuitT += kDt;
+#endif
+		if (sLeaving || sUpdateQuit || sQuitT > kQuitBlast) return false;
 		// A press belongs to the first step only.
 		in.down = 0;
 		in.repeat = 0;

@@ -6,6 +6,7 @@
 
 #include "audio_port.h"
 #include "port_api.h"
+#include "shop.h"
 #if defined(PORT_HAS_VORBIS) && PORT_HAS_VORBIS
 #define FS_OGG 1
 #include "song_decoder.h"
@@ -193,12 +194,39 @@ static void oggStartDecode() {
 #endif
 
 
-static int resolveTrack(int context) {
+// Auto shuffles: a track plays to its end, then another the player owns, never the same one twice
+// in a row. Zen keeps to the calm tracks. The shuffle's track carries on from menu to menu.
+static bool sAutoPick;     // the playing track came from Auto's shuffle
+static int sAutoContext = MUSIC_NONE;
+static u32 sShuffle = 0x9E3779B9u;
+
+static bool calmTrack(int t) { return t == 0 || (t >= 2 && t <= 7); }
+
+static bool inAutoPool(int context, int t) {
+	if (t < 0 || t >= kTrackCount || !trackUnlocked(t)) return false;
+	return context != MUSIC_ZEN || calmTrack(t);
+}
+
+static int pickAuto(int context, int avoid) {
+	int pool[kTrackCount], n = 0;
+	for (int t = 0; t < kTrackCount; t++)
+		if (t != avoid && inAutoPool(context, t)) pool[n++] = t;
+	if (n == 0) return inAutoPool(context, avoid) ? avoid : kAutoTrack[context];
+	sShuffle = sShuffle * 1664525u + 1013904223u + (u32)(sClock * 1000);
+	return pool[(sShuffle >> 8) % n];
+}
+
+static int resolveTrack(int context, bool* autoPick) {
+	*autoPick = false;
 	if (context == MUSIC_NONE) return -1;
 	if (context == MUSIC_PLAY && sForced >= 0) return sForced;
 	u8 choice = context == MUSIC_MENU ? gSave.menuTrack : gSave.gameTrack;
-	return choice > 0 ? choice - 1 : kAutoTrack[context];
+	if (choice > 0) return choice - 1;
+	*autoPick = true;
+	if (sAutoPick && sAutoContext == context && inAutoPool(context, sCurrent)) return sCurrent;
+	return pickAuto(context, sCurrent);
 }
+
 
 static float level(u8 slider) { return slider / 100.0f; }
 
@@ -294,11 +322,60 @@ void click(float volume) {
 	gSave.sfx = saved;
 }
 
-static void beginPlayback() {
-	audioport::ready(sMusicClip.pcm, sMusicClip.samples * sMusicClip.channels * 2);
+// A track starts as soon as its first half second is in, and the rest keeps arriving while it plays,
+// many times faster than it is heard. Waiting for all of it was a delay of several seconds.
+static constexpr float kStartAhead = 0.5f;
+static bool sStarted;      // the mixer has the current track
+static float sStartedAt;
+static bool sLoop = true;  // a chosen track loops; Auto's shuffle moves on at the end instead
+static float sAskedAt;  // when the current track was asked for, for the test log
+
+static void startMixer(u32 avail) {
+	DLOG("[audio] track %d plays %.0f ms after it was asked for (%s)\n", sCurrent, (sClock - sAskedAt) * 1000, sAutoPick ? "shuffle" : "loops");
+#ifdef TEST_SHORTMUSIC
+	if (sMusicClip.samples > sMusicClip.rate * 6) sMusicClip.samples = sMusicClip.rate * 6;  // test builds: see Auto move on quickly
+#endif
 	refreshVolumes();
-	audioport::musicStart(sMusicClip);
+	audioport::musicStart(sMusicClip, sLoop);
+	audioport::musicAvail(sMusicClip.pcm, avail, sMusicClip.samples);
+	sStarted = true;
+	sStartedAt = sClock;
 }
+
+// More of the track is here: hand it over, and start the track once there is enough.
+static void arrived(u32 fromFrame, u32 avail) {
+	if (avail > fromFrame)
+		audioport::ready(sMusicClip.pcm + fromFrame * sMusicClip.channels, (avail - fromFrame) * sMusicClip.channels * 2);
+	if (sStarted) audioport::musicAvail(sMusicClip.pcm, avail, sMusicClip.samples);
+	else if (avail >= sMusicClip.samples || avail >= sMusicClip.rate * kStartAhead) startMixer(avail);
+}
+
+// Loading broke off part way: whatever had started stops, and the track is let go.
+static void loadFailed() {
+	if (sStarted) audioport::musicStop();
+	sStarted = false;
+	if (sMusicClip.pcm) audioport::release(sMusicClip.pcm);
+	sMusicClip.pcm = nullptr;
+}
+
+static bool loading() {
+#if FS_OGG
+	if (sOgg || sOggDec) return true;
+#endif
+	return sLoadFile != nullptr;
+}
+
+// How much of the current track is in so far.
+static u32 loadedFrames() {
+#if FS_OGG
+	if (sOgg) return 0;
+	if (sOggDec) return sOggDecoded;
+#endif
+	if (sLoadFile) return sLoadDone / (sMusicClip.channels * 2);
+	return sMusicClip.samples;
+}
+
+static void autoNext();
 
 void update(float dt) {
 	sClock += dt;
@@ -326,6 +403,7 @@ void update(float dt) {
 			else oggDrop();
 		}
 	} else if (sOggDec) {
+		const u32 from = sOggDecoded;
 		u32 left = sMusicClip.samples - sOggDecoded;
 		int want = left < (u32)kOggFramesPerStep ? (int)left : kOggFramesPerStep;
 		int got = songdec::read(sOggDec, sMusicClip.pcm + sOggDecoded * sMusicClip.channels, (int)sMusicClip.channels, want);
@@ -334,25 +412,32 @@ void update(float dt) {
 			// The stream's own length can be a touch longer than what decodes: play what is there.
 			sMusicClip.samples = sOggDecoded;
 			oggDrop();
-			if (sMusicClip.samples > 0) beginPlayback();
+			if (sMusicClip.samples > 0) arrived(from, sMusicClip.samples);
+			else loadFailed();
+		} else {
+			arrived(from, sOggDecoded);
 		}
 	} else
 #endif
 	if (sLoadFile) {
-		u32 left = sMusicClip.samples * sMusicClip.channels * 2 - sLoadDone;
+		const u32 frameBytes = sMusicClip.channels * 2, from = sLoadDone / frameBytes;
+		u32 left = sMusicClip.samples * frameBytes - sLoadDone;
 		u32 want = left < kReadPerFrame ? left : kReadPerFrame;
 		size_t got = port::assetRead((u8*)sMusicClip.pcm + sLoadDone, want, sLoadFile);
 		sLoadDone += got;
-		if (got != want || sLoadDone >= sMusicClip.samples * sMusicClip.channels * 2) {
+		if (got != want || sLoadDone >= sMusicClip.samples * frameBytes) {
 			port::assetClose(sLoadFile);
 			sLoadFile = nullptr;
-			if (got == want) {
-				beginPlayback();
-			} else {
-				audioport::release(sMusicClip.pcm);
-				sMusicClip.pcm = nullptr;
-			}
+			if (got == want) arrived(from, sMusicClip.samples);
+			else loadFailed();
+		} else {
+			arrived(from, sLoadDone / frameBytes);
 		}
+	}
+	// A track that has played to its end: Auto's shuffle picks the next one; anything else starts over.
+	if (sStarted && !loading() && sClock - sStartedAt > 1.0f && audioport::musicTime() < 0) {
+		if (sAutoPick) autoNext();
+		else startMixer(sMusicClip.samples);
 	}
 	if (sMusicRetired && --sMusicRetiredFrames <= 0) {
 		audioport::release(sMusicRetired);
@@ -464,9 +549,15 @@ static void startCustom(int song) {
 }
 #endif
 
-static void startTrack(int track) {
+static void startTrack(int track, bool autoPick = false, int context = MUSIC_NONE) {
+	// The same track again keeps playing; at its end it loops or moves on as asked now.
+	sAutoPick = autoPick;
+	sAutoContext = context;
+	sLoop = !autoPick;
 	if (!sReady || track == sCurrent) return;
 	sCurrent = track;
+	sAskedAt = sClock;
+	sStarted = false;
 	audioport::musicStop();
 #if FS_OGG
 	if (sOgg || sOggDec) {
@@ -533,37 +624,45 @@ static void startTrack(int track) {
 	sLoadDone = 0;
 }
 
+static void startFor(int context) {
+	bool autoPick;
+	const int track = resolveTrack(context, &autoPick);
+	startTrack(track, autoPick, context);
+}
+
+// The shuffle's track has ended: on to another.
+static void autoNext() {
+	const int next = pickAuto(sAutoContext, sCurrent);
+	if (next == sCurrent) startMixer(sMusicClip.samples);
+	else startTrack(next, true, sAutoContext);
+}
+
 void music(Music m) {
 	sContext = m;
 	sForced = -1;
-	startTrack(resolveTrack(m));
+	startFor(m);
 }
 
-void preview(Music m) { startTrack(resolveTrack(m)); }
+void preview(Music m) { startFor(m); }
 
 void musicBeat(int track) {
 	if (track < 0 || track >= trackCount()) return;
 	sContext = MUSIC_PLAY;
 	sForced = track;
 	if (!sReady) return;
-	bool loading = sLoadFile != nullptr;
-#if FS_OGG
-	loading = loading || sOgg || sOggDec;
-#endif
-	if (track == sCurrent && sMusicClip.pcm && !loading) {
+	if (track == sCurrent && sStarted) {
 		// Already here: back to its first beat.
+		sAutoPick = false;
+		sLoop = true;
 		audioport::musicStop();
-		audioport::musicStart(sMusicClip);
+		startMixer(loadedFrames());
 		return;
 	}
-	startTrack(track);  // it starts from the top once it has arrived
+	startTrack(track, false, MUSIC_PLAY);  // it starts from the top as soon as its start is in
 }
 
 float musicTime() {
-	if (!sReady || !sMusicClip.pcm || sLoadFile) return -1;
-#if FS_OGG
-	if (sOgg || sOggDec) return -1;
-#endif
+	if (!sReady || !sMusicClip.pcm || !sStarted) return -1;
 	return audioport::musicTime();
 }
 
@@ -610,7 +709,7 @@ float musicLength() {
 	return (float)sMusicClip.samples / sMusicClip.rate;
 }
 
-void reapply() { startTrack(resolveTrack(sContext)); }
+void reapply() { startFor(sContext); }
 
 void musicSpeed(float factor) {
 	static float now = 1;

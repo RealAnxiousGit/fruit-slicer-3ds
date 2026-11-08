@@ -17,7 +17,7 @@ enum Music { MUSIC_NONE = -1, MUSIC_MENU, MUSIC_PLAY, MUSIC_ZEN, MUSIC_COUNT };
 namespace audio {
 // Starts the DSP; returns false if ndsp is unavailable. Sound effects then load one per loadStep,
 // so the loading screen can show real progress. A music track loads a little each frame, so
-// starting one never stalls the game. It begins playing once it has all arrived.
+// starting one never stalls the game. It begins playing once its first half second is in.
 bool init();
 int loadStepCount();
 void loadStep(int i);

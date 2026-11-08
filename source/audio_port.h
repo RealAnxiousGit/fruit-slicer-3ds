@@ -17,7 +17,10 @@ void release(s16* p);
 void ready(const s16* p, u32 bytes);  // this memory has finished being written
 void settle();                        // gives the hardware time to let go of replaced music
 void playSfx(const Clip& c, float left, float right, float rate);
-void musicStart(const Clip& c);
+void musicStart(const Clip& c, bool loop = true);  // a track that doesn't loop stops at its end, and musicTime goes to -1
+// How much of the playing track has arrived so far, and its full length. Music starts before all of it is
+// in; the mixer waits at the edge of what has arrived rather than play what isn't there yet.
+void musicAvail(const s16* pcm, u32 frames, u32 total);
 void musicStop();
 void musicVolume(float v);
 void musicRate(float factor);

@@ -57,6 +57,7 @@ struct Pending {
 // The Practice run's lessons, in order (practice.cpp).
 enum PracticeStep { PS_SLICE, PS_THREE, PS_COCONUT, PS_BOMB, PS_COIN, PS_FRENZY, PS_DONE };
 extern bool gStickInUse;  // set by the menus: a controller is steering the blade, so lessons say so
+extern bool gHudPaused;  // set by the menus: the pause menu is up, so the lesson sign steps aside
 
 enum GamePhase { PHASE_READY, PHASE_PLAY, PHASE_FINALE, PHASE_DYING, PHASE_OVER };
 
