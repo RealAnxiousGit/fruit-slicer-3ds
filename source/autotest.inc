@@ -294,6 +294,15 @@ static void autotestInput(Input& in) {
 
 		case SCREEN_PAUSE:
 			if (sBotPhaseFrames < 40) return;
+#ifdef LAB
+			if (!sLabCalloutChecked) {
+				sLabCalloutChecked = true;
+				const float keep = sGame.calloutT;
+				sGame.calloutT = 1;
+				labCheck(!sGame.calloutShown(), "no callout shows behind the PAUSED sign");
+				sGame.calloutT = keep;
+			}
+#endif
 			sBotPhaseFrames = 0;
 			fprintf(stderr, "[bot] resume from pause\n");
 			botTap(kPauseButtons[1]);

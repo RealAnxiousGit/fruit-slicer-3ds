@@ -2037,7 +2037,7 @@ void Game::drawHud() const {
 		bool go = phaseT > 0.9f;
 		float s = go ? 1.8f : 1.2f + 0.1f * sinf(phaseT * 8);
 		gfx::text(go ? "GO!" : "READY", 200, 118 - s * 20, s, go ? rgba(140, 240, 150) : rgba(255, 230, 140), ALIGN_CENTER);
-	} else if (calloutT > 0 && !gHudPaused) {
+	} else if (calloutShown()) {
 		gfx::setDepth(1.6f);
 		float in = clampf((1.4f - calloutT) * 8, 0, 1);
 		float s = calloutSize + (1 - in) * 0.5f;
@@ -2139,7 +2139,7 @@ void Game::drawHud() const {
 		bool go = phaseT > 0.9f;
 		float s = go ? 1.8f : 1.2f + 0.1f * sinf(phaseT * 8);
 		gfx::text(go ? "GO!" : "READY", cx, midY + 22 - s * 20, s, go ? rgba(140, 240, 150) : rgba(255, 230, 140), ALIGN_CENTER);
-	} else if (calloutT > 0) {
+	} else if (calloutShown()) {
 		float in = clampf((1.4f - calloutT) * 8, 0, 1);
 		float s = calloutSize + (1 - in) * 0.5f;
 		float w = gfx::textWidth(callout, s);

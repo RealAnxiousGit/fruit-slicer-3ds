@@ -188,6 +188,7 @@ struct Game {
 	void drawMarks(bool top, float ox, float oy) const;  // High Contrast outlines and colour-blind bomb rings
 	// Snap assist: the closest fruit ahead of a moving point, within range. False if none.
 	bool fruitAhead(float x, float y, float dx, float dy, float range, float* fx, float* fy) const;
+	bool calloutShown() const { return calloutT > 0 && !gHudPaused; }  // the big words, hidden behind a menu
 	void drawHud() const;                       // top screen, one eye at a time
 	int activeObjects() const;
 	int activeParticles() const;

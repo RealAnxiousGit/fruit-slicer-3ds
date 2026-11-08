@@ -142,6 +142,7 @@ static void labMenus() {
 
 // Checks made every frame of a game.
 static bool sLabMeterEarly, sLabBlastSeen, sLabBlastMissed;
+static bool sLabCalloutChecked;  // the PAUSED sign has been checked once
 static bool sLabTapped, sLabTapSeen;  // 3DS: a mode was started with a plain stylus tap
 static u32 sLabBombHits;
 static void labWatchGame() {
