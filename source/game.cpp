@@ -1864,7 +1864,7 @@ void Game::drawObjects3D(bool top, float ox, float oy) const {
 	if (!any) return;
 
 	jobs::wait();  // any cuts asked for this frame must be finished before the GPU sees them
-	m3d::begin(top ? 400 : kFieldW, gfx::stereoPerZ());
+	m3d::begin(top ? 400 : kFieldW, gfx::stereoPerZ(), true);
 	for (const auto& h : halves) {
 		if (!h.on || !onThisScreen(h.y, 30, top, oy)) continue;
 		m3d::Pose pose = {h.x + ox, h.y + oy, kFruitZ, h.rx, h.ry, h.rot, 1, h.axisX, h.axisY, h.tilt};

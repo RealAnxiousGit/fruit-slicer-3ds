@@ -57,12 +57,18 @@ static bool sLabFinishing = false;
 static constexpr int kBotDwell = 200;
 #elif defined(TEST_RECORD)
 static constexpr int kBotDwell = 110;  // trailer capture: long enough on each menu to see it
+#elif defined(BOT_MENUS) && PORT_3DS
+static constexpr int kBotDwell = 150;  // long enough for the emulator's capture to land on each page
 #else
 static constexpr int kBotDwell = 30;
 #endif
 
-#if defined(BOT_MENUS) && !PORT_3DS
+#if defined(BOT_MENUS)
 // A picture of Pick a Game and every Options page, for checking layouts. Needs FRUIT_SLICER_SHOTS.
+// The 3DS can't save its own screen, so there the walk just pauses on each page for the emulator's capture.
+#if PORT_3DS
+static void botMenuPicture(const char*) {}
+#else
 namespace gfx {
 void requestShot(const char* path);
 }
@@ -71,6 +77,7 @@ static void botMenuPicture(const char* name) {
 	snprintf(path, sizeof path, "%s/%s.png", getenv("FRUIT_SLICER_SHOTS"), name);
 	gfx::requestShot(path);
 }
+#endif
 static void botMenuWalk() {
 	const auto open = [](SectionId id) { botTap(optionButtonFor(id)); };
 	switch (sBotMenuStep++) {
@@ -104,6 +111,7 @@ static void botMenuWalk() {
 		case 27: sFocus[SCREEN_JOURNAL] = 1; goTo(SCREEN_JOURNAL, 1); return;
 		case 28: botMenuPicture("d1_journal"); sJournalList.pos = sJournalList.aim = kJournalStep; return;
 		case 29: botMenuPicture("d2_journal_scrolled"); sGame.labShowcase(); sScreen = SCREEN_GAME; botMenuPicture("e1_fruit"); return;
+		case 30: sGame.labShowcase(); sScreen = SCREEN_PAUSE; botMenuPicture("e2_pause"); return;
 		default: return;
 	}
 }
@@ -112,7 +120,7 @@ static void botMenuWalk() {
 static void autotestMenus(Input& in) {
 	// A scripted walk: title, each top-level screen, each settings section and its controls.
 	if (sBotPhaseFrames < kBotDwell || sSliding || sFade > 0) return;
-#if defined(BOT_MENUS) && !PORT_3DS
+#if defined(BOT_MENUS)
 	sBotPhaseFrames = 0;
 	botMenuWalk();
 	return;

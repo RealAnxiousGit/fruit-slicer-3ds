@@ -145,7 +145,7 @@ void sync() {
 bool ready() { return sShaderOk && sBlob != nullptr; }
 bool usable() { return sShaderOk; }
 
-void begin(float screenW, float stereo) { m3dport::begin(screenW, stereo); }
+void begin(float screenW, float stereo, bool field) { m3dport::begin(screenW, stereo, field); }
 void end() { m3dport::end(); }
 
 void draw(int mesh, Part part, const Pose& pose) {

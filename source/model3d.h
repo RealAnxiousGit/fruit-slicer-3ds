@@ -30,7 +30,8 @@ bool usable();  // false if the shader never loaded, so the game must fall back 
 
 // Starts a run of 3D draws on the current target. screenW is 400 (top) or 320 (bottom). stereo is
 // the sideways shift in pixels per unit of z for this eye; the bottom screen passes 0.
-void begin(float screenW, float stereo);
+// field: these are fruit in play; anything else (a menu's fruit) always draws in front of them.
+void begin(float screenW, float stereo, bool field = false);
 void draw(int mesh, Part part, const Pose& pose);
 void end();  // returns to citro2D
 

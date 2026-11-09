@@ -56,8 +56,11 @@ void* alloc(u32 bytes) { return linearAlloc(bytes); }
 void release(void* p) { linearFree(p); }
 void flush(const void* p, u32 bytes) { GSPGPU_FlushDataCache(p, bytes); }
 
-void begin(float screenW, float stereo) {
+void begin(float screenW, float stereo, bool field) {
 	C2D_Flush();
+	// Field fruit keep the far half of the depth buffer and menu fruit the near half, so a fruit
+	// frozen behind the pause menu can't show through the fruit that are its options.
+	C3D_DepthMap(true, -0.5f, field ? 0.0f : 0.5f);
 	C3D_BindProgram(&sProgram);
 	C3D_SetAttrInfo(&sAttr);
 	C3D_TexEnv* env = C3D_GetTexEnv(0);
