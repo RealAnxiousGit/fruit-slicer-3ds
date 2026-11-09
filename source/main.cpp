@@ -300,15 +300,32 @@ static void drawLinkIcon(const Button& b, int which, bool focused) {
 }
 #endif
 // Index 0 of every list below is its back arrow, so D-pad and touch treat it like any other sign.
-static const Button kModeButtons[] = {
-	kBack,
-	{8, 42, 148, 36, "Classic"},        {164, 42, 148, 36, "Arcade"},
-	{8, 81, 148, 36, "Zen"},            {164, 81, 148, 36, "Frenzy"},
-	{8, 120, 148, 36, "Sudden Death"},  {164, 120, 148, 36, "Minefield"},
-	{8, 159, 148, 36, "Combo Rush"},    {164, 159, 148, 36, "Daily Fruit"},
-	{86, 198, 148, 36, "Beat Slice"},
-};
-static_assert(sizeof kModeButtons / sizeof kModeButtons[0] == MODE_COUNT + 1, "a sign for every mode");
+// Pick a Game runs in pages of up to six, the main modes first. A new mode only needs a place in this list.
+static const u8 kModeOrder[] = {MODE_CLASSIC, MODE_ARCADE, MODE_FRENZY, MODE_ZEN, MODE_SUDDEN, MODE_DAILY, MODE_MINEFIELD, MODE_COMBO, MODE_BEAT};
+static_assert(sizeof kModeOrder == MODE_COUNT, "a sign for every mode");
+static constexpr int kModesPerPage = 6;
+static constexpr int kModePages = ((int)sizeof kModeOrder + kModesPerPage - 1) / kModesPerPage;
+static constexpr float kModeTop = 46, kModeStep = 58, kModeSignW = 124, kModeSignH = 52;
+static constexpr float kPageArrowY = kModeTop + kModeStep + kModeSignH * 0.5f - 25;
+static int sModePage = 0, sModeOldPage = 0;
+static float sModeSlide = 0;         // how far the new page still has to travel to settle
+static int sArrowPressed = -1, sArrowHover = -1;
+// The arrows answer across the whole height of the signs, so they can be hit without aiming.
+static const Button kPageArrows[2] = {{0, kModeTop, 31, kModeStep * 2 + kModeSignH, nullptr}, {289, kModeTop, 31, kModeStep * 2 + kModeSignH, nullptr}};
+
+// Index 0 is the back arrow, as on every other menu. A last sign alone in its row is centred.
+static int modeSigns(int page, Button* out) {
+	const int left = (int)sizeof kModeOrder - page * kModesPerPage;
+	const int n = left < kModesPerPage ? left : kModesPerPage;
+	out[0] = kBack;
+	for (int i = 0; i < n; i++) {
+		const float x = i == n - 1 && (n & 1) ? 160 - kModeSignW * 0.5f : (i & 1 ? 163.0f : 33.0f);
+		out[i + 1] = {x, kModeTop + kModeStep * (i / 2), kModeSignW, kModeSignH, kModes[kModeOrder[page * kModesPerPage + i]].name};
+	}
+	return n + 1;
+}
+static int modeOnSign(int page, int sign) { return kModeOrder[page * kModesPerPage + sign - 1]; }
+
 static const Button kOnlyBack[] = {kBack};
 static const Button kHowtoButtons[] = {kBack, {90, 188, 140, 48, "Practice"}};
 static const Button kPracticeEndButtons[] = {kBack, {90, 170, 140, 52, "Let's Play"}};
@@ -387,7 +404,7 @@ static int fruitFor(const char* label) {
 		{"Play", MF_MELON}, {"Options", MF_ORANGE}, {"Credits", MF_PLUM}, {"How to Play", MF_LEMON}, {"Shop", MF_GOLD},
 		{"Journal", MF_KIWI}, {"Stats", MF_PEACH}, {"Practice", MF_APPLE}, {"Let's Play", MF_MELON},
 		{"Resume", MF_APPLE}, {"Main Menu", MF_PEAR}, {"Again", MF_PEACH}, {"Modes", MF_KIWI},
-		{"Audio", MF_APPLE}, {"Visuals", MF_PEACH}, {"Gameplay", MF_PINEAPPLE}, {"Controls", MF_KIWI}, {"Display", MF_COCONUT}, {"Accessibility", MF_PEAR}, {"Scores and Data", MF_PLUM},
+		{"Audio", MF_APPLE}, {"Visuals", MF_PEACH}, {"Visuals and Display", MF_PEACH}, {"Gameplay and Controls", MF_PINEAPPLE}, {"Accessibility", MF_PEAR}, {"Scores and Data", MF_PLUM},
 	};
 	if (!label) return MF_BERRY;
 	for (const auto& m : kMap)
@@ -504,7 +521,16 @@ static void drawFruitChoice(const Button& b, const char* label, bool focused, bo
 	if (fruit3D()) {
 		float ts = scale * 0.9f;
 		if (!cut) drawMenuFruit(fruit, x, y + dy + bob, d, spin);
-		drawRingText(label, x, y + dy, d, b.w, ts, focused ? COL_ACCENT : COL_CREAM);
+		// A name too long for one ring wraps onto a second, so it stays the same size as its neighbours.
+		const char* split = strlen(label) > 16 ? strstr(label, " and ") : nullptr;
+		if (split) {
+			char first[32];
+			snprintf(first, sizeof first, "%.*s and", (int)(split - label), label);
+			drawRingText(first, x, y + dy - 6, d, b.w, ts * 0.8f, focused ? COL_ACCENT : COL_CREAM);
+			drawRingText(split + 5, x, y + dy + 9, d, b.w, ts * 0.8f, focused ? COL_ACCENT : COL_CREAM);
+		} else {
+			drawRingText(label, x, y + dy, d, b.w, ts, focused ? COL_ACCENT : COL_CREAM);
+		}
 	} else {
 		if (!cut) drawMenuFruit(fruit, x, y + dy + bob, d, spin);
 		float ts = 0.4f, w = gfx::textWidth(label, ts);
@@ -529,6 +555,23 @@ static void drawSign(const Button& b, const char* label, bool focused, bool pres
 	const float iconScale = icon == sprites_coin_idx ? 0.46f : 0.8f;
 	if (icon >= 0) gfx::sprite(SHEET_SPRITES, icon, b.x + 21, b.y + b.h * 0.5f + dy, iconScale, iconScale);
 	gfx::text(label, cx, b.y + b.h * 0.5f - 20 * scale - 1 + dy, scale, COL_CREAM, ALIGN_CENTER);
+}
+
+// A mode on Pick a Game: its icon over its name, so the whole width of the sign goes to the name.
+static void drawModeTile(const Button& b, int icon, bool focused, bool pressed) {
+	drawPlank(b.x, b.y, b.w, b.h, focused, pressed);
+	const float dy = pressed ? 2 : 0, cx = b.x + b.w * 0.5f, iconScale = icon == sprites_coin_idx ? 0.42f : 0.72f;
+	float scale = 0.44f;
+	const float w = gfx::textWidth(b.label, scale);
+	if (w > b.w - 14) scale *= (b.w - 14) / w;
+	gfx::sprite(SHEET_SPRITES, icon, cx, b.y + 16 + dy, iconScale, iconScale);
+	gfx::text(b.label, cx, b.y + 28 + dy, scale, COL_CREAM, ALIGN_CENTER);
+}
+
+static void drawPageArrow(int side) {
+	const float x = side ? 291 : 3, dy = sArrowPressed == side ? 2 : 0;
+	drawPlank(x, kPageArrowY, 26, 50, sArrowHover == side, sArrowPressed == side);
+	gfx::sprite(SHEET_SPRITES, sprites_arrow_idx, x + 13, kPageArrowY + 24 + dy, 0.62f, 0.62f, side ? 3.14159265f : 0, COL_CREAM);
 }
 
 static void drawBackArrow(bool focused, bool pressed) {
@@ -833,7 +876,8 @@ static void drawCut(Screen screen) {
 }
 
 // ---------------------------------------------------------------- settings rows
-enum RowKind { ROW_SLIDER, ROW_CHOICE, ROW_ACTION };
+enum RowKind { ROW_SLIDER, ROW_CHOICE, ROW_ACTION, ROW_PAGE };  // a page row opens the section numbered by its lo
+enum SectionId { SID_AUDIO, SID_VISUALS, SID_VISUALS_MORE, SID_GAMEPLAY, SID_GAMEPLAY_MORE, SID_ACCESS, SID_ACCESS_MORE, SID_DATA, SID_DEV };
 enum RowAction { ACT_NONE, ACT_RESET_AUDIO, ACT_RESET_VISUALS, ACT_RESET_GAMEPLAY, ACT_RESET_SCORES, ACT_RESET_ALL, ACT_SPEED_TEST, ACT_APPLY_DISPLAY, ACT_RESET_DISPLAY, ACT_RESET_ACCESS, ACT_RESET_CONTROLS, ACT_DEV_ADD_COINS, ACT_DEV_CLEAR_COINS, ACT_DEV_NEXT_DAY, ACT_CHECK_UPDATES };
 
 struct Row {
@@ -877,6 +921,16 @@ static const Row kAudioRows[] = {
 	{ROW_CHOICE, "Game Music", &gSave.gameTrack, 0, kTrackCount, kTrackRowNames, 0, 0, ACT_NONE, "What plays during a game. Auto", "shuffles them; Zen keeps it calm."},
 	{ROW_ACTION, "Reset Audio", nullptr, 0, 0, nullptr, 0, 0, ACT_RESET_AUDIO, "Puts these back to their defaults.", ""},
 };
+#if PORT_HAS_DISPLAY
+static const char* const kWindowModeNames[] = {"Windowed", "Borderless", "Fullscreen"};
+static const char* const kPresetNames[] = {"Performance", "Quality", "Beautiful", "Custom"};
+static const char* const kQualityNames[] = {"Low", "Medium", "High"};
+static const char* const kShadowNames[] = {"Off", "Simple", "Soft"};
+static const char* const kBloomNames[] = {"Off", "Low", "High"};
+static const char* const kScaleNames[] = {"75%", "100%", "125%"};
+#endif
+
+// Each section shows the rows people change most, and ends in an Advanced page for the fine tuning and resets.
 static const Row kVisualRows[] = {
 	{ROW_CHOICE, "Art Style", &gSave.artStyle, 0, 1, kArtNames, 0, 0, ACT_NONE, "3D models or flat stickers.", PORT_ART_HINT},
 	{ROW_CHOICE, "Board", &gSave.board, 0, kBoardCount - 1, kBoardNames, 0, 0, ACT_NONE, "What you slice over.", ""},
@@ -885,33 +939,69 @@ static const Row kVisualRows[] = {
 #endif
 	{ROW_CHOICE, "Blade", &gSave.blade, 0, kBladeCount - 1, kBladeNames, 0, 0, ACT_NONE, "The colour of the cutting edge,", "at the front of every slice."},
 	{ROW_CHOICE, "Trail", &gSave.trail, 0, kTrailCount - 1, kTrailNames, 0, 0, ACT_NONE, "What streaks out behind the blade.", "More trails are in the Shop."},
-#if !PORT_HAS_DISPLAY
-	{ROW_CHOICE, "Effects", &gSave.effects, 0, 3, kEffectNames, 0, 0, ACT_NONE, "Juice, sparks and rings.", "Lower saves the most speed."},
-#endif
 #if PORT_3DS
 	{ROW_SLIDER, "3D Depth", &gSave.depth, 0, 100, nullptr, 0, 100, ACT_NONE, "How far things stand out,", "with the console's 3D slider."},
 #endif
+#if PORT_HAS_DISPLAY && !PORT_ANDROID
+	{ROW_CHOICE, "Display Mode", &gSave.windowMode, 0, 2, kWindowModeNames, 0, 0, ACT_NONE, "Borderless fills the screen.", "Fullscreen takes it over."},
+	{ROW_ACTION, "Apply", nullptr, 0, 0, nullptr, 0, 0, ACT_APPLY_DISPLAY, "Tries the mode and resolution.", "Undone in 10 seconds unless kept."},
+#endif
+#if PORT_HAS_DISPLAY
+	{ROW_CHOICE, "Graphics", &gSave.preset, 0, 2, kPresetNames, 0, 0, ACT_NONE, "Sets the Advanced quality rows.", "Custom: your own mix of them."},
+	{ROW_PAGE, "Advanced", nullptr, SID_VISUALS_MORE, 0, nullptr, 0, 0, ACT_NONE, "Resolution, renderer, textures,", "shadows, bloom and more."},
+#else
+	{ROW_PAGE, "Advanced", nullptr, SID_VISUALS_MORE, 0, nullptr, 0, 0, ACT_NONE, "Effects, background, detail", "and slice style."},
+#endif
+};
+// Not const: the Resolution row's last choice depends on the screen and the Display Mode.
+static Row kVisualMoreRows[] = {
+#if PORT_HAS_DISPLAY && !PORT_ANDROID
+	{ROW_CHOICE, "Resolution", &port::gResChoice, 0, 0, port::gResNames, 0, 0, ACT_NONE, "Window size, or the screen mode", "in Fullscreen."},
+	{ROW_ACTION, "Apply", nullptr, 0, 0, nullptr, 0, 0, ACT_APPLY_DISPLAY, "Tries the mode and resolution.", "Undone in 10 seconds unless kept."},
+	{ROW_CHOICE, "V-Sync", &gSave.vsync, 0, 1, kOffOn, 0, 0, ACT_NONE, "Waits for the screen: no tearing.", "Works on 60 and 120 Hz screens."},
+#endif
+#if PORT_HAS_DISPLAY
+	{ROW_CHOICE, "Renderer", &gSave.renderer, 0, (u8)(kRendererCount - 1), kRendererNames, 0, 0, ACT_NONE, "How the game draws. Takes effect", "the next time the game starts."},
+	{ROW_CHOICE, "Textures", &gSave.texQuality, 0, 2, kQualityNames, 0, 0, ACT_NONE, "Sharpness of the art.", "Lower uses less memory."},
+	{ROW_CHOICE, "Shadows", &gSave.shadowQuality, 0, 2, kShadowNames, 0, 0, ACT_NONE, "Shadows under 3D fruit.", ""},
+	{ROW_CHOICE, "Ambient Occlusion", &gSave.ambientOcc, 0, 1, kOffOn, 0, 0, ACT_NONE, "Shaded undersides on 3D fruit.", ""},
+	{ROW_CHOICE, "Bloom", &gSave.bloom, 0, 2, kBloomNames, 0, 0, ACT_NONE, "Glow around golden fruit", "and the last big fruit."},
+	{ROW_CHOICE, "Render Scale", &gSave.renderScale, 0, 2, kScaleNames, 0, 0, ACT_NONE, "Pixels drawn, against the screen's.", "125% smooths edges; 75% is faster."},
+#endif
+	{ROW_CHOICE, "Effects", &gSave.effects, 0, 3, kEffectNames, 0, 0, ACT_NONE, "Juice, sparks and rings.", "Lower saves the most speed."},
 #if PORT_TWO_SCREENS
 	{ROW_CHOICE, "Background", &gSave.bgDetail, 0, 1, kBgNames, 0, 0, ACT_NONE, "Simple draws fewer scenery layers", "and helps an Old 3DS."},
 #endif
-#if !PORT_HAS_DISPLAY
 	{ROW_CHOICE, "3D Detail", &gSave.detail, 0, 1, kDetailNames, 0, 0, ACT_NONE, "Polygons per fruit, 3D style only.", PORT_DETAIL_HINT},
-#endif
 	{ROW_CHOICE, "Slice Style", &gSave.sliceStyle, 0, 1, kSliceNames, 0, 0, ACT_NONE, "Exact cuts along your swipe.", "Quick uses ready-made halves."},
 	{ROW_CHOICE, "Transitions", &gSave.transitions, 0, 1, kOffOn, 0, 0, ACT_NONE, "Slides between menus.", ""},
 	{ROW_ACTION, "Reset Visuals", nullptr, 0, 0, nullptr, 0, 0, ACT_RESET_VISUALS, PORT_RESET_HINT, ""},
+#if PORT_HAS_DISPLAY
+	{ROW_ACTION, "Reset Display", nullptr, 0, 0, nullptr, 0, 0, ACT_RESET_DISPLAY, "Back to the default display.", ""},
+#endif
 };
+static const char* const kStickStyleNames[] = {"Hold", "Flick"};
 static const Row kGameplayRows[] = {
 #if PORT_HAS_SENSITIVITY
 	{ROW_SLIDER, PORT_SENSITIVITY_LABEL, &gSave.stylus, 0, 100, nullptr, 0, 100, ACT_NONE, PORT_SENSITIVITY_HINT, "Lower smooths out a shaky line."},
 #endif
 	{ROW_CHOICE, "Difficulty", &gSave.difficulty, 0, DIFF_COUNT - 1, kDifficultyNames, 0, 0, ACT_NONE, "Changes fruit, bombs and how", "fast the Frenzy meter moves."},
+	{ROW_SLIDER, "Misses Allowed", &gSave.misses, 1, 5, nullptr, 1, 5, ACT_NONE, "Misses before Classic ends.", ""},
+	{ROW_CHOICE, "Stick Slicing", &gSave.stickStyle, 0, 1, kStickStyleNames, 0, 0, ACT_NONE, PORT_STICK_HINT, "Flick: a fast move slices."},
+	{ROW_SLIDER, "Point Speed", &gSave.stickSpeed, 0, 100, nullptr, 50, 150, ACT_NONE, "How fast the stick moves", "the blade point."},
+#if !PORT_3DS
+	{ROW_CHOICE, "Vibration", &gSave.vibration, 0, 1, kOffOn, 0, 0, ACT_NONE, PORT_VIBRATION_HINT, "on slices, misses and bombs."},
+#endif
+	{ROW_PAGE, "Advanced", nullptr, SID_GAMEPLAY_MORE, 0, nullptr, 0, 0, ACT_NONE, "Fruit speed, bombs, forgiveness,", "snap assist and resets."},
+};
+static const Row kGameplayMoreRows[] = {
 	{ROW_SLIDER, "Fruit Speed", &gSave.fruitSpeed, 0, 100, nullptr, 70, 130, ACT_NONE, "How fast everything flies.", "100% is normal."},
 	{ROW_SLIDER, "Bomb Amount", &gSave.bombs, 0, 100, nullptr, 0, 200, ACT_NONE, "More or fewer bombs than usual.", "100% is normal."},
 	{ROW_SLIDER, "Slice Forgiveness", &gSave.forgiveness, 0, 100, nullptr, 70, 130, ACT_NONE, "How close a swipe must pass.", "100% is normal."},
 	{ROW_SLIDER, "Frenzy Drain", &gSave.frenzyDrain, 0, 100, nullptr, 40, 160, ACT_NONE, "How fast the meter drops.", "100% is normal."},
-	{ROW_SLIDER, "Misses Allowed", &gSave.misses, 1, 5, nullptr, 1, 5, ACT_NONE, "Misses before Classic ends.", ""},
+	{ROW_CHOICE, "Snap Assist", &gSave.snapAssist, 0, 1, kOffOn, 0, 0, ACT_NONE, "Bends the point gently toward", "a fruit just ahead of it."},
 	{ROW_ACTION, "Reset Gameplay", nullptr, 0, 0, nullptr, 0, 0, ACT_RESET_GAMEPLAY, "Puts these back to their defaults.", "Your scores stay."},
+	{ROW_ACTION, "Reset Controls", nullptr, 0, 0, nullptr, 0, 0, ACT_RESET_CONTROLS, "Puts these back to their defaults.", ""},
 };
 static const Row kDataRows[] = {
 #if PORT_3DS
@@ -937,34 +1027,6 @@ static const Row kDevRows[] = {
 };
 #endif
 
-#if PORT_HAS_DISPLAY
-static const char* const kWindowModeNames[] = {"Windowed", "Borderless", "Fullscreen"};
-static const char* const kPresetNames[] = {"Performance", "Quality", "Beautiful", "Custom"};
-static const char* const kQualityNames[] = {"Low", "Medium", "High"};
-static const char* const kShadowNames[] = {"Off", "Simple", "Soft"};
-static const char* const kBloomNames[] = {"Off", "Low", "High"};
-static const char* const kScaleNames[] = {"75%", "100%", "125%"};
-// Not const: the Resolution row's last choice depends on the screen and the Display Mode.
-static Row kDisplayRows[] = {
-#if !PORT_ANDROID
-	{ROW_CHOICE, "Display Mode", &gSave.windowMode, 0, 2, kWindowModeNames, 0, 0, ACT_NONE, "Borderless fills the screen.", "Fullscreen takes it over."},
-	{ROW_CHOICE, "Resolution", &port::gResChoice, 0, 0, port::gResNames, 0, 0, ACT_NONE, "Window size, or the screen mode", "in Fullscreen."},
-	{ROW_ACTION, "Apply", nullptr, 0, 0, nullptr, 0, 0, ACT_APPLY_DISPLAY, "Tries the mode and resolution.", "Undone in 10 seconds unless kept."},
-	{ROW_CHOICE, "V-Sync", &gSave.vsync, 0, 1, kOffOn, 0, 0, ACT_NONE, "Waits for the screen: no tearing.", "Works on 60 and 120 Hz screens."},
-#endif
-	{ROW_CHOICE, "Renderer", &gSave.renderer, 0, (u8)(kRendererCount - 1), kRendererNames, 0, 0, ACT_NONE, "How the game draws. Takes effect", "the next time the game starts."},
-	{ROW_CHOICE, "Graphics", &gSave.preset, 0, 2, kPresetNames, 0, 0, ACT_NONE, "Sets every row below at once.", "Custom: your own mix of them."},
-	{ROW_CHOICE, "Textures", &gSave.texQuality, 0, 2, kQualityNames, 0, 0, ACT_NONE, "Sharpness of the art.", "Lower uses less memory."},
-	{ROW_CHOICE, "Shadows", &gSave.shadowQuality, 0, 2, kShadowNames, 0, 0, ACT_NONE, "Shadows under 3D fruit.", ""},
-	{ROW_CHOICE, "Ambient Occlusion", &gSave.ambientOcc, 0, 1, kOffOn, 0, 0, ACT_NONE, "Shaded undersides on 3D fruit.", ""},
-	{ROW_CHOICE, "Bloom", &gSave.bloom, 0, 2, kBloomNames, 0, 0, ACT_NONE, "Glow around golden fruit", "and the last big fruit."},
-	{ROW_CHOICE, "Effects", &gSave.effects, 0, 3, kEffectNames, 0, 0, ACT_NONE, "Juice, sparks and rings.", "Lower saves the most speed."},
-	{ROW_CHOICE, "3D Detail", &gSave.detail, 0, 1, kDetailNames, 0, 0, ACT_NONE, "Polygons per fruit, 3D style only.", PORT_DETAIL_HINT},
-	{ROW_CHOICE, "Render Scale", &gSave.renderScale, 0, 2, kScaleNames, 0, 0, ACT_NONE, "Pixels drawn, against the screen's.", "125% smooths edges; 75% is faster."},
-	{ROW_ACTION, "Reset Display", nullptr, 0, 0, nullptr, 0, 0, ACT_RESET_DISPLAY, "Back to the default display.", ""},
-};
-#endif
-
 static const char* const kUiScaleNames[] = {"100%", "125%", "150%"};
 static const char* const kColorBlindNames[] = {"Off", "Red-Blind", "Green-Blind", "Blue-Blind"};
 static const char* const kGameSpeedNames[] = {"100%", "85%", "70%"};
@@ -973,58 +1035,57 @@ static const Row kAccessRows[] = {
 	{ROW_CHOICE, "Larger Text", &gSave.largeText, 0, 1, kOffOn, 0, 0, ACT_NONE, "All text one step bigger.", ""},
 	{ROW_CHOICE, "High Contrast", &gSave.highContrast, 0, 1, kOffOn, 0, 0, ACT_NONE, "Dark board, solid signs,", "outlined text and fruit."},
 	{ROW_CHOICE, "Colour-blind Mode", &gSave.colorBlind, 0, 3, kColorBlindNames, 0, 0, ACT_NONE, "Bombs get a spiky dashed ring,", "and warning colours change."},
-	{ROW_CHOICE, "Calm Effects", &gSave.calmFx, 0, 1, kOffOn, 0, 0, ACT_NONE, "Softer flashes and no", "colour cycling."},
-	{ROW_SLIDER, "Screen Shake", &gSave.shake, 0, 100, nullptr, 0, 100, ACT_NONE, "How hard big hits shake the field.", ""},
 	{ROW_CHOICE, "Slice Assist", &gSave.sliceAssist, 0, 1, kOffOn, 0, 0, ACT_NONE, "Shorter swipes count and fruit is", "easier to hit. Bests kept apart."},
-	{ROW_CHOICE, "Game Speed", &gSave.gameSpeed, 0, 2, kGameSpeedNames, 0, 0, ACT_NONE, "Slows the whole game down.", "Bests below 100% are kept apart."},
 	{ROW_CHOICE, "Sound Captions", &gSave.captions, 0, 1, kOffOn, 0, 0, ACT_NONE, "Words for key sounds:", "bombs, misses, Frenzy and more."},
 #if PORT_MOUSE
 	{ROW_CHOICE, "Slice Without Holding", &gSave.sliceNoHold, 0, 1, kOffOn, 0, 0, ACT_NONE, "Moving the mouse slices,", "with no button held."},
 #endif
+	{ROW_PAGE, "Advanced", nullptr, SID_ACCESS_MORE, 0, nullptr, 0, 0, ACT_NONE, "Calm effects, screen shake,", "game speed and reset."},
+};
+static const Row kAccessMoreRows[] = {
+	{ROW_CHOICE, "Calm Effects", &gSave.calmFx, 0, 1, kOffOn, 0, 0, ACT_NONE, "Softer flashes and no", "colour cycling."},
+	{ROW_SLIDER, "Screen Shake", &gSave.shake, 0, 100, nullptr, 0, 100, ACT_NONE, "How hard big hits shake the field.", ""},
+	{ROW_CHOICE, "Game Speed", &gSave.gameSpeed, 0, 2, kGameSpeedNames, 0, 0, ACT_NONE, "Slows the whole game down.", "Bests below 100% are kept apart."},
 	{ROW_ACTION, "Reset Accessibility", nullptr, 0, 0, nullptr, 0, 0, ACT_RESET_ACCESS, "Puts these back to their defaults.", ""},
 };
 
-static const char* const kStickStyleNames[] = {"Hold", "Flick"};
-static const Row kControlRows[] = {
-	{ROW_CHOICE, "Stick Slicing", &gSave.stickStyle, 0, 1, kStickStyleNames, 0, 0, ACT_NONE, PORT_STICK_HINT, "Flick: a fast move slices."},
-	{ROW_SLIDER, "Point Speed", &gSave.stickSpeed, 0, 100, nullptr, 50, 150, ACT_NONE, "How fast the stick moves", "the blade point."},
-	{ROW_CHOICE, "Snap Assist", &gSave.snapAssist, 0, 1, kOffOn, 0, 0, ACT_NONE, "Bends the point gently toward", "a fruit just ahead of it."},
-#if !PORT_3DS
-	{ROW_CHOICE, "Vibration", &gSave.vibration, 0, 1, kOffOn, 0, 0, ACT_NONE, PORT_VIBRATION_HINT, "on slices, misses and bombs."},
-#endif
-	{ROW_ACTION, "Reset Controls", nullptr, 0, 0, nullptr, 0, 0, ACT_RESET_CONTROLS, "Puts these back to their defaults.", ""},
-};
-
-enum SectionId { SID_AUDIO, SID_VISUALS, SID_GAMEPLAY, SID_CONTROLS, SID_DISPLAY, SID_ACCESS, SID_DATA, SID_DEV };
 struct Section {
 	const char* title;
 	const Row* rows;
 	int count;
 	SectionId id;
+	int parent;    // the section whose Advanced row opens this one, or -1 for a sign on the Options screen
 	bool inPause;  // reachable from the pause menu
 	const char* hint1;
 	const char* hint2;
 };
+#define SECTION_ROWS(rows) rows, sizeof rows / sizeof(Row)
 static const Section kSections[] = {
-	{"Audio", kAudioRows, sizeof kAudioRows / sizeof(Row), SID_AUDIO, true, "Sound, music and menu volume.", ""},
+	{"Audio", SECTION_ROWS(kAudioRows), SID_AUDIO, -1, true, "Sound, music and menu volume.", ""},
 #if PORT_HAS_DISPLAY
-	{"Visuals", kVisualRows, sizeof kVisualRows / sizeof(Row), SID_VISUALS, true, PORT_VISUALS_HINT, "slicing and menu slides."},
+	{"Visuals and Display", SECTION_ROWS(kVisualRows), SID_VISUALS, -1, true, PORT_VISUALS_HINT, "the screen and graphics quality."},
+	{"Advanced Graphics", SECTION_ROWS(kVisualMoreRows), SID_VISUALS_MORE, SID_VISUALS, true, "", ""},
 #else
-	{"Visuals", kVisualRows, sizeof kVisualRows / sizeof(Row), SID_VISUALS, true, PORT_VISUALS_HINT, "effects and speed savers."},
+	{"Visuals", SECTION_ROWS(kVisualRows), SID_VISUALS, -1, true, PORT_VISUALS_HINT, "depth and speed savers."},
+	{"Advanced Visuals", SECTION_ROWS(kVisualMoreRows), SID_VISUALS_MORE, SID_VISUALS, true, "", ""},
 #endif
-	{"Gameplay", kGameplayRows, sizeof kGameplayRows / sizeof(Row), SID_GAMEPLAY, true, PORT_GAMEPLAY_HINT, "game plays."},
-	{"Controls", kControlRows, sizeof kControlRows / sizeof(Row), SID_CONTROLS, true, PORT_CONTROLS_HINT, "point speed and snap assist."},
-#if PORT_HAS_DISPLAY
-	{"Display", kDisplayRows, sizeof kDisplayRows / sizeof(Row), SID_DISPLAY, true, PORT_DISPLAY_HINT, PORT_DISPLAY_HINT2},
-#endif
-	{"Accessibility", kAccessRows, sizeof kAccessRows / sizeof(Row), SID_ACCESS, true, "Bigger text, contrast, colour,", "assists and captions."},
+	{"Gameplay and Controls", SECTION_ROWS(kGameplayRows), SID_GAMEPLAY, -1, true, PORT_GAMEPLAY_HINT, "game plays, plus stick slicing."},
+	{"Advanced Gameplay", SECTION_ROWS(kGameplayMoreRows), SID_GAMEPLAY_MORE, SID_GAMEPLAY, true, "", ""},
+	{"Accessibility", SECTION_ROWS(kAccessRows), SID_ACCESS, -1, true, "Bigger text, contrast, colour,", "assists and captions."},
+	{"Advanced Accessibility", SECTION_ROWS(kAccessMoreRows), SID_ACCESS_MORE, SID_ACCESS, true, "", ""},
 	// Mid-game, the data section stays out of reach: its speed test would replace the paused game.
-	{"Scores and Data", kDataRows, sizeof kDataRows / sizeof(Row), SID_DATA, false, PORT_DATA_HINT, ""},
+	{"Scores and Data", SECTION_ROWS(kDataRows), SID_DATA, -1, false, PORT_DATA_HINT, ""},
 #ifdef DEV_TOOLS
-	{"Developer", kDevRows, sizeof kDevRows / sizeof(Row), SID_DEV, false, "Testing tools. Not in", "release builds."},
+	{"Developer", SECTION_ROWS(kDevRows), SID_DEV, -1, false, "Testing tools. Not in", "release builds."},
 #endif
 };
+#undef SECTION_ROWS
 constexpr int kSectionCount = sizeof kSections / sizeof kSections[0];
+static int sectionIndex(int id) {
+	for (int i = 0; i < kSectionCount; i++)
+		if (kSections[i].id == id) return i;
+	return 0;
+}
 
 static bool sOptionsFromPause = false;  // Options opened from the pause menu, with a game waiting
 
@@ -1036,7 +1097,7 @@ static int optionButtons() {
 	int n = 0;
 	int visible[kSectionCount];
 	for (int i = 0; i < kSectionCount; i++)
-		if (!sOptionsFromPause || kSections[i].inPause) visible[n++] = i;
+		if (kSections[i].parent < 0 && (!sOptionsFromPause || kSections[i].inPause)) visible[n++] = i;
 	sOptionButtons[0] = kBack;
 	sOptionSection[0] = -1;
 	for (int i = 0; i < n; i++) {
@@ -1051,6 +1112,18 @@ static int optionButtons() {
 	return n + 1;
 }
 #ifdef AUTOTEST
+static Button modeSignOnPage(int mode) {
+	Button signs[kModesPerPage + 1];
+	const int n = modeSigns(sModePage, signs);
+	for (int i = 1; i < n; i++)
+		if (modeOnSign(sModePage, i) == mode) return signs[i];
+	return kBack;
+}
+static int modePageOf(int mode) {
+	for (int i = 0; i < (int)sizeof kModeOrder; i++)
+		if (kModeOrder[i] == mode) return i / kModesPerPage;
+	return 0;
+}
 static const Button& optionButtonFor(SectionId id) {
 	int n = optionButtons();
 	for (int i = 1; i < n; i++)
@@ -1060,11 +1133,26 @@ static const Button& optionButtonFor(SectionId id) {
 #endif
 
 static constexpr float kListTop = 46;
-static constexpr float kRowH = 38;
+static constexpr float kRowH = 32;  // six rows fit below the header without scrolling
 static constexpr float kTrackX0 = 162, kTrackX1 = 258;
 
 static int sSection = 0;
 static float sScroll = 0;
+// An Advanced page slides in like any other screen. These stand in for the page it is sliding away from,
+// and for the row to come back to.
+static int sOldSection = 0, sOldFocus = 0, sParentFocus = 0;
+static float sOldScroll = 0, sParentScroll = 0;
+static void swapOutgoingPage() {
+	if (!sSliding || sSlideFrom != SCREEN_SECTION || sScreen != SCREEN_SECTION) return;
+	int s = sSection, f = sFocus[SCREEN_SECTION];
+	float y = sScroll;
+	sSection = sOldSection;
+	sFocus[SCREEN_SECTION] = sOldFocus;
+	sScroll = sOldScroll;
+	sOldSection = s;
+	sOldFocus = f;
+	sOldScroll = y;
+}
 static int sTouchStartX;
 static u8 sSliderStart;
 static int sArmed = -1;  // a reset row waiting for its second tap
@@ -1090,7 +1178,7 @@ static float sRevertT = 0;
 static int sRevertFocus = 0;
 static const Button kRevertButtons[] = {{40, 150, 110, 44, "Keep"}, {170, 150, 110, 44, "Undo"}};
 static void refreshResolutions() {
-	for (Row& r : kDisplayRows)
+	for (Row& r : kVisualMoreRows)
 		if (r.value == &port::gResChoice) r.hi = (u8)(port::resolutionCount() - 1);
 }
 #endif
@@ -1160,7 +1248,7 @@ static bool choiceLocked(const Row& r, int v) {
 }
 
 static void adjustRow(const Row& r, int dir) {
-	if (rowDisabled(r) || r.kind == ROW_ACTION) return;
+	if (rowDisabled(r) || r.kind == ROW_ACTION || r.kind == ROW_PAGE) return;
 	int v = *r.value;
 	if (r.kind == ROW_SLIDER) {
 		int step = r.hi - r.lo >= 50 ? 5 : 1;
@@ -1259,15 +1347,43 @@ static void rowAction(int index, const Row& r) {
 	sDirty = false;
 }
 
+static void holdOutgoingPage() {
+	sOldSection = sSection;
+	sOldFocus = sFocus[SCREEN_SECTION];
+	sOldScroll = sScroll;
+}
+
+static void openPage(const Row& r) {
+	audio::click();
+	holdOutgoingPage();
+	sParentFocus = sFocus[SCREEN_SECTION];
+	sParentScroll = sScroll;
+	sSection = sectionIndex(r.lo);
+	sScroll = 0;
+	sFocus[SCREEN_SECTION] = 0;
+	sArmed = -1;
+	sTouchMode = TOUCH_NONE;
+	goTo(SCREEN_SECTION, 1);
+}
+
 static void leaveSection(bool clicked = false) {
 	if (!clicked) audio::click();
-#if PORT_HAS_DISPLAY
-	port::displayDiscard();  // a mode or resolution picked but never applied
-#endif
 	if (sDirty) saveWrite();
 	sDirty = false;
 	sArmed = -1;
 	sTouchMode = TOUCH_NONE;
+	if (kSections[sSection].parent >= 0) {
+		// Up one page, back on the row that opened this one.
+		holdOutgoingPage();
+		sSection = sectionIndex(kSections[sSection].parent);
+		sFocus[SCREEN_SECTION] = sParentFocus;
+		sScroll = sParentScroll;
+		goTo(SCREEN_SECTION, -1);
+		return;
+	}
+#if PORT_HAS_DISPLAY
+	port::displayDiscard();  // a mode or resolution picked but never applied
+#endif
 	audio::reapply();
 	goTo(SCREEN_OPTIONS, -1);
 }
@@ -1601,6 +1717,54 @@ static void drawShopPreview() {
 	if (sShopNoteT > 0) gfx::text(sShopNote, 200, 214, 0.46f, withAlpha(COL_CREAM, clampf(sShopNoteT * 2, 0, 1)), ALIGN_CENTER);
 }
 
+// Moves dir pages along, wrapping past either end. The old page slides out as the new one comes in.
+static void turnModePage(int dir) {
+	sModeOldPage = sModePage;
+	sModePage = (sModePage + dir + kModePages) % kModePages;
+	sModeSlide = gSave.transitions ? dir * 320.0f : 0;
+	sPressed = -1;
+	audio::click(0.6f);
+}
+
+// The page arrows, and the keys that turn the page. Returns true while a press that landed on an arrow is
+// held, so that it can't go on to slice the signs of the new page. Left and right walk along a row, and
+// past the end of it they turn the page and land on the near side of the same row.
+static bool updateModePages(Input& keys, bool wasTouching) {
+	if (sArrowPressed >= 0) {
+		if (!keys.touching) sArrowPressed = -1;
+		return true;
+	}
+	if (sCut.pending) return false;
+	sArrowHover = -1;
+#if PORT_MOUSE
+	if (keys.hovering)
+		for (int side = 0; side < 2; side++)
+			if (hit(kPageArrows[side], keys.tx, keys.ty)) sArrowHover = side;
+#endif
+	if (keys.touching && !wasTouching)
+		for (int side = 0; side < 2; side++)
+			if (hit(kPageArrows[side], keys.tx, keys.ty)) {
+				sArrowPressed = side;
+				turnModePage(side ? 1 : -1);
+				return true;
+			}
+	const int dir = (keys.repeat & KEY_RIGHT) ? 1 : ((keys.repeat & KEY_LEFT) ? -1 : 0);
+	if (dir == 0) return false;
+	Button signs[kModesPerPage + 1];
+	int& focus = sFocus[SCREEN_MODES];
+	const int n = modeSigns(sModePage, signs) - 1, i = focus - 1;
+	const bool alone = i < 0 || (i == n - 1 && (n & 1));
+	if (!alone && (i & 1) != (dir > 0 ? 1 : 0)) return false;
+	turnModePage(dir);
+	keys.repeat &= ~(u32)(KEY_LEFT | KEY_RIGHT);
+	if (focus > 0) {
+		const int count = modeSigns(sModePage, signs) - 1;
+		const int want = (i / 2) * 2 + (dir > 0 ? 0 : 1);
+		focus = (want < count ? want : count - 1) + 1;
+	}
+	return false;
+}
+
 static void updateSection(const Input& in, bool wasTouching) {
 	const Section& sec = kSections[sSection];
 	int& focus = sFocus[SCREEN_SECTION];  // -1 is the back arrow
@@ -1664,6 +1828,10 @@ static void updateSection(const Input& in, bool wasTouching) {
 		if (in.repeat & KEY_LEFT) adjustRow(r, -1);
 		if (in.repeat & KEY_RIGHT) adjustRow(r, 1);
 		if (in.down & KEY_A) {
+			if (r.kind == ROW_PAGE) {
+				openPage(r);
+				return;
+			}
 			if (r.kind == ROW_ACTION) rowAction(focus, r);
 			else if (r.kind == ROW_CHOICE) adjustRow(r, 1);
 		}
@@ -1744,6 +1912,10 @@ static void updateSection(const Input& in, bool wasTouching) {
 			else audio::click(0.6f);
 		} else if (sTouchMode == TOUCH_ROW && !sTouchMoved) {
 			const Row& r = sec.rows[sTouchRow];
+			if (r.kind == ROW_PAGE) {
+				openPage(r);
+				return;
+			}
 			if (r.kind == ROW_ACTION) rowAction(sTouchRow, r);
 			else if (r.kind == ROW_CHOICE) adjustRow(r, sLastTouchX < 214 ? -1 : 1);
 		}
@@ -2764,20 +2936,21 @@ static void drawTopContent(Screen screen) {
 			}
 			break;
 		case SCREEN_MODES: {
-			int f = sFocus[SCREEN_MODES];
+			const int f = sFocus[SCREEN_MODES];
+			const int mode = f >= 1 ? modeOnSign(sModePage, f) : -1;
 			topPanel(30, 96, 340, 134);
 			gfx::setDepth(1.0f);
 			gfx::sprite(SHEET_LOGO, logo_logo_idx, 200, 50, 0.62f, 0.62f);
 			gfx::setDepth(0.7f);
-			if (f - 1 == MODE_DAILY) {
+			if (mode == MODE_DAILY) {
 				drawDailyTop();
-			} else if (f >= 1) {
-				const ModeInfo& m = kModes[f - 1];
+			} else if (mode >= 0) {
+				const ModeInfo& m = kModes[mode];
 				gfx::text(m.name, 200, 104, 0.6f, COL_ACCENT, ALIGN_CENTER);
 				gfx::text(m.line1, 200, 134, 0.38f, COL_CREAM, ALIGN_CENTER);
 				gfx::text(m.line2, 200, 152, 0.38f, COL_CREAM, ALIGN_CENTER);
-				if (assistedRun()) snprintf(buf, sizeof buf, "ASSISTED BEST %lu", (unsigned long)gSave.bestAssisted[f - 1]);
-				else snprintf(buf, sizeof buf, "BEST %lu", (unsigned long)gSave.best[f - 1]);
+				if (assistedRun()) snprintf(buf, sizeof buf, "ASSISTED BEST %lu", (unsigned long)gSave.bestAssisted[mode]);
+				else snprintf(buf, sizeof buf, "BEST %lu", (unsigned long)gSave.best[mode]);
 				gfx::text(buf, 200, 184, 0.6f, COL_CREAM, ALIGN_CENTER);
 			} else {
 				gfx::text("Back to the title", 200, 150, 0.46f, COL_CREAM, ALIGN_CENTER);
@@ -3137,7 +3310,7 @@ static void drawRows() {
 		const Row& r = sec.rows[i];
 		float y = kListTop + i * kRowH - sScroll;
 		if (y + kRowH < kListTop || y > 240) continue;
-		bool pressed = sTouchMode == TOUCH_ROW && sTouchRow == i && !sTouchMoved && r.kind == ROW_ACTION;
+		bool pressed = sTouchMode == TOUCH_ROW && sTouchRow == i && !sTouchMoved && (r.kind == ROW_ACTION || r.kind == ROW_PAGE);
 		drawPlank(8, y + 1, 304, kRowH - 3, focus == i, pressed);
 		float ty = y + kRowH * 0.5f - 8;
 		u32 labelColor = rowDisabled(r) ? COL_DIM : COL_CREAM;
@@ -3150,6 +3323,11 @@ static void drawRows() {
 		float lw = gfx::textWidth(r.label, ls);
 		if (lw > 134) ls *= 134 / lw;
 		gfx::text(r.label, 18, ty + (0.36f - ls) * 10, ls, labelColor);
+		if (r.kind == ROW_PAGE) {
+			// One arrow, not the pair a choice has: this row goes somewhere rather than changing a value.
+			gfx::sprite(SHEET_SPRITES, sprites_arrow_idx, 298, y + kRowH * 0.5f - 1, 0.5f, 0.5f, 3.14159265f, COL_ACCENT);
+			continue;
+		}
 		rowValueText(r, buf, sizeof buf);
 		if (r.kind == ROW_SLIDER) {
 			float cy = y + kRowH * 0.5f - 1;
@@ -3200,7 +3378,20 @@ static void drawBottomContent(Screen screen) {
 			int f = sFocus[SCREEN_MODES];
 			drawHeader("Pick a Game");
 			drawBackArrow(f == 0, sPressed == 0);
-			for (int i = 1; i <= MODE_COUNT; i++) drawSign(kModeButtons[i], kModeButtons[i].label, f == i, sPressed == i, 0.46f, kIcons[i - 1]);
+			const auto drawPage = [&](int page, float dx, bool live) {
+				Button signs[kModesPerPage + 1];
+				const int n = modeSigns(page, signs);
+				for (int i = 1; i < n; i++) {
+					Button b = signs[i];
+					b.x += dx;
+					drawModeTile(b, kIcons[modeOnSign(page, i)], live && f == i, live && sPressed == i);
+				}
+			};
+			if (sModeSlide != 0) drawPage(sModeOldPage, sModeSlide - (sModeSlide > 0 ? 320 : -320), false);
+			drawPage(sModePage, sModeSlide, true);
+			for (int side = 0; side < 2; side++) drawPageArrow(side);
+			for (int p = 0; p < kModePages; p++)
+				gfx::rect(160 - kModePages * 10.0f + p * 20.0f + 3, 224, 14, 4, p == sModePage ? COL_ACCENT : COL_DIM);
 			break;
 		}
 		case SCREEN_OPTIONS: {
@@ -3318,7 +3509,7 @@ static void drawBottomContent(Screen screen) {
 			int f = sFocus[SCREEN_PAUSE];
 			drawBackArrow(f == 0, sPressed == 0);
 			for (int i = 1; i < 4; i++) {
-				const char* label = i == 3 && sGame.mode == MODE_PRACTICE ? "Skip Lessons" : kPauseButtons[i].label;
+				const char* label = i == 3 && sGame.mode == MODE_PRACTICE ? "Skip Lessons" : (i == 3 && sGame.mode == MODE_ZEN ? "Finish Run" : kPauseButtons[i].label);
 				drawSign(kPauseButtons[i], label, f == i, sPressed == i, 0.56f, -1, fruitFor(kPauseButtons[i].label));
 			}
 			break;
@@ -3488,14 +3679,21 @@ static void updateFrame(const Input& in, bool wasTouching) {
 			break;
 		}
 		case SCREEN_MODES: {
+			sModeSlide -= sModeSlide * fminf(1, kDt * 18);
+			if (fabsf(sModeSlide) < 1) sModeSlide = 0;
 			if (blocked) break;
-			int t = menuInput(kModeButtons, MODE_COUNT + 1, SCREEN_MODES, in, wasTouching);
+			Input keys = in;
+			if (updateModePages(keys, wasTouching)) break;
+			Button signs[kModesPerPage + 1];
+			const int count = modeSigns(sModePage, signs);
+			int t = menuInput(signs, count, SCREEN_MODES, keys, wasTouching);
 			if (in.down & KEY_B) {
 				audio::click();
 				t = 0;
 			}
+			const int mode = t > 0 ? modeOnSign(sModePage, t) : -1;
 			if (t == 0) goTo(SCREEN_TITLE, -1);
-			else if (t - 1 == MODE_BEAT) {
+			else if (mode == MODE_BEAT) {
 				// Beat Slice picks its track first, playing each one as it is chosen.
 				sFocus[SCREEN_BEAT] = 1;
 #if PORT_CUSTOM_MUSIC
@@ -3507,7 +3705,7 @@ static void updateFrame(const Input& in, bool wasTouching) {
 				beatScrollTo(beatSong());
 				goTo(SCREEN_BEAT, 1);
 			} else if (t > 0) {
-				sStartMode = (Mode)(t - 1);
+				sStartMode = (Mode)mode;
 				fadeThen(startGame);
 			}
 			break;
@@ -3634,7 +3832,7 @@ static void updateFrame(const Input& in, bool wasTouching) {
 			else if (t > 0) {
 				sSection = sOptionSection[t];
 #if PORT_HAS_DISPLAY
-				if (kSections[sSection].id == SID_DISPLAY) refreshResolutions();
+				if (kSections[sSection].id == SID_VISUALS) refreshResolutions();
 #endif
 				sScroll = 0;
 				sArmed = -1;
@@ -3728,7 +3926,13 @@ static void updateFrame(const Input& in, bool wasTouching) {
 				sFocus[SCREEN_OPTIONS] = 1;
 				goTo(SCREEN_OPTIONS, 1);
 			} else if (t == 3) {
-				fadeThen(sGame.mode == MODE_PRACTICE ? skipPractice : quitRun);
+				if (sGame.mode == MODE_ZEN) {
+					sScreen = SCREEN_GAME;
+					sBlade.reset();
+					sGame.finishRun();
+				} else {
+					fadeThen(sGame.mode == MODE_PRACTICE ? skipPractice : quitRun);
+				}
 			}
 			break;
 		}
@@ -3784,7 +3988,9 @@ static void drawFrame() {
 		drawTopBackground();
 		if (sSliding) {
 			gfx::setBase(-sSlideDir * kSlideTop * e, 0);
+			swapOutgoingPage();
 			drawTopContent(sSlideFrom);
+			swapOutgoingPage();
 			gfx::setBase(sSlideDir * kSlideTop * (1 - e), 0);
 			drawTopContent(sScreen);
 			gfx::setBase(0, 0);
@@ -3800,7 +4006,9 @@ static void drawFrame() {
 	gfx::beginBottom();
 	if (sSliding) {
 		gfx::setBase(-sSlideDir * kSlideBottom * e, 0);
+		swapOutgoingPage();
 		drawBottomContent(sSlideFrom);
+		swapOutgoingPage();
 		gfx::setBase(sSlideDir * kSlideBottom * (1 - e), 0);
 		drawBottomContent(sScreen);
 		gfx::setBase(0, 0);
@@ -3844,7 +4052,9 @@ static void drawFrame() {
 		float slide = pass == 0 ? kSlideTop : kSlideBottom;
 		if (sSliding) {
 			gfx::setBase(-sSlideDir * slide * e, 0);
+			swapOutgoingPage();
 			content(sSlideFrom);
+			swapOutgoingPage();
 			gfx::setBase(sSlideDir * slide * (1 - e), 0);
 			content(sScreen);
 			gfx::setBase(0, 0);

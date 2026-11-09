@@ -120,14 +120,32 @@ static void labMenus() {
 		case 17: labExpect(SCREEN_OPTIONS, "Options opens"); botTap(optionButtonFor(SID_AUDIO)); return;
 		case 18: labExpect(SCREEN_SECTION, "Audio section opens"); botTapXY((int)((kTrackX0 + kTrackX1) / 2), (int)firstRowY); return;
 		case 19: botTap(kBack); return;
-		case 20: labExpect(SCREEN_OPTIONS, "section back arrow cuts its berry and goes back"); botTap(optionButtonFor(SID_VISUALS)); return;
+		case 20:
+			labExpect(SCREEN_OPTIONS, "section back arrow cuts its berry and goes back");
+			labCheck(optionButtons() == 7, "Options shows five signs, plus Developer in a test build");
+			botTap(optionButtonFor(SID_VISUALS));
+			return;
 		case 21:
 			labExpect(SCREEN_SECTION, "Visuals section opens");
 			sLabArt = gSave.artStyle;
 			botTapXY(231, (int)firstRowY);  // Art Style: next
 			return;
 		case 22: labCheck(gSave.artStyle != sLabArt, "Art Style changes with a tap"); botTapXY(231, (int)firstRowY); return;
-		case 23: labCheck(gSave.artStyle == sLabArt, "Art Style changes back"); botTap(kBack); return;
+		case 23:
+			labCheck(gSave.artStyle == sLabArt, "Art Style changes back");
+			sScroll = maxScroll();
+			botTapXY(60, (int)(kListTop + kRowH * (kSections[sSection].count - 0.5f) - sScroll));  // Advanced, the last row
+			sBotMenuStep = 40;
+			return;
+		case 40:
+			labCheck(sScreen == SCREEN_SECTION && kSections[sSection].id == SID_VISUALS_MORE, "the Advanced row opens its page");
+			botTap(kBack);
+			return;
+		case 41:
+			labCheck(sScreen == SCREEN_SECTION && kSections[sSection].id == SID_VISUALS && sFocus[SCREEN_SECTION] == kSections[sSection].count - 1, "the back arrow goes up one page, to the row that opened it");
+			botTap(kBack);
+			sBotMenuStep = 24;
+			return;
 		case 24: botTap(optionButtonFor(SID_GAMEPLAY)); return;
 		case 25: labExpect(SCREEN_SECTION, "Gameplay section opens"); botTap(kBack); return;
 		case 26: botTap(optionButtonFor(SID_ACCESS)); return;
@@ -137,6 +155,36 @@ static void labMenus() {
 		case 30: botTap(kBack); return;
 		case 31: labExpect(SCREEN_TITLE, "Options back arrow"); sBotMenuStep = 100; return;
 		default: sBotMenuStep = 100; return;
+	}
+}
+
+// Pick a Game's pages, the first time the bot reaches it. Returns true while there are steps left.
+static bool labModePages() {
+	static int step = 0;
+	const Button& next = kPageArrows[1];
+	switch (step++) {
+		case 0:
+			labCheck(sModePage == 0 && modeOnSign(0, 1) == MODE_CLASSIC && modeOnSign(0, 2) == MODE_ARCADE && modeOnSign(0, 3) == MODE_FRENZY, "the first page of Pick a Game holds the main modes");
+			sFocus[SCREEN_MODES] = 2;
+			sBotKeys = KEY_RIGHT;
+			return true;
+		case 1:
+			labCheck(sModePage == 1 && sFocus[SCREEN_MODES] == 1, "Right past the last sign in a row turns the page");
+			sBotKeys = KEY_LEFT;
+			return true;
+		case 2:
+			labCheck(sModePage == 0 && sFocus[SCREEN_MODES] == 2, "Left past the first sign in a row turns back");
+			botTapXY((int)(next.x + next.w / 2), (int)(next.y + next.h / 2));
+			return true;
+		case 3:
+			labCheck(sModePage == 1, "a tap on the page arrow turns the page");
+			botTapXY((int)(next.x + next.w / 2), (int)(next.y + next.h / 2));
+			return true;
+		case 4:
+			labCheck(sModePage == 0, "turning past the last page wraps to the first");
+			return false;
+		default:
+			return false;
 	}
 }
 
@@ -212,6 +260,7 @@ static void labFinish(Input& in) {
 	static int step = 0, held = 0;
 	if (step == 0) {
 		labCheck(sLabBlastSeen && !sLabBlastMissed, "every bomb hit sets off a blast");
+		sGame.labProbes(sBlade, labCheck);
 		step = 1;
 #if PORT_3DS
 		labSummary();

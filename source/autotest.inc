@@ -24,6 +24,7 @@ static int sBotTapFrames = 0;
 static bool sBotDone = false;
 static int sBotTapX, sBotTapY;
 static bool sBotSwipe = false;  // menu signs need a swipe across them; settings rows take a tap
+static u32 sBotKeys = 0;        // buttons to press for one frame
 static u32 sBotModeFrames = 0;
 #if defined(BOT_ONLY) || defined(TEST_SPEED) || defined(BOT_SHOTS) || defined(TEST_BALANCE)
 static int sBotMenuStep = 100;
@@ -60,9 +61,54 @@ static constexpr int kBotDwell = 110;  // trailer capture: long enough on each m
 static constexpr int kBotDwell = 30;
 #endif
 
+#if defined(BOT_MENUS) && !PORT_3DS
+// A picture of Pick a Game and every Options page, for checking layouts. Needs FRUIT_SLICER_SHOTS.
+namespace gfx {
+void requestShot(const char* path);
+}
+static void botMenuPicture(const char* name) {
+	char path[300];
+	snprintf(path, sizeof path, "%s/%s.png", getenv("FRUIT_SLICER_SHOTS"), name);
+	gfx::requestShot(path);
+}
+static void botMenuWalk() {
+	const auto open = [](SectionId id) { botTap(optionButtonFor(id)); };
+	switch (sBotMenuStep++) {
+		case 0: gSave.practiceDone = 1; botTap(kTitleButtons[0]); return;
+		case 1: botMenuPicture("a1_modes1"); sFocus[SCREEN_MODES] = 2; sBotKeys = KEY_RIGHT; return;
+		case 2: botMenuPicture("a2_modes2"); sBotKeys = KEY_LEFT; sBotPhaseFrames = kBotDwell - 4; return;
+		case 3: botMenuPicture("a3_mid_slide"); return;
+		case 4: botTap(kBack); return;
+		case 5: botTap(kTitleButtons[1]); return;
+		case 6: botMenuPicture("a5_options"); open(SID_VISUALS); return;
+		case 7: botMenuPicture("a6_visuals"); sFocus[SCREEN_SECTION] = kSections[sSection].count - 1; sScroll = maxScroll(); return;
+		case 8: botMenuPicture("a7_visuals_end"); sBotKeys = KEY_A; return;
+		case 9: botMenuPicture("a8_advanced"); sScroll = maxScroll(); return;
+		case 10: botMenuPicture("a9_advanced_end"); botTap(kBack); return;
+		case 11: botTap(kBack); return;
+		case 12: open(SID_GAMEPLAY); return;
+		case 13: botMenuPicture("b1_gameplay"); sFocus[SCREEN_SECTION] = kSections[sSection].count - 1; sBotKeys = KEY_A; return;
+		case 14: botMenuPicture("b2_gameplay_more"); botTap(kBack); return;
+		case 15: botTap(kBack); return;
+		case 16: open(SID_ACCESS); return;
+		case 17: botMenuPicture("b3_access"); sFocus[SCREEN_SECTION] = kSections[sSection].count - 1; sBotKeys = KEY_A; return;
+		case 18: botMenuPicture("b4_access_more"); botTap(kBack); return;
+		case 19: botTap(kBack); return;
+		case 20: open(SID_AUDIO); return;
+		case 21: botMenuPicture("b5_audio"); sBotDone = true; return;
+		default: return;
+	}
+}
+#endif
+
 static void autotestMenus(Input& in) {
 	// A scripted walk: title, each top-level screen, each settings section and its controls.
 	if (sBotPhaseFrames < kBotDwell || sSliding || sFade > 0) return;
+#if defined(BOT_MENUS) && !PORT_3DS
+	sBotPhaseFrames = 0;
+	botMenuWalk();
+	return;
+#endif
 #ifdef TEST_RECORD
 	if (sBotMenuStep == 0 && sBotPhaseFrames < 360) return;  // trailer capture: a long look at the title first
 #endif
@@ -115,6 +161,8 @@ static void autotestMenus(Input& in) {
 
 static void autotestInput(Input& in) {
 	in = Input{};
+	in.down = in.repeat = sBotKeys;
+	sBotKeys = 0;
 #ifdef TEST_SPAWN
 	sGame.spawnReport();
 	sBotDone = true;
@@ -204,6 +252,14 @@ static void autotestInput(Input& in) {
 				fprintf(stderr, "[bot] all modes finished\n");
 				return;
 			}
+#ifdef LAB
+			if (labModePages()) return;
+#endif
+			if (modePageOf(sBotMode) != sModePage) {
+				const Button& next = kPageArrows[1];
+				botTapXY((int)(next.x + next.w / 2), (int)(next.y + next.h / 2));
+				return;
+			}
 			fprintf(stderr, "[bot] starting %s\n", kModes[sBotMode].name);
 			sBotModeFrames = 0;
 #if defined(LAB) && PORT_3DS
@@ -214,7 +270,7 @@ static void autotestInput(Input& in) {
 					forMode = sBotMode;
 					tries = 0;
 				}
-				const Button& b = kModeButtons[sBotMode + 1];
+				const Button b = modeSignOnPage(sBotMode);
 				if (tries++ < 3) {
 					sLabTapped = true;
 					botTapXY((int)(b.x + b.w / 2), (int)(b.y + b.h / 2));
@@ -224,7 +280,7 @@ static void autotestInput(Input& in) {
 				sLabTapped = false;
 			}
 #endif
-			botTap(kModeButtons[sBotMode + 1]);
+			botTap(modeSignOnPage(sBotMode));
 			return;
 
 		case SCREEN_BEAT:
@@ -378,6 +434,7 @@ static void autotestInput(Input& in) {
 	bool suicide = sBotModeFrames > kSeekBombsAt && sGame.timeLeft <= 0 && sGame.mode != MODE_PRACTICE;  // lessons want bombs left alone
 #endif
 #endif
+	if (sGame.mode == MODE_ZEN && sBotModeFrames == 900) sGame.finishRun();  // Zen is endless: stop it as the pause menu would
 	if (sBotStroke > 0) {
 		sBotStroke--;
 		sBotX += sBotDX;

@@ -132,6 +132,7 @@ struct Game {
 	float finaleTravel; // blade distance inside the fruit since the last hit
 	int finaleHits;
 	bool finaleOn;
+	int timeThrown;     // Arcade: +5 Seconds thrown this run, kept low so a run can't go on for ever
 	int coinsThrown;    // this run, up to a cap so no one mode is by far the best way to earn
 	int coinsCaught;
 	int coinsBonus;     // for a new best, paid when the run ends
@@ -180,6 +181,10 @@ struct Game {
 
 	void start(Mode m);
 	void commitScore();
+	void finishRun();   // Zen has no end of its own: the pause menu finishes the run
+#ifdef LAB
+	void labProbes(Blade& blade, void (*check)(bool, const char*, const char*));
+#endif
 	bool keepBestSoFar();
 	void update(Blade& blade);
 	void drawField(const Blade& blade) const;   // bottom screen
@@ -194,7 +199,7 @@ struct Game {
 	int activeParticles() const;
 	// First live object the AUTOTEST bot should aim for (or avoid).
 	const Obj* botTarget(bool wantBomb) const;
-	bool timed() const { return timeLeft > 0 || mode == MODE_ARCADE || mode == MODE_ZEN || mode == MODE_FRENZY || mode == MODE_COMBO || mode == MODE_DAILY || mode == MODE_BEAT; }
+	bool timed() const { return timeLeft > 0 || mode == MODE_ARCADE || mode == MODE_FRENZY || mode == MODE_DAILY || mode == MODE_BEAT; }
 	const char* practicePrompt(int line) const;  // the current lesson, two lines
 	void drawPractice() const;
 	void drawSwipeReplay() const;
