@@ -680,6 +680,101 @@ def cut_chili(fd, cy, ch, cut_w, flesh, rim):
         el(fd, 32 + dy * 0.3, y + dy, 0.9, 0.7, (255, 236, 176, 255))
 
 
+BUNCH = (((39, 11), (9, 20), (13, 55)), ((39, 11), (24, 33), (34, 60)), ((39, 11), (43, 33), (56, 50)))  # back to front
+
+
+def bunch_w(t):
+    return 1.6 + 6.6 * math.sin(math.pi * min(1.0, t * 1.04)) ** 0.55
+
+
+def f_bunch(d):
+    for k, curve in enumerate(BUNCH):
+        poly(d, tube(curve, bunch_w), ((234, 186, 44, 255), (246, 202, 54, 255), (254, 216, 66, 255))[k])
+    el(d, 39, 11, 5.2, 4.2, (150, 152, 64, 255))
+
+
+def f_bunch_top(d):
+    for k, curve in enumerate(BUNCH):
+        pts = []
+        for j in range(8, 42):
+            t = j / 48
+            x, y = bez(*curve, t)
+            nx, ny = bez_normal(*curve, t)
+            w = bunch_w(t) * 0.42
+            pts.append(((x + nx * w) * SS, (y + ny * w) * SS))
+        d.line(pts, fill=(255, 240, 150, 255), width=int(1.1 * SS), joint="curve")
+        el(d, *bez(*curve, 1.0), 1.5, 1.5, (84, 60, 36, 255))
+    poly(d, [(35, 8), (44, 8), (45, 3), (38, 3)], (120, 128, 56, 255))
+
+
+def cut_bunch(fd, cy, ch, cut_w, flesh, rim):
+    for y, h in ((26, 6), (41, 6.5), (56, 5.5)):
+        el(fd, 32, y, cut_w + 1.4, h + 0.6, rim)
+        el(fd, 32, y, cut_w, h - 1.2, flesh)
+
+
+def f_pomegranate(d):
+    el(d, 32, 38, 21.5, 20.5, (196, 38, 58, 255))
+    poly(d, [(25, 21), (24, 8), (29, 13), (32, 6), (35, 13), (40, 8), (39, 21)], (160, 28, 48, 255))
+
+
+def f_pomegranate_top(d):
+    def blush(o):
+        el(o, 42, 46, 12, 11, (140, 18, 44, 200))
+        el(o, 22, 30, 9, 8, (244, 110, 110, 190))
+    overlay(d, blush, blur=3.0)
+    poly(d, [(27, 20), (26.5, 12), (30, 15.5), (32, 10), (34, 15.5), (37.5, 12), (37, 20)], (104, 18, 36, 255))
+    el(d, 24, 28, 3.2, 1.8, (255, 214, 214, 255))
+
+
+def cut_pomegranate(fd, cy, ch, cut_w, flesh, rim):
+    el(fd, 32, cy, cut_w + 1.6, ch / 2 - 0.8, rim)
+    el(fd, 32, cy, cut_w, ch / 2 - 3.0, flesh)
+    rng = random.Random(77)
+    for _ in range(26):
+        y = cy + rng.uniform(-ch / 2 + 5, ch / 2 - 5)
+        room = cut_w * math.sqrt(max(0.05, 1 - ((y - cy) / (ch / 2 - 3)) ** 2)) - 1.2
+        x = 32 + rng.uniform(-room, room)
+        el(fd, x, y, 1.5, 1.9, (206, 28, 62, 255))
+        el(fd, x - 0.4, y - 0.6, 0.45, 0.45, (255, 170, 190, 255))
+
+
+PINATA_POINTS = [(32 + math.cos(a) * 30, 34 + math.sin(a) * 28) for a in (math.radians(k * 60 - 90) for k in range(6))]
+PINATA_COLOURS = ((238, 66, 138, 255), (255, 200, 54, 255), (46, 186, 190, 255), (252, 128, 44, 255))
+
+
+def f_pinata(d):
+    for k, tip in enumerate(PINATA_POINTS):
+        a = math.atan2(tip[1] - 34, tip[0] - 32)
+        s, c = math.sin(a), math.cos(a)
+        poly(d, [tip, (32 + c * 15 - s * 9, 34 + s * 15 + c * 9), (32 + c * 15 + s * 9, 34 + s * 15 - c * 9)], PINATA_COLOURS[k % 4])
+    el(d, 32, 34, 18.5, 18.5, PINATA_COLOURS[0])
+
+
+def f_pinata_top(d):
+    # Bands of tissue-paper fringe across the body.
+    def bands(o):
+        for k, y in enumerate(range(18, 54, 7)):
+            o.rectangle([10 * SS, y * SS, 54 * SS, (y + 3.5) * SS], fill=PINATA_COLOURS[(k % 3) + 1])
+            for x in range(11, 54, 3):
+                poly(o, [(x, y + 3.5), (x + 3, y + 3.5), (x + 1.5, y + 6)], PINATA_COLOURS[(k % 3) + 1])
+    mask = Image.new("L", d._image.size, 0)
+    el(ImageDraw.Draw(mask), 32, 34, 18.5, 18.5, 255)
+    lay = Image.new("RGBA", d._image.size, (0, 0, 0, 0))
+    bands(ImageDraw.Draw(lay))
+    lay.putalpha(ImageChops.multiply(lay.getchannel("A"), mask))
+    d._image.alpha_composite(lay)
+    el(d, 27, 26, 3.4, 2.0, (255, 240, 246, 255))
+
+
+def cut_pinata(fd, cy, ch, cut_w, flesh, rim):
+    el(fd, 32, cy, cut_w + 1.6, ch / 2 - 6.5, rim)
+    el(fd, 32, cy, cut_w, ch / 2 - 8.5, flesh)
+    rng = random.Random(9)
+    for _ in range(12):
+        el(fd, 32 + rng.uniform(-cut_w + 2, cut_w - 2), cy + rng.uniform(-ch / 2 + 11, ch / 2 - 11), 1.8, 1.8, PINATA_COLOURS[rng.randrange(4)])
+
+
 # name, body, details, flesh colour, rim colour, seed colour (or a function that draws the whole cut face), half-width of cut face
 FRUITS = [
     ("apple", f_apple, f_apple_top, (255, 240, 190, 255), (246, 216, 150, 255), (92, 54, 34, 255), 9),
@@ -704,6 +799,9 @@ FRUITS = [
     ("honey", f_honey, f_honey_top, (255, 146, 46, 255), (246, 206, 110, 255), (255, 226, 160, 255), 11),
     ("jelly", f_jelly, f_jelly_top, (255, 196, 222, 255), (120, 220, 214, 255), (255, 255, 255, 255), 10),
     ("chili", f_chili, f_chili_top, (250, 100, 52, 255), (190, 26, 30, 255), cut_chili, 5),
+    ("bunch", f_bunch, f_bunch_top, (252, 246, 214, 255), (246, 224, 120, 255), cut_bunch, 5),
+    ("pomegranate", f_pomegranate, f_pomegranate_top, (250, 214, 196, 255), (214, 70, 84, 255), cut_pomegranate, 12),
+    ("pinata", f_pinata, f_pinata_top, (255, 232, 170, 255), (238, 66, 138, 255), cut_pinata, 11),
 ]
 
 
@@ -1107,6 +1205,8 @@ GLYPHS = {
     "(": [[(2, 0), (1, 1.4), (1, 4.6), (2, 6)]],
     ")": [[(1, 0), (2, 1.4), (2, 4.6), (1, 6)]],
     "=": [[(0.6, 2.2), (3.4, 2.2)], [(0.6, 3.8), (3.4, 3.8)]],
+    "&": [[(4, 6), (1, 1.6), (1.6, 0.2), (2.8, 0.2), (3.2, 1.4), (0.2, 4.2), (0.4, 5.6), (2, 6), (4, 3.6)]],
+    "_": [[(0, 6.6), (4, 6.6)]],
 }
 
 

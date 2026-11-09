@@ -11,8 +11,9 @@ long assetSize(AssetFile* f);
 void assetClose(AssetFile* f);  // also stops a stream on it first
 // 3DS only: music arrives on a background thread, so a slow cartridge read never holds up a frame.
 // streamStart begins reading `bytes` into `out` (once per file; later calls do nothing), and streamDone
-// gives how many bytes have arrived so far, or -1 if a read failed.
-void streamStart(AssetFile* f, void* out, size_t bytes);
+// gives how many bytes have arrived so far, or -1 if a read failed. With packedBytes, the file holds that
+// many bytes of ADPCM (adpcm.h): `out` needs kAdpcmRoom spare bytes, and streamDone stays at 0 until all of it is unpacked.
+void streamStart(AssetFile* f, void* out, size_t bytes, size_t packedBytes = 0);
 long streamDone(AssetFile* f);
 // Any file by its whole path, read the same way: the player's own songs (Windows, Linux and Android only).
 AssetFile* fileOpen(const char* fullPath);

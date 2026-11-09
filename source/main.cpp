@@ -333,7 +333,8 @@ static const Button kPracticeEndButtons[] = {kBack, {90, 170, 140, 52, "Let's Pl
 static const Button kBeatButtons[] = {kBack, {216, 46, 96, 76, "Play"}};
 static constexpr int kBeatRows = 5;
 static const Button kBeatUp = {8, 190, 98, 26, nullptr}, kBeatDown = {110, 190, 98, 26, nullptr};
-static Button beatRow(int r) { return {8, 46.0f + r * 28, 200, 26, nullptr}; }
+static constexpr float kBeatRowTop = 46, kBeatRowStep = 28;
+static Button beatRow(int r) { return {8, kBeatRowTop + r * kBeatRowStep, 200, 26, nullptr}; }
 static int sBeatScroll = 0;  // the first row shown
 #if PORT_CUSTOM_MUSIC
 // Under Play: the Beat Tool for a song of your own, and the folder your songs go in. Taps, like the rows.
@@ -644,6 +645,74 @@ static int touchButtons(const Button* btns, int n, const Input& in, bool wasTouc
 	return result;
 }
 
+// ---------------------------------------------------------------- scrolling lists
+// Every list moves the same way: the mouse wheel, or a drag with a finger, cursor or stylus.
+// A press only becomes a drag once it has travelled a little, so a plain tap still picks what it landed on.
+static constexpr int kDragStart = 6;
+struct ListDrag {
+	bool held, moved;
+	int startY;
+	float startPos;
+};
+
+// Once a frame. True while a drag is moving the list, and on the frame it lets go.
+static bool listDrag(ListDrag& d, const Input& in, bool wasTouching, float top, float bottom, float* pos) {
+	if (in.touching && !wasTouching) {
+		d.held = in.ty >= top && in.ty < bottom;
+		d.moved = false;
+		d.startY = in.ty;
+		d.startPos = *pos;
+	}
+	if (!d.held) return false;
+	if (!in.touching) {
+		d.held = false;
+		return d.moved;
+	}
+	const int dy = in.ty - d.startY;
+	if (dy > kDragStart || dy < -kDragStart) d.moved = true;
+	if (d.moved) *pos = d.startPos - dy;
+	return d.moved;
+}
+
+// A list that always comes to rest on a whole row, so what is on show is never cut in half.
+struct RowScroller {
+	float pos, aim;
+	ListDrag drag;
+};
+
+static bool rowScroll(RowScroller& s, const Input& in, bool wasTouching, float top, float bottom, float step, int hiddenRows) {
+	const float most = hiddenRows > 0 ? hiddenRows * step : 0;
+	s.aim -= in.wheel * step;
+	const bool dragging = listDrag(s.drag, in, wasTouching, top, bottom, &s.pos);
+	s.pos = clampf(s.pos, 0, most);
+	if (dragging) {
+		s.aim = s.drag.held ? s.pos : floorf(s.pos / step + 0.5f) * step;
+	} else {
+		s.aim = clampf(s.aim, 0, most);
+		s.pos += (s.aim - s.pos) * 0.3f;
+		if (fabsf(s.aim - s.pos) < 0.5f) s.pos = s.aim;
+	}
+	return dragging;
+}
+
+// Brings a row the keys moved to into view.
+static void rowReveal(RowScroller& s, int row, int shownRows, float step) {
+	if (row * step < s.aim) s.aim = row * step;
+	if ((row - shownRows + 1) * step > s.aim) s.aim = (row - shownRows + 1) * step;
+}
+
+static void rowReset(RowScroller& s) {
+	s.pos = s.aim = 0;
+	s.drag = {};
+}
+
+// A quiet mark at the right edge, only when the list is longer than its window.
+static void drawScrollMark(float top, float room, float pos, float most) {
+	if (most <= 0) return;
+	const float size = room * room / (room + most);
+	gfx::rect(315, top + (room - size) * clampf(pos / most, 0, 1), 3, size, COL_DIM);
+}
+
 static bool sameRow(const Button& a, const Button& b) {
 	float top = a.y > b.y ? a.y : b.y;
 	float bottom = (a.y + a.h < b.y + b.h) ? a.y + a.h : b.y + b.h;
@@ -893,8 +962,16 @@ struct Row {
 };
 
 static const char* const kBladeNames[kBladeCount] = {"Ember", "Azure", "Rose", "Mint", "Gold", "Rainbow"};
-static const char* const kTrailNames[kTrailCount] = {"None", "Ink", "Flame", "Rainbow", "Ribbon", "Sparkle", "Comet"};
-static const char* const kBoardNames[kBoardCount] = {"Picnic Blanket", "Cutting Board", "Plate", "Marble", "Beach", "Starlight", "Night Picnic", "Beach Towel", "Kitchen Counter", "Snowfall", "Autumn Leaves"};
+static const char* const kTrailNames[kTrailCount] = {
+	"None",
+#define SHOP_TRAIL(name, ...) name,
+#include "shop_items.inc"
+};
+static const char* const kBoardNames[kBoardCount] = {
+	"Picnic Blanket", "Cutting Board", "Plate", "Marble", "Beach", "Starlight",
+#define SHOP_THEME(name, ...) name,
+#include "shop_items.inc"
+};
 #if PORT_TWO_SCREENS
 static const char* const kSceneNames[kSceneCount] = {"Dusk Orchard", "Morning Meadow", "Moonlit Bay"};
 #endif
@@ -910,7 +987,9 @@ static const char* const kSliceNames[] = {"Quick", "Exact"};
 static const char* const kDifficultyNames[DIFF_COUNT] = {"Easy", "Normal", "Hard", "Insane"};
 
 static const char* const kTrackRowNames[kTrackCount + 1] = {
-	"Auto", "Orchard Morning", "Picnic Stroll", "Sleepy Meadow", "Lantern Walk", "Still Water", "Moss Garden", "Bamboo Breeze", "Drifting Clouds", "Summer House", "8-Bit Hero Quest", "Friendly Trap", "Unruly Beat", "Vengeance Electro", "Eternal Explorer",
+	"Auto", "Orchard Morning", "Picnic Stroll", "Sleepy Meadow", "Lantern Walk", "Still Water", "Moss Garden", "Bamboo Breeze", "Drifting Clouds",
+#define SHOP_TRACK(name, ...) name,
+#include "shop_items.inc"
 };
 
 static const Row kAudioRows[] = {
@@ -1399,56 +1478,66 @@ static void setSliderFromTouch(const Row& r, int x) {
 }
 
 // ---------------------------------------------------------------- shop
-// Sign 0 is the back arrow, 1-3 the tabs, 4-9 the item tiles and 10 the Buy / Use sign.
+// Sign 0 is the back arrow, then the tabs, the Buy / Use sign and every item tile on the tab.
 // The grid keeps normal taps and the D-pad: slicing a small tile would be fiddly.
 // Whatever is focused is tried on at once (board, trail or menu track) and put back on the way out.
-static constexpr int kShopTab0 = 1, kShopTile0 = 4, kShopAct = 10, kShopSigns = 11;
+// Six tiles are on show at a time; only they scroll, while the tabs and the Buy sign stay put.
+static constexpr int kShopTab0 = 1, kShopAct = kShopTab0 + SHOP_TABS, kShopTile0 = kShopAct + 1;
+static constexpr int kShopSigns = kShopTile0 + kMaxShopItems;
+static constexpr int kShopCols = 3, kShopRowsShown = 2;
+static constexpr float kShopTop = 78, kShopStep = 60;
+static constexpr float kShopWindowTop = kShopTop - 2, kShopWindowH = kShopRowsShown * kShopStep + 2;
 static int sShopTab, sShopItem;
-static u8 sKeepBoard, sKeepTrail, sKeepTrack;
-static float sShopArmT;     // a Buy press waits this long for the second press that confirms it
+static RowScroller sShopList;
+static u8 sKeep[SHOP_TABS];  // the real choices, while the item in focus is being tried on
+static float sShopArmT;    // a Buy press waits this long for the second press that confirms it
 static float sShopNoteT;
 static const char* sShopNote = "";
 
 static Button shopButton(int i) {
 	if (i == 0) return kBack;
-	if (i < kShopTile0) return {(float)(10 + (i - kShopTab0) * 102), 46, 96, 26, shopTabName(i - kShopTab0)};
 	if (i < kShopAct) {
-		int k = i - kShopTile0;
-		return {(float)(10 + k % 3 * 102), (float)(78 + k / 3 * 60), 96, 54, nullptr};
+		const float w = (300 - (SHOP_TABS - 1) * 4.0f) / SHOP_TABS;
+		return {10 + (i - kShopTab0) * (w + 4), 46, w, 26, shopTabName(i - kShopTab0)};
 	}
-	return {80, 202, 160, 34, nullptr};
+	if (i == kShopAct) return {80, 202, 160, 34, nullptr};
+	const int k = i - kShopTile0;
+	return {(float)(10 + k % kShopCols * 102), kShopTop + k / kShopCols * kShopStep - sShopList.pos, 96, 54, nullptr};
 }
 
+static int shopHiddenRows(int tab) { return (shopCount(tab) + kShopCols - 1) / kShopCols - kShopRowsShown; }
+
+static void shopRemember() {
+	for (int t = 0; t < SHOP_TABS; t++) sKeep[t] = *shopSlot(t);
+}
+
+static void shopPutBack() {
+	for (int t = 0; t < SHOP_TABS; t++) *shopSlot(t) = sKeep[t];
+}
+
+static bool shopInUse(int tab, int item) { return sKeep[tab] == shopValue(tab, item); }
+
 static void shopTryOn() {
-	gSave.board = sKeepBoard;
-	gSave.trail = sKeepTrail;
-	u8 track = gSave.menuTrack;
-	gSave.menuTrack = sKeepTrack;
-	if (sShopTab == SHOP_THEMES) gSave.board = (u8)(kBaseBoards + sShopItem);
-	if (sShopTab == SHOP_TRAILS) gSave.trail = (u8)(sShopItem + 1);
-	if (sShopTab == SHOP_MUSIC) gSave.menuTrack = (u8)(kBaseTracks + sShopItem + 1);
+	const u8 track = gSave.menuTrack;
+	shopPutBack();
+	*shopSlot(sShopTab) = (u8)shopValue(sShopTab, sShopItem);
 	if (gSave.menuTrack != track) audio::preview(MUSIC_MENU);
 }
 
 // Saves with the real choices in place, never the one being tried on.
 static void shopSave() {
-	u8 b = gSave.board, t = gSave.trail, m = gSave.menuTrack;
-	gSave.board = sKeepBoard;
-	gSave.trail = sKeepTrail;
-	gSave.menuTrack = sKeepTrack;
+	const u8 onShow = *shopSlot(sShopTab);
+	shopPutBack();
 	saveWrite();
-	gSave.board = b;
-	gSave.trail = t;
-	gSave.menuTrack = m;
+	*shopSlot(sShopTab) = onShow;
 }
 
 static void openShop() {
-	sKeepBoard = gSave.board;
-	sKeepTrail = gSave.trail;
-	sKeepTrack = gSave.menuTrack;
+	shopRemember();
 	sShopTab = SHOP_THEMES;
 	sShopItem = 0;
 	sShopArmT = sShopNoteT = 0;
+	rowReset(sShopList);
 	sFocus[SCREEN_SHOP] = kShopTile0;
 	audio::play(SFX_SHOPBELL, 0.8f);  // the bell over the shop door
 	shopTryOn();
@@ -1456,10 +1545,8 @@ static void openShop() {
 }
 
 static void leaveShop() {
-	bool trackChanged = gSave.menuTrack != sKeepTrack;
-	gSave.board = sKeepBoard;
-	gSave.trail = sKeepTrail;
-	gSave.menuTrack = sKeepTrack;
+	bool trackChanged = gSave.menuTrack != sKeep[SHOP_MUSIC];
+	shopPutBack();
 	if (trackChanged) audio::reapply();
 	sMenuBlade.reset();
 	goTo(SCREEN_TITLE, -1);
@@ -1472,13 +1559,9 @@ static void shopNote(const char* s) {
 
 // Equipping works on the real choices, then the focused item goes back on show.
 static void shopEquipNow() {
-	gSave.board = sKeepBoard;
-	gSave.trail = sKeepTrail;
-	gSave.menuTrack = sKeepTrack;
+	shopPutBack();
 	shopEquip(sShopTab, sShopItem);
-	sKeepBoard = gSave.board;
-	sKeepTrail = gSave.trail;
-	sKeepTrack = gSave.menuTrack;
+	shopRemember();
 	shopTryOn();
 	shopSave();
 }
@@ -1487,7 +1570,7 @@ static void shopAct() {
 	if (shopOwned(sShopTab, sShopItem)) {
 		shopEquipNow();
 		audio::play(SFX_GOLD, 0.6f);
-		shopNote(sShopTab == SHOP_TRAILS && sKeepTrail == 0 ? "Taken off" : "Now in use");
+		shopNote(shopCanTakeOff(sShopTab) && sKeep[sShopTab] == 0 ? "Taken off" : "Now in use");
 		return;
 	}
 	if (gSave.coins < shopItem(sShopTab, sShopItem).price) {
@@ -1515,6 +1598,7 @@ static void shopSetTab(int tab) {
 	sShopTab = tab;
 	sShopItem = 0;
 	sShopArmT = 0;
+	rowReset(sShopList);
 	shopTryOn();
 }
 
@@ -1536,11 +1620,15 @@ static void updateShop(const Input& in, bool wasTouching) {
 	if (in.down & KEY_L) { audio::click(0.5f); shopSetTab(sShopTab - 1); }
 	if (in.down & KEY_R) { audio::click(0.5f); shopSetTab(sShopTab + 1); }
 
+	// A drag or the wheel moves the tiles and nothing else, and a drag is never a tap on a tile.
+	if (rowScroll(sShopList, in, wasTouching, kShopWindowTop, kShopWindowTop + kShopWindowH, kShopStep, shopHiddenRows(sShopTab))) sPressed = -1;
+
 	Button btns[kShopSigns];
 	for (int i = 0; i < kShopSigns; i++) btns[i] = shopButton(i);
-	// Tiles past the end of a short tab can't be touched.
-	for (int i = kShopTile0 + n; i < kShopAct; i++) btns[i] = {-100, -100, 0, 0, nullptr};
-	int before = f;
+	// Tiles past the end of the tab, or scrolled out of the window, can't be touched.
+	const bool inWindow = in.ty >= kShopWindowTop && in.ty < kShopWindowTop + kShopWindowH;
+	for (int i = kShopTile0; i < kShopSigns; i++)
+		if (i - kShopTile0 >= n || !inWindow) btns[i] = {-100, -100, 0, 0, nullptr};
 	int t = touchButtons(btns, kShopSigns, in, wasTouching, f);
 #if PORT_MOUSE
 	if (in.hovering && !in.touching)
@@ -1548,41 +1636,48 @@ static void updateShop(const Input& in, bool wasTouching) {
 			if (hit(btns[i], in.tx, in.ty)) f = i;
 #endif
 
-	// The D-pad: back arrow, the tab row, two rows of tiles, then the Buy sign.
-	int k = f - kShopTile0;
+	// The D-pad: back arrow, the tab row, the rows of tiles, then the Buy sign.
+	const bool onTab = f >= kShopTab0 && f < kShopAct, onTile = f >= kShopTile0;
+	const int k = f - kShopTile0;
+	const int rows = (n + kShopCols - 1) / kShopCols;
 	if (in.repeat & KEY_DOWN) {
 		if (f == 0) f = kShopTab0 + sShopTab;
-		else if (f < kShopTile0) f = kShopTile0 + (sShopItem < n ? sShopItem : 0);
-		else if (f < kShopAct) f = (k < 3 && k + 3 < n) ? f + 3 : kShopAct;
+		else if (onTab) f = kShopTile0 + (sShopItem < n ? sShopItem : 0);
+		else if (onTile) {
+			const int row = k / kShopCols;
+			if (row + 1 >= rows) f = kShopAct;
+			else f = kShopTile0 + (k + kShopCols < n ? k + kShopCols : n - 1);
+		}
 		audio::click(0.5f);
 	}
 	if (in.repeat & KEY_UP) {
 		if (f == kShopAct) f = kShopTile0 + sShopItem;
-		else if (f >= kShopTile0) f = k >= 3 ? f - 3 : kShopTab0 + sShopTab;
-		else if (f >= kShopTab0) f = 0;
+		else if (onTile) f = k >= kShopCols ? f - kShopCols : kShopTab0 + sShopTab;
+		else if (onTab) f = 0;
 		audio::click(0.5f);
 	}
 	if (in.repeat & (KEY_LEFT | KEY_RIGHT)) {
 		int dir = (in.repeat & KEY_RIGHT) ? 1 : -1;
-		if (f >= kShopTab0 && f < kShopTile0) {
+		if (onTab) {
 			shopSetTab(sShopTab + dir);
 			f = kShopTab0 + sShopTab;
-		} else if (f >= kShopTile0 && f < kShopAct) {
-			int row = k / 3, col = (k % 3 + dir + 3) % 3;
-			int last = row * 3 + 2 < n ? 2 : (n - 1) % 3;
+		} else if (onTile) {
+			int row = k / kShopCols, col = (k % kShopCols + dir + kShopCols) % kShopCols;
+			int last = row * kShopCols + kShopCols - 1 < n ? kShopCols - 1 : (n - 1) % kShopCols;
 			if (col > last) col = dir > 0 ? 0 : last;
-			f = kShopTile0 + row * 3 + col;
+			f = kShopTile0 + row * kShopCols + col;
 		}
 		audio::click(0.5f);
 	}
+	if ((in.repeat & (KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT)) && f >= kShopTile0)
+		rowReveal(sShopList, (f - kShopTile0) / kShopCols, kShopRowsShown, kShopStep);
 
-	(void)before;
 	if (t < 0 && (in.down & KEY_A)) t = f;
 	if (t == 0) {
 		cutBack(SCREEN_SHOP);
-	} else if (t >= kShopTab0 && t < kShopTile0) {
+	} else if (t >= kShopTab0 && t < kShopAct) {
 		shopSetTab(t - kShopTab0);
-	} else if (t >= kShopTile0 && t < kShopAct && t - kShopTile0 < n) {
+	} else if (t >= kShopTile0 && t - kShopTile0 < n) {
 		// Pointing at a tile only highlights it. A click, tap or A picks it and tries it on;
 		// the same again on the picked tile does what the action sign says.
 		if (t - kShopTile0 != sShopItem) {
@@ -1625,6 +1720,12 @@ static void drawShopIcon(int tab, int item, float cx, float cy) {
 			px = x;
 			py = y;
 		}
+	} else if (tab == SHOP_SPLATS) {
+		// Three drops in the colour on sale, the way it lands on the board.
+		const u32 c = shopSplatPreview(item);
+		gfx::sprite(SHEET_SPRITES, sprites_drop_idx, cx - 12, cy + 2, 1.5f, 1.5f, 0.4f, c);
+		gfx::sprite(SHEET_SPRITES, sprites_drop_idx, cx + 2, cy - 4, 2.2f, 2.2f, 0, c);
+		gfx::sprite(SHEET_SPRITES, sprites_drop_idx, cx + 14, cy + 4, 1.1f, 1.1f, -0.5f, c);
 	} else {
 		// Two beamed notes.
 		u32 c = COL_CREAM;
@@ -1650,8 +1751,10 @@ static void drawShop() {
 		gfx::text(b.label, b.x + b.w / 2, b.y + 6, 0.38f, i == sShopTab ? COL_ACCENT : COL_DIM, ALIGN_CENTER);
 	}
 	const int n = shopCount(sShopTab);
+	gfx::setClip(0, kShopWindowTop, 320, kShopWindowH);
 	for (int k = 0; k < n; k++) {
 		Button b = shopButton(kShopTile0 + k);
+		if (b.y + b.h + 2 < kShopWindowTop || b.y - 2 > kShopWindowTop + kShopWindowH) continue;
 		bool sel = k == sShopItem;
 		// The picked item keeps the gold frame; a tile only pointed at gets a faint one.
 		const bool pressed = sPressed == kShopTile0 + k;
@@ -1662,8 +1765,7 @@ static void drawShop() {
 		float s = 0.3f, tw = gfx::textWidth(it.name, s);
 		if (tw > b.w - 10) s *= (b.w - 10) / tw;
 		gfx::text(it.name, b.x + b.w / 2, b.y + 28, s, COL_CREAM, ALIGN_CENTER);
-		if (shopEquipped(sShopTab, k) && (sShopTab != SHOP_TRAILS || sKeepTrail == k + 1) && (sShopTab != SHOP_THEMES || sKeepBoard == kBaseBoards + k) &&
-		    (sShopTab != SHOP_MUSIC || sKeepTrack == kBaseTracks + k + 1)) {
+		if (shopInUse(sShopTab, k)) {
 			gfx::text("IN USE", b.x + b.w / 2, b.y + 40, 0.26f, COL_ACCENT, ALIGN_CENTER);
 		} else if (shopOwned(sShopTab, k)) {
 			gfx::text("OWNED", b.x + b.w / 2, b.y + 40, 0.26f, COL_DIM, ALIGN_CENTER);
@@ -1674,13 +1776,14 @@ static void drawShop() {
 			gfx::text(buf, b.x + b.w / 2 + 4, b.y + 39, 0.3f, gSave.coins >= it.price ? COL_CREAM : COL_DIM, ALIGN_CENTER);
 		}
 	}
+	gfx::clearClip();
+	drawScrollMark(kShopTop, kShopRowsShown * kShopStep - 6, sShopList.pos, shopHiddenRows(sShopTab) * kShopStep);
 
 	// The action sign says exactly what a press will do.
 	const ShopItem& it = shopItem(sShopTab, sShopItem);
 	bool owned = shopOwned(sShopTab, sShopItem);
-	bool inUse = (sShopTab == SHOP_THEMES && sKeepBoard == kBaseBoards + sShopItem) || (sShopTab == SHOP_TRAILS && sKeepTrail == sShopItem + 1) ||
-	             (sShopTab == SHOP_MUSIC && sKeepTrack == kBaseTracks + sShopItem + 1);
-	if (owned) snprintf(buf, sizeof buf, "%s", inUse ? (sShopTab == SHOP_TRAILS ? "Take Off" : "In Use") : "Use");
+	const bool inUse = shopInUse(sShopTab, sShopItem);
+	if (owned) snprintf(buf, sizeof buf, "%s", inUse ? (shopCanTakeOff(sShopTab) ? "Take Off" : "In Use") : "Use");
 	else if (sShopArmT > 0) snprintf(buf, sizeof buf, "Sure? %u", (unsigned)it.price);
 	else snprintf(buf, sizeof buf, "Buy %u", (unsigned)it.price);
 	Button a = shopButton(kShopAct);
@@ -1700,6 +1803,9 @@ static void drawShopPreview() {
 	} else if (sShopTab == SHOP_TRAILS) {
 		gfx::setDepth(0.5f);
 		sPreviewBlade.draw();
+	} else if (sShopTab == SHOP_SPLATS) {
+		gfx::setDepth(0.5f);
+		drawShopIcon(sShopTab, sShopItem, 200, 125);
 	} else {
 		gfx::text("Now playing as a preview", 200, 120, 0.36f, COL_DIM, ALIGN_CENTER);
 		gfx::text("Use it to make it the menu music.", 200, 140, 0.36f, COL_DIM, ALIGN_CENTER);
@@ -1707,8 +1813,7 @@ static void drawShopPreview() {
 	// What the item costs against the purse, or that it is already yours.
 	char buf[48];
 	const bool owned = shopOwned(sShopTab, sShopItem);
-	const bool inUse = (sShopTab == SHOP_THEMES && sKeepBoard == kBaseBoards + sShopItem) || (sShopTab == SHOP_TRAILS && sKeepTrail == sShopItem + 1) ||
-	                   (sShopTab == SHOP_MUSIC && sKeepTrack == kBaseTracks + sShopItem + 1);
+	const bool inUse = shopInUse(sShopTab, sShopItem);
 	if (owned) snprintf(buf, sizeof buf, "%s", inUse ? "Yours, and in use" : "Yours to use");
 	else if (gSave.coins >= it.price) snprintf(buf, sizeof buf, "%u coins. You have %lu.", (unsigned)it.price, (unsigned long)gSave.coins);
 	else snprintf(buf, sizeof buf, "%u coins. %lu more to go.", (unsigned)it.price, (unsigned long)(it.price - gSave.coins));
@@ -1735,6 +1840,10 @@ static bool updateModePages(Input& keys, bool wasTouching) {
 		return true;
 	}
 	if (sCut.pending) return false;
+	if (keys.wheel) {
+		turnModePage(keys.wheel < 0 ? 1 : -1);
+		return false;
+	}
 	sArrowHover = -1;
 #if PORT_MOUSE
 	if (keys.hovering)
@@ -2241,16 +2350,21 @@ static void drawDailyTop() {
 }
 
 // The Fruit Journal: a sticker for every fruit, dark until the first one is sliced.
-static constexpr int kJournalCols = 5;
+static constexpr int kJournalCols = 5, kJournalRowsShown = 4;
+static constexpr float kJournalTop = 48, kJournalStep = 47;
+static constexpr float kJournalWindowTop = kJournalTop - 2, kJournalWindowH = kJournalRowsShown * kJournalStep + 2;
+static RowScroller sJournalList;
 static Button journalButton(int i) {
 	if (i == 0) return kBack;
 	const int p = i - 1;
-	return {10.0f + (p % kJournalCols) * 60, 48.0f + (p / kJournalCols) * 47, 58, 45, nullptr};
+	return {10.0f + (p % kJournalCols) * 60, kJournalTop + (p / kJournalCols) * kJournalStep - sJournalList.pos, 58, 45, nullptr};
 }
+static int journalHiddenRows() { return (progress::journalPages() + kJournalCols - 1) / kJournalCols - kJournalRowsShown; }
 static const u32 kUnfound = rgba(40, 28, 20, 225);
 
 static void updateJournal(const Input& in, bool wasTouching) {
 	const int n = progress::journalPages() + 1;
+	if (rowScroll(sJournalList, in, wasTouching, kJournalWindowTop, kJournalWindowTop + kJournalWindowH, kJournalStep, journalHiddenRows())) sPressed = -1;
 	Button btns[progress::kNamedFruit + 1];
 	for (int i = 0; i < n; i++) btns[i] = journalButton(i);
 	int& f = sFocus[SCREEN_JOURNAL];
@@ -2266,6 +2380,10 @@ static void updateJournal(const Input& in, bool wasTouching) {
 		return;
 	}
 	dpadNav(btns, n, in.repeat, f);
+	if ((in.repeat & (KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT)) && f > 0) rowReveal(sJournalList, (f - 1) / kJournalCols, kJournalRowsShown, kJournalStep);
+	// Stickers scrolled out of the window can't be touched.
+	if (in.ty < kJournalWindowTop)
+		for (int i = 1; i < n; i++) btns[i] = {-100, -100, 0, 0, nullptr};
 	int t = touchButtons(btns, n, in, wasTouching, f);
 #if PORT_MOUSE
 	if (in.hovering && !in.touching)
@@ -2281,8 +2399,10 @@ static void drawJournal() {
 	drawHeader("Fruit Journal");
 	drawBackArrow(f == 0, sPressed == 0);
 	char buf[12];
+	gfx::setClip(0, kJournalWindowTop, 320, kJournalWindowH);
 	for (int p = 0; p < progress::journalPages(); p++) {
 		const Button b = journalButton(p + 1);
+		if (b.y + b.h + 2 < kJournalWindowTop || b.y - 2 > kJournalWindowTop + kJournalWindowH) continue;
 		const int fruit = progress::journalFruit(p);
 		const u32 count = gSave.fruitSliced[fruit];
 		const bool focused = f == p + 1;
@@ -2295,6 +2415,8 @@ static void drawJournal() {
 		const int level = progress::journalLevel(count);
 		for (int k = 0; k < progress::kJournalLevels; k++) gfx::rect(cx - 14 + k * 8, b.y + 39, 4, 3, k < level ? COL_ACCENT : rgba(0, 0, 0, 90));
 	}
+	gfx::clearClip();
+	drawScrollMark(kJournalTop, kJournalRowsShown * kJournalStep - 2, sJournalList.pos, journalHiddenRows() * kJournalStep);
 }
 
 static void drawJournalTop() {
@@ -2385,7 +2507,7 @@ static void drawStatsTop() {
 
 // ---------------------------------------------------------------- Beat Slice track choice
 // The game's tracks you have, then any songs of your own (Windows, Linux and Android).
-static bool beatChoice(int t) { return t < kTrackCount ? trackUnlocked(t) : t < audio::trackCount(); }
+static bool beatChoice(int t) { return t < kTrackCount ? trackUnlocked(t) && audio::trackHasBeat(t) : t < audio::trackCount(); }
 
 static int beatSong() {
 	int t = gSave.beatTrack ? gSave.beatTrack - 1 : 1;
@@ -2694,7 +2816,7 @@ static bool sUpdateQuit = false;           // Restart was chosen: the game close
 static int sUpdateScroll = 0;              // first changelog line shown
 static const Button kUpdateTwo[] = {{24, 150, 128, 64, nullptr}, {168, 150, 128, 64, nullptr}};
 static const Button kUpdateOne[] = {{96, 150, 128, 64, nullptr}};
-static constexpr int kNoteLines = 9;
+static constexpr int kNoteLines = 9, kNoteStep = 14;
 
 // The changelog, wrapped to the panel: up to 200 lines, each a start and a length.
 static int wrapNotes(const char** starts, int* lens, int maxLines) {
@@ -2848,10 +2970,10 @@ static void drawUpdateTop() {
 	for (int i = 0; i < kNoteLines && sUpdateScroll + i < n; i++) {
 		char line[200];
 		snprintf(line, sizeof line, "%.*s", lens[sUpdateScroll + i], starts[sUpdateScroll + i]);
-		gfx::text(line, 42, 96 + i * 14, 0.34f, COL_CREAM, ALIGN_LEFT);
+		gfx::text(line, 42, 96 + i * kNoteStep, 0.34f, COL_CREAM, ALIGN_LEFT);
 	}
 	if (n > kNoteLines) {
-		snprintf(buf, sizeof buf, "%s  LINES %d-%d OF %d", PORT_3DS ? "UP/DOWN SCROLLS" : "UP, DOWN OR THE WHEEL SCROLL", sUpdateScroll + 1, sUpdateScroll + kNoteLines, n);
+		snprintf(buf, sizeof buf, "%s  LINES %d-%d OF %d", PORT_3DS ? "UP/DOWN OR A DRAG SCROLLS" : "WHEEL OR DRAG TO SCROLL", sUpdateScroll + 1, sUpdateScroll + kNoteLines, n);
 		gfx::text(buf, 200, 222, 0.28f, COL_DIM, ALIGN_CENTER);
 	}
 }
@@ -2881,6 +3003,16 @@ static void updateSignInput(const Input& in, bool wasTouching) {
 	const char* a;
 	const char* b;
 	const int n = updateButtons(&btns, &a, &b);
+	// A drag that starts clear of the signs moves the notes; the top line of the list is clamped when drawn.
+	static ListDrag drag;
+	static float pos;
+	bool onSign = false;
+	for (int i = 0; i < n; i++) onSign |= hit(btns[i], in.tx, in.ty);
+	if (in.touching && !wasTouching) pos = sUpdateScroll * (float)kNoteStep;
+	if (listDrag(drag, in, wasTouching, onSign ? 1e6f : -1e6f, 1e6f, &pos)) {
+		sUpdateScroll = pos > 0 ? (int)(pos / kNoteStep + 0.5f) : 0;
+		keys.touching = false;
+	}
 	if (n == 0) return;  // downloading: nothing to press
 	int t = menuInput(btns, n, SCREEN_UPDATE, keys, wasTouching);
 	if (in.down & KEY_B) {
@@ -3347,13 +3479,7 @@ static void drawRows() {
 			gfx::text(buf, 231, ty + (0.36f - vs) * 10, vs, COL_CREAM, ALIGN_CENTER);
 		}
 	}
-	// A quiet scroll mark, only when the list is longer than the screen.
-	float most = maxScroll();
-	if (most > 0) {
-		float room = 240 - kListTop;
-		float size = room * room / (room + most);
-		gfx::rect(315, kListTop + (room - size) * (sScroll / most), 3, size, COL_DIM);
-	}
+	drawScrollMark(kListTop, 240 - kListTop, sScroll, maxScroll());
 }
 
 static void drawBottomContent(Screen screen) {
@@ -3468,7 +3594,8 @@ static void drawBottomContent(Screen screen) {
 				line("Claude Code, Graphify", 165, COL_CREAM);
 				line("Claude Code Game Studios by Donchitos", 178, COL_CREAM);
 				line("Anti Slop by miqdadbadjuber", 191, COL_CREAM);
-				line("Music sold in the Shop: Of Far Different Nature (CC BY 4.0)", 207, COL_DIM);
+				line("Shop music: Of Far Different Nature (CC BY 4.0), NickBin, King Bakuyo Pro,", 203, COL_DIM);
+				line("Mq_, Cabex Music and Aneolent", 214, COL_DIM);
 			}
 			break;
 		case SCREEN_HOWTO: {
@@ -3723,14 +3850,26 @@ static void updateFrame(const Input& in, bool wasTouching) {
 			{
 				static int ids[kTrackCount + 64];
 				const int n = beatList(ids);
-				if (in.wheel) {
-					sBeatScroll -= in.wheel;
-					if (sBeatScroll > n - kBeatRows) sBeatScroll = n - kBeatRows;
-					if (sBeatScroll < 0) sBeatScroll = 0;
+				sBeatScroll -= in.wheel;
+				static ListDrag drag;
+				static float dragPos;
+				static int pressedRow = -1;
+				if (in.touching && !wasTouching) dragPos = sBeatScroll * kBeatRowStep;
+				if (listDrag(drag, in, wasTouching, kBeatRowTop, kBeatRowTop + kBeatRows * kBeatRowStep, &dragPos)) {
+					sBeatScroll = dragPos > 0 ? (int)(dragPos / kBeatRowStep + 0.5f) : 0;
+					pressedRow = -1;
+				}
+				if (sBeatScroll > n - kBeatRows) sBeatScroll = n - kBeatRows;
+				if (sBeatScroll < 0) sBeatScroll = 0;
+				// A row is chosen when the press lifts, so a drag that starts on one only scrolls.
+				if (!in.touching && wasTouching && pressedRow >= 0) {
+					if (sBeatScroll + pressedRow < n && ids[sBeatScroll + pressedRow] != beatSong()) beatSelect(ids[sBeatScroll + pressedRow]);
+					pressedRow = -1;
 				}
 				if (in.touching && !wasTouching) {
+					pressedRow = -1;
 					for (int r = 0; r < kBeatRows && sBeatScroll + r < n; r++)
-						if (hit(beatRow(r), in.tx, in.ty) && ids[sBeatScroll + r] != beatSong()) beatSelect(ids[sBeatScroll + r]);
+						if (hit(beatRow(r), in.tx, in.ty)) pressedRow = r;
 					if (n > kBeatRows && hit(kBeatUp, in.tx, in.ty) && sBeatScroll > 0) {
 						audio::click();
 						sBeatScroll--;

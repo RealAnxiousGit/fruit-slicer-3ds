@@ -628,6 +628,60 @@ def coin(lat, lon):
     return m
 
 
+def bunch(lat, lon):
+    """Three bananas fanned out from one crown at the top."""
+    lo = lat < 10
+    m = Mesh()
+    for a, z in ((0.55, -5.0), (-0.02, 2.0), (-0.6, -2.0)):
+        one = banana(max(5, lat - 3), max(6, lon - 2))
+        # Stem end up and at the origin, then swung out about the crown.
+        one = deform(one, lambda p, z=z: np.array((p[1] * 0.72, -p[0] * 0.72 + 24, p[2] * 0.72 + z)))
+        m.add(deform(one, turn_z(a)))
+    m.body = len(m.i)
+    m.add(ball((0, -2 if lo else -3, 0), 6.2, 3, 5, lambda th, ph: (128, 136, 62)))
+    return centred(m)
+
+
+def pomegranate(lat, lon):
+    def rad(th, ph):
+        return 22 * (1 + 0.04 * math.cos(6 * ph) * math.sin(th)) * (1 - 0.06 * max(0.0, math.cos(th)))
+
+    def col(th, ph):
+        side = clamp01(0.5 + 0.5 * math.sin(th) * math.cos(ph + 0.7))
+        return lerp3((222, 54, 70), (150, 22, 46), side * 0.8 + 0.2 * th / math.pi)
+
+    m = surface(lat, lon, rad, col)
+    m.body = len(m.i)
+    sides = 4 if lat < 10 else 5
+    for k in range(5):
+        a = k / 5 * math.tau
+        base = (math.cos(a) * 6.0, -19.5, math.sin(a) * 6.0)
+        tip = (math.cos(a) * 8.6, -29.5, math.sin(a) * 8.6)
+        m.add(prism(base, tip, 3.4, 0.5, (128, 22, 42), sides))
+    return m
+
+
+def pinata(lat, lon):
+    colours = ((238, 66, 138), (255, 200, 54), (46, 186, 190), (252, 128, 44))
+    bands = 5 if lat < 10 else 7
+
+    def col(th, ph):
+        return colours[int(th / math.pi * bands) % 4]
+
+    R = 20.5
+    m = surface(lat, lon, lambda th, ph: R, col)
+    m.body = len(m.i)
+    sides = 4 if lat < 10 else 6
+    golden = math.pi * (3 - math.sqrt(5))
+    count = 8 if lat < 10 else 12
+    for k in range(count):
+        y = 1 - (k + 0.5) / count * 2
+        r = math.sqrt(1 - y * y)
+        d = np.array((math.cos(golden * k) * r, y, math.sin(golden * k) * r))
+        m.add(prism(d * (R - 2), d * (R + 11), 6.0, 0.4, colours[k % 4], sides))
+    return m
+
+
 # name, builder, flesh, rim
 FRUIT = [
     ("apple", apple, (255, 240, 190), (246, 216, 150)),
@@ -655,6 +709,9 @@ FRUIT = [
     ("jelly", jelly, (255, 196, 222), (120, 220, 214)),
     ("chili", chili, (250, 100, 52), (190, 26, 30)),
     ("coin", coin, COIN_GOLD, COIN_DEEP),
+    ("bunch", bunch, (252, 246, 214), (246, 224, 120)),
+    ("pomegranate", pomegranate, (250, 214, 196), (214, 70, 84)),
+    ("pinata", pinata, (255, 232, 170), (238, 66, 138)),
 ]
 
 

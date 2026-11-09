@@ -224,6 +224,23 @@ void getOffset(float* x, float* y) {
 static inline float offX() { return sBaseX + sDepthX + (sOnTop ? 0 : sShakeX); }
 static inline float offY() { return sBaseY + (sOnTop ? 0 : sShakeY); }
 
+// The screens are mounted sideways, so the GPU's rectangle is the turned, mirrored one.
+void setClip(float x, float y, float w, float h) {
+	C2D_Flush();
+	const int screenW = sOnTop ? 400 : 320;
+	const auto keep = [](float v, int most) { return v < 0 ? 0 : (v > most ? most : (int)v); };
+	const int x0 = keep(x + offX(), screenW), x1 = keep(x + w + offX(), screenW);
+	const int y0 = keep(y + offY(), 240), y1 = keep(y + h + offY(), 240);
+	C3D_SetScissor(GPU_SCISSOR_NORMAL, 240 - y1, screenW - x1, 240 - y0, screenW - x0);
+}
+
+void clearClip() {
+	C2D_Flush();
+	C3D_SetScissor(GPU_SCISSOR_DISABLE, 0, 0, 0, 0);
+}
+
+int fontImageCount() { return (int)C2D_SpriteSheetCount(sSheets[SHEET_FONT]); }
+
 void sprite(SheetId sheet, int idx, float x, float y, float sx, float sy, float rot, u32 color) {
 	if (!sSheets[sheet] || !gpuHasRoom()) return;
 	C2D_Image img = C2D_SpriteSheetGetImage(sSheets[sheet], idx);

@@ -69,6 +69,60 @@ static void labDaily() {
 }
 
 // The menu part, one step each time the screen has settled. A step checks what the last one did, then acts.
+// The Shop's list, driven through the real input code: wheel, drag and tap on the same tiles.
+static void labShopScroll() {
+	Input in{};
+	const auto settle = [&]() {
+		for (int i = 0; i < 40; i++) updateShop(in, false);
+	};
+	shopSetTab(SHOP_MUSIC);
+	const float tabY = shopButton(kShopTab0).y, buyY = shopButton(kShopAct).y;
+	const int picked = sShopItem;
+	in.wheel = -1;
+	updateShop(in, false);
+	in.wheel = 0;
+	settle();
+	labCheck(sShopList.pos == kShopStep, "Shop wheel scrolls one row");
+	labCheck(shopButton(kShopTab0).y == tabY && shopButton(kShopAct).y == buyY, "Shop tabs and Buy sign stay put when the list scrolls");
+
+	int shown = 0;
+	for (int k = 0; k < shopCount(SHOP_MUSIC); k++) {
+		const Button b = shopButton(kShopTile0 + k);
+		shown += b.y >= kShopWindowTop && b.y + b.h <= kShopWindowTop + kShopWindowH;
+	}
+	char d[32];
+	snprintf(d, sizeof d, "%d on show", shown);
+	labCheck(shown == kShopCols * kShopRowsShown, "Shop shows six items at a time", d);
+
+	const auto press = [&](int y0, int y1) {
+		in.touching = true;
+		in.tx = 60;
+		in.ty = y0;
+		updateShop(in, false);
+		in.ty = y1;
+		updateShop(in, true);
+		updateShop(in, true);
+		in.touching = false;
+		updateShop(in, true);
+		settle();
+	};
+	press(150, 90);
+	labCheck(sShopItem == picked, "A drag across the Shop's tiles picks nothing");
+	labCheck(sShopList.pos == 2 * kShopStep, "A Shop drag scrolls, and comes to rest on a whole row");
+	const int target = 2 * kShopCols;
+	const Button b = shopButton(kShopTile0 + target);
+	press((int)(b.y + 20), (int)(b.y + 20));
+	labCheck(sShopItem == target, "A tap still picks a scrolled tile");
+
+	for (int i = 0; i < 80; i++) {
+		in.wheel = -1;
+		updateShop(in, false);
+	}
+	in.wheel = 0;
+	settle();
+	labCheck(sShopList.pos == shopHiddenRows(SHOP_MUSIC) * kShopStep, "Shop list stops at its last row");
+}
+
 static void labMenus() {
 	const float firstRowY = kListTop + kRowH * 0.5f;
 	switch (sBotMenuStep++) {
@@ -111,12 +165,25 @@ static void labMenus() {
 			return;
 		}
 		case 13:
-			labCheck(sKeepBoard == kBaseBoards + 1, "Shop puts the bought board in use");
+			labCheck(sKeep[SHOP_THEMES] == kBaseBoards + 1, "Shop puts the bought board in use");
 			botTap(shopButton(kShopTab0 + SHOP_MUSIC));
 			return;
 		case 14: labCheck(sShopTab == SHOP_MUSIC, "Shop music tab opens"); botTap(shopButton(kShopTile0)); return;
-		case 15: labCheck(audio::musicTime() >= 0 || audio::musicPending(), "Shop music preview plays"); labCheck(audio::currentTrack() == kBaseTracks, "Shop preview switches to the track on the tile"); botTap(kBack); return;
-		case 16: labExpect(SCREEN_TITLE, "Shop back arrow cuts its berry and goes back"); botTap(kTitleButtons[1]); return;
+		case 15: labCheck(audio::musicTime() >= 0 || audio::musicPending(), "Shop music preview plays"); labCheck(audio::currentTrack() == kBaseTracks, "Shop preview switches to the track on the tile");
+			labShopScroll();
+			// The last song on sale, the longest kind of file the game loads: give it time to arrive.
+			sShopItem = shopCount(SHOP_MUSIC) - 1;
+			shopTryOn();
+			sBotPhaseFrames = -420;
+			return;
+		case 16: {
+			labCheck(audio::currentTrack() == kTrackCount - 1 && audio::musicTime() >= 0 && !audio::musicPending(), "A full-length Shop song loads and plays");
+			labCheck(strchr(shopItem(SHOP_MUSIC, shopCount(SHOP_MUSIC) - 1).name, '.') == nullptr, "Shop song names carry no file extension");
+			sBotMenuStep = 55;
+			botTap(kBack);
+			return;
+		}
+		case 55: sBotMenuStep = 17; labExpect(SCREEN_TITLE, "Shop back arrow cuts its berry and goes back"); botTap(kTitleButtons[1]); return;
 		case 17: labExpect(SCREEN_OPTIONS, "Options opens"); botTap(optionButtonFor(SID_AUDIO)); return;
 		case 18: labExpect(SCREEN_SECTION, "Audio section opens"); botTapXY((int)((kTrackX0 + kTrackX1) / 2), (int)firstRowY); return;
 		case 19: botTap(kBack); return;
@@ -260,6 +327,22 @@ static void labFinish(Input& in) {
 	static int step = 0, held = 0;
 	if (step == 0) {
 		labCheck(sLabBlastSeen && !sLabBlastMissed, "every bomb hit sets off a blast");
+		labCheck(gfx::fontImageCount() == gfx::fontLetterCount() * 2, "the font table matches the font sheet");
+		{
+			const u32 zen = gSave.best[MODE_ZEN], combo = gSave.best[MODE_COMBO], classic = gSave.best[MODE_CLASSIC];
+			const u8 rules = gSave.scoreRules;
+			gSave.scoreRules = 0;
+			gSave.best[MODE_ZEN] = gSave.best[MODE_COMBO] = gSave.best[MODE_CLASSIC] = 77;
+			saveRetireOldBests();
+			labCheck(gSave.best[MODE_ZEN] == 0 && gSave.best[MODE_COMBO] == 0 && gSave.best[MODE_CLASSIC] == 77, "a 1.0 save loses only its Zen and Combo Rush bests");
+			gSave.best[MODE_ZEN] = 77;
+			saveRetireOldBests();
+			labCheck(gSave.best[MODE_ZEN] == 77, "old bests are cleared only once");
+			gSave.best[MODE_ZEN] = zen;
+			gSave.best[MODE_COMBO] = combo;
+			gSave.best[MODE_CLASSIC] = classic;
+			gSave.scoreRules = rules;
+		}
 		sGame.labProbes(sBlade, labCheck);
 		step = 1;
 #if PORT_3DS

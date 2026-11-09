@@ -120,7 +120,7 @@ u32 dailyBonusPreview(u32 day) {
 static const char* const kNames[kNamedFruit] = {
 	"Apple", "Orange", "Lemon", "Pear", "Plum", "Watermelon", "Kiwi", "Strawberry", "Peach", "Pineapple",
 	"Coconut", "Banana", "Mango", "Cherry", "Dragon Fruit", "Spiky Fruit", "Grapes", "Grape", "Honey Melon",
-	"Jelly Fruit", "Chili",
+	"Jelly Fruit", "Chili", "Banana Bunch", "Pomegranate", "Pinata",
 };
 static constexpr int kGrapes = 16, kGrape = 17;
 static const u32 kMilestones[kJournalLevels] = {10, 50, 250, 1000};

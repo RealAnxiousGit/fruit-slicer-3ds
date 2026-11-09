@@ -4,7 +4,7 @@
 
 // All gameplay objects live in fixed arrays: nothing here allocates after boot,
 // so rapid spawning can't fragment the heap.
-enum ObjKind : u8 { OBJ_FRUIT, OBJ_GOLD, OBJ_BOMB, OBJ_FREEZE, OBJ_DOUBLE, OBJ_FRENZY, OBJ_COIN, OBJ_MAGNET, OBJ_WIDE, OBJ_SHIELD, OBJ_TIME };
+enum ObjKind : u8 { OBJ_FRUIT, OBJ_GOLD, OBJ_BOMB, OBJ_FREEZE, OBJ_DOUBLE, OBJ_FRENZY, OBJ_COIN, OBJ_MAGNET, OBJ_WIDE, OBJ_SHIELD, OBJ_TIME, OBJ_SEED };
 
 struct Obj {
 	float x, y, vx, vy, rot, rotv, radius, age;
@@ -13,6 +13,7 @@ struct Obj {
 	ObjKind kind;
 	u8 fruit;
 	u8 hits;            // slices still needed
+	bool loose;         // broke off a trick fruit: worth a bonus, and never a miss if dropped
 	bool on;
 };
 struct Half {
@@ -133,6 +134,7 @@ struct Game {
 	int finaleHits;
 	bool finaleOn;
 	int timeThrown;     // Arcade: +5 Seconds thrown this run, kept low so a run can't go on for ever
+	int pinataThrown;   // kept low: a pinata is a rare treat
 	int coinsThrown;    // this run, up to a cap so no one mode is by far the best way to earn
 	int coinsCaught;
 	int coinsBonus;     // for a new best, paid when the run ends
@@ -182,8 +184,9 @@ struct Game {
 	void start(Mode m);
 	void commitScore();
 	void finishRun();   // Zen has no end of its own: the pause menu finishes the run
-#ifdef LAB
+#ifdef AUTOTEST
 	void labProbes(Blade& blade, void (*check)(bool, const char*, const char*));
+	void labShowcase();
 #endif
 	bool keepBestSoFar();
 	void update(Blade& blade);
@@ -226,6 +229,7 @@ private:
 	void maybeCoin(float d);
 	void bounceJelly(Obj& o, const Blade& blade);
 	void trickEffect(const Obj& o, float dx, float dy);
+	Obj* spawnPiece(const Obj& from, ObjKind kind, int fruit, float radius);
 	void updateTricks(const Blade& blade);
 	void pickThrow(bool bomb, float delay, float& x, float& vx, float& vy);
 	float clearance(float x, float vx, float vy, float delay, bool bomb) const;

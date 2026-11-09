@@ -175,6 +175,15 @@ static bool readSave(const char* path) {
 	return false;
 }
 
+// 1.1 changed how Zen and Combo Rush score, so bests set under the old rules can't be compared with
+// new ones. They are cleared once; every other score stays.
+void saveRetireOldBests() {
+	if (gSave.scoreRules >= 1) return;
+	gSave.best[MODE_ZEN] = gSave.bestAssisted[MODE_ZEN] = 0;
+	gSave.best[MODE_COMBO] = gSave.bestAssisted[MODE_COMBO] = 0;
+	gSave.scoreRules = 1;
+}
+
 void saveLoad() {
 	memset((void*)&gSave, 0, sizeof gSave);
 	saveDefaults(false, SEC_ALL);
@@ -190,6 +199,7 @@ void saveLoad() {
 			fprintf(stderr, "[save] ignoring invalid save file\n");
 		}
 	}
+	saveRetireOldBests();
 	gSave.board %= kBoardCount;
 	gSave.scene %= kSceneCount;
 	gSave.blade %= kBladeCount;

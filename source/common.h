@@ -50,7 +50,10 @@ extern const ModeInfo kModes[MODE_COUNT];
 const char* modeName(Mode m);  // also names the Practice run
 
 constexpr int kBaseBoards = 6;   // free; the rest are Shop themes
-constexpr int kBoardCount = 11;
+constexpr int kBoardCount = kBaseBoards
+#define SHOP_THEME(...) +1
+#include "shop_items.inc"
+	;
 constexpr int kSceneCount = 3;
 constexpr int kBladeCount = 6;
 
@@ -59,8 +62,15 @@ enum Effects { FX_NONE, FX_LOW, FX_MEDIUM, FX_FULL };
 enum Difficulty { DIFF_EASY, DIFF_NORMAL, DIFF_HARD, DIFF_INSANE, DIFF_COUNT };
 
 static constexpr int kBaseTracks = 8;  // free; the rest come from the Shop
-static constexpr int kTrackCount = 14;
-constexpr int kTrailCount = 7;  // 0 is the plain blade colour, 1.. are Shop trails
+static constexpr int kTrackCount = kBaseTracks
+#define SHOP_TRACK(...) +1
+#include "shop_items.inc"
+	;
+constexpr int kTrailCount = 1  // 0 is the plain blade colour, 1.. are Shop trails
+#define SHOP_TRAIL(...) +1
+#include "shop_items.inc"
+	;
+constexpr int kMaxShopItems = 31;  // one bit each in the save, with bit 0 kept for the free set
 
 // Save data (save.cpp). Sliders hold 0..100.
 // From 1.0 ("FLS5") the file records its own size, so this struct only ever grows:
@@ -122,7 +132,9 @@ struct Settings {
 	u8 beatTrack;     // Beat Slice: 0 picks Picnic Stroll, otherwise the track number + 1
 	u16 modePlays[kMaxModes];  // runs started, for the Stats page's favourite mode
 	u16 dailyFirstDay;  // the day (as dailyDay) the Daily Fruit calendar began, 0 = not yet
-	u8 reserved[38];  // sized so the port block starts on a 4-byte boundary
+	u8 splat;         // Shop splat colour, 0 keeps each fruit's own juice
+	u8 scoreRules;    // which rule changes this save's bests have been through (see saveRetireOldBests)
+	u8 reserved[36];  // sized so the port block starts on a 4-byte boundary
 	// The port's own settings, in a fixed-size block so shared fields never move.
 	union {
 		struct { u8 portRev; PORT_SETTINGS_FIELDS };
@@ -130,11 +142,11 @@ struct Settings {
 	};
 };
 static_assert(MODE_COUNT + 1 <= kMaxModes, "more modes than the save holds");
-static_assert(kTrackCount <= kMaxTracks, "more tracks than the save holds");
 extern Settings gSave;
 enum SaveSection { SEC_ALL = -1, SEC_AUDIO, SEC_VISUALS, SEC_GAMEPLAY, SEC_CONTROLS, SEC_ACCESS, SEC_DISPLAY };
 void saveDefaults(bool keepScores, int section);  // section: SaveSection; coins and Shop items are never reset
 void saveResetScores();
+void saveRetireOldBests();
 void saveLoad();
 void saveWrite();
 

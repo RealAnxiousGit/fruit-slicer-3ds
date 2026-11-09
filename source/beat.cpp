@@ -21,7 +21,7 @@ static constexpr int kDefaultSong = 1;   // Picnic Stroll
 
 void Game::beatStart() {
 	beatSong = gSave.beatTrack ? gSave.beatTrack - 1 : kDefaultSong;
-	if (beatSong < kTrackCount ? !trackUnlocked(beatSong) : beatSong >= audio::trackCount() || !audio::trackHasBeat(beatSong)) beatSong = kDefaultSong;
+	if ((beatSong < kTrackCount && !trackUnlocked(beatSong)) || beatSong >= audio::trackCount() || !audio::trackHasBeat(beatSong)) beatSong = kDefaultSong;
 	beatLen = audio::trackBeat(beatSong);
 	beatFirst = audio::trackFirst(beatSong);
 	beatLoop = 0;

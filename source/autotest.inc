@@ -95,7 +95,15 @@ static void botMenuWalk() {
 		case 18: botMenuPicture("b4_access_more"); botTap(kBack); return;
 		case 19: botTap(kBack); return;
 		case 20: open(SID_AUDIO); return;
-		case 21: botMenuPicture("b5_audio"); sBotDone = true; return;
+		case 21: botMenuPicture("b5_audio"); openShop(); return;
+		case 22: botMenuPicture("c1_shop_themes"); shopSetTab(SHOP_MUSIC); sShopItem = 6; sShopList.pos = sShopList.aim = kShopStep; return;
+		case 23: botMenuPicture("c2_shop_music"); sShopItem = 7; sShopList.pos = sShopList.aim = kShopStep + 30; return;
+		case 24: botMenuPicture("c3_shop_midway"); shopSetTab(SHOP_SPLATS); return;
+		case 25: botMenuPicture("c4_shop_splats"); shopSetTab(SHOP_TRAILS); return;
+		case 26: botMenuPicture("c5_shop_trails"); leaveShop(); return;
+		case 27: sFocus[SCREEN_JOURNAL] = 1; goTo(SCREEN_JOURNAL, 1); return;
+		case 28: botMenuPicture("d1_journal"); sJournalList.pos = sJournalList.aim = kJournalStep; return;
+		case 29: botMenuPicture("d2_journal_scrolled"); sGame.labShowcase(); sScreen = SCREEN_GAME; botMenuPicture("e1_fruit"); return;
 		default: return;
 	}
 }

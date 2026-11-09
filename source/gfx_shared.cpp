@@ -15,11 +15,8 @@ static const BoardTheme kThemes[kBoardCount] = {
 	{{78, 82, 100}, {130, 214, 240}, {52, 54, 68}},
 	{{24, 100, 108}, {255, 214, 110}, {16, 70, 76}},
 	{{66, 46, 118}, {255, 200, 120}, {24, 18, 54}},
-	{{40, 48, 110}, {255, 214, 120}, {16, 20, 54}},
-	{{30, 110, 120}, {255, 206, 80}, {120, 40, 36}},
-	{{96, 92, 88}, {255, 170, 90}, {58, 56, 54}},
-	{{70, 100, 150}, {200, 230, 255}, {36, 52, 86}},
-	{{110, 60, 30}, {255, 170, 60}, {56, 30, 16}},
+#define SHOP_THEME(name, price, line, pr, pg, pb, ar, ag, ab, br, bg, bb) {{pr, pg, pb}, {ar, ag, ab}, {br, bg, bb}},
+#include "shop_items.inc"
 };
 u32 themePlank() {
 	const u8* c = kThemes[gSave.board % kBoardCount].plank;
@@ -49,6 +46,8 @@ static inline int glyphSlot(char c) {
 
 bool gHighContrast = false;
 float gTextBoost = 1;
+
+int fontLetterCount() { return FONT_FILL; }
 
 float textWidth(const char* s, float scale) {
 	float w = 0;

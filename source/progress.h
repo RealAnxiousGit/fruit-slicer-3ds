@@ -22,7 +22,7 @@ int dailyNumber(u32 day);   // which day of the player's calendar that is: 1 on 
 u32 dailyBonusPreview(u32 day);  // what the first run on `day` would pay
 
 // Fruit Journal: one page per fruit kind. The loose grape from a burst bunch counts as grapes.
-constexpr int kNamedFruit = 21;  // every fruit kind the game throws, in its own order
+constexpr int kNamedFruit = 24;  // every fruit kind the game throws, in its own order
 constexpr int kJournalLevels = 4;
 int journalPages();
 int journalFruit(int page);        // fruit kind on that page

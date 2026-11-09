@@ -1,90 +1,74 @@
 #include "shop.h"
 
+#include "render.h"
+
 // Prices rise gently: a run pays about 30-60 coins (5 per coin caught, 1 per 100 points), so the first item is a couple of runs away.
 static const ShopItem kThemes[] = {
-	{"Night Picnic", 120, "Gingham under the fireflies."},
-	{"Beach Towel", 200, "Stripes, sun and a little sand."},
-	{"Kitchen Counter", 300, "Terrazzo by the window."},
-	{"Snowfall", 400, "Fresh snow and tiny footprints."},
-	{"Autumn Leaves", 500, "Planks under falling maple."},
+#define SHOP_THEME(name, price, line, ...) {name, price, line},
+#include "shop_items.inc"
 };
 static const ShopItem kTrails[] = {
-	{"Ink", 80, "A brush stroke that dries as it goes."},
-	{"Flame", 150, "Hot at the tip, embers behind."},
-	{"Rainbow", 250, "Every colour, all at once."},
-	{"Ribbon", 250, "A ribbon that twists as it flies."},
-	{"Sparkle", 350, "Leaves a trail of twinkles."},
-	{"Comet", 450, "A bright head and a long tail."},
+#define SHOP_TRAIL(name, price, line, ...) {name, price, line},
+#include "shop_items.inc"
 };
 static const ShopItem kTracks[] = {
-	// Recorded music by Of Far Different Nature (fardifferent.carrd.co), CC BY 4.0: Loop Box #1 and #4.
-	{"Summer House", 150, "Chill house for easy slicing."},
-	{"8-Bit Hero Quest", 200, "Bouncy chiptune adventure."},
-	{"Friendly Trap", 250, "Trap drums and a sunny hook."},
-	{"Unruly Beat", 300, "A laid-back hip-hop groove."},
-	{"Vengeance Electro", 400, "Big electro drops."},
-	{"Eternal Explorer", 450, "Wide, warm and cinematic."},
+#define SHOP_TRACK(name, price, line, ...) {name, price, line},
+#include "shop_items.inc"
 };
-static_assert(sizeof kThemes / sizeof kThemes[0] == kBoardCount - kBaseBoards, "one theme per Shop board");
-static_assert(sizeof kTrails / sizeof kTrails[0] == kTrailCount - 1, "one item per Shop trail");
-static_assert(sizeof kTracks / sizeof kTracks[0] == kTrackCount - kBaseTracks, "one item per Shop track");
+static const ShopItem kSplats[] = {
+#define SHOP_SPLAT(name, price, line, ...) {name, price, line},
+#include "shop_items.inc"
+};
+static const u32 kSplatColours[] = {
+#define SHOP_SPLAT(name, price, line, colour) colour,
+#include "shop_items.inc"
+};
 
-int shopCount(int tab) {
-	switch (tab) {
-		case SHOP_THEMES: return kBoardCount - kBaseBoards;
-		case SHOP_TRAILS: return kTrailCount - 1;
-		case SHOP_MUSIC: return kTrackCount - kBaseTracks;
-		default: return 0;
-	}
+template <typename T, int N>
+static constexpr int countOf(const T (&)[N]) {
+	return N;
 }
 
-const ShopItem& shopItem(int tab, int i) {
-	if (tab == SHOP_TRAILS) return kTrails[i];
-	if (tab == SHOP_MUSIC) return kTracks[i];
-	return kThemes[i];
-}
+struct ShopTabInfo {
+	const char* name;
+	const ShopItem* items;
+	int count;
+	u32* owned;       // bit 0 is the free set; item i is bit i + 1
+	u8* slot;         // the saved choice this tab sets
+	int firstValue;   // what that choice holds for item 0
+	bool canTakeOff;  // picking the item in use again leaves nothing in use
+};
 
-const char* shopTabName(int tab) {
-	static const char* const k[SHOP_TABS] = {"Themes", "Trails", "Music"};
-	return tab >= 0 && tab < SHOP_TABS ? k[tab] : "";
-}
+static const ShopTabInfo kTabs[SHOP_TABS] = {
+	{"Themes", kThemes, countOf(kThemes), &gSave.ownedThemes, &gSave.board, kBaseBoards, false},
+	{"Trails", kTrails, countOf(kTrails), &gSave.ownedTrails, &gSave.trail, 1, true},
+	{"Music", kTracks, countOf(kTracks), &gSave.ownedTracks, &gSave.menuTrack, kBaseTracks + 1, false},
+	{"Splats", kSplats, countOf(kSplats), &gSave.ownedExtras, &gSave.splat, 1, true},
+};
+static_assert(countOf(kThemes) <= kMaxShopItems && countOf(kTrails) <= kMaxShopItems && countOf(kTracks) <= kMaxShopItems && countOf(kSplats) <= kMaxShopItems, "a save has one bit per item on a tab");
 
-// Bit 0 of each mask is the free set; Shop item i is bit i + 1.
-static u32* maskFor(int tab) {
-	if (tab == SHOP_TRAILS) return &gSave.ownedTrails;
-	if (tab == SHOP_MUSIC) return &gSave.ownedTracks;
-	return &gSave.ownedThemes;
-}
-
-bool shopOwned(int tab, int i) { return (*maskFor(tab) >> (i + 1)) & 1; }
-
-bool shopEquipped(int tab, int i) {
-	switch (tab) {
-		case SHOP_THEMES: return gSave.board == kBaseBoards + i;
-		case SHOP_TRAILS: return gSave.trail == i + 1;
-		case SHOP_MUSIC: return gSave.menuTrack == kBaseTracks + i + 1;
-		default: return false;
-	}
-}
+int shopCount(int tab) { return tab >= 0 && tab < SHOP_TABS ? kTabs[tab].count : 0; }
+const ShopItem& shopItem(int tab, int i) { return kTabs[tab].items[i]; }
+const char* shopTabName(int tab) { return tab >= 0 && tab < SHOP_TABS ? kTabs[tab].name : ""; }
+bool shopOwned(int tab, int i) { return (*kTabs[tab].owned >> (i + 1)) & 1; }
+u8* shopSlot(int tab) { return kTabs[tab].slot; }
+int shopValue(int tab, int i) { return kTabs[tab].firstValue + i; }
+bool shopCanTakeOff(int tab) { return kTabs[tab].canTakeOff; }
 
 BuyResult shopBuy(int tab, int i) {
 	if (shopOwned(tab, i)) return BUY_OWNED;
 	u32 price = shopItem(tab, i).price;
 	if (gSave.coins < price) return BUY_SHORT;
 	gSave.coins -= price;
-	*maskFor(tab) |= 1u << (i + 1);
+	*kTabs[tab].owned |= 1u << (i + 1);
 	return BUY_DONE;
 }
 
 void shopEquip(int tab, int i) {
 	if (!shopOwned(tab, i)) return;
-	switch (tab) {
-		case SHOP_THEMES: gSave.board = (u8)(kBaseBoards + i); break;
-		// Picking the trail you already wear takes it off again.
-		case SHOP_TRAILS: gSave.trail = gSave.trail == i + 1 ? 0 : (u8)(i + 1); break;
-		case SHOP_MUSIC: gSave.menuTrack = (u8)(kBaseTracks + i + 1); break;
-		default: break;
-	}
+	const ShopTabInfo& t = kTabs[tab];
+	const u8 value = (u8)shopValue(tab, i);
+	*t.slot = t.canTakeOff && *t.slot == value ? 0 : value;
 }
 
 bool boardUnlocked(int board) { return board < kBaseBoards || (board < kBoardCount && shopOwned(SHOP_THEMES, board - kBaseBoards)); }
@@ -96,4 +80,12 @@ void shopCheckSave() {
 	if (!trailUnlocked(gSave.trail)) gSave.trail = 0;
 	if (gSave.menuTrack > 0 && !trackUnlocked(gSave.menuTrack - 1)) gSave.menuTrack = 0;
 	if (gSave.gameTrack > 0 && !trackUnlocked(gSave.gameTrack - 1)) gSave.gameTrack = 0;
+	if (gSave.splat > countOf(kSplats) || (gSave.splat > 0 && !shopOwned(SHOP_SPLATS, gSave.splat - 1))) gSave.splat = 0;
 }
+
+u32 shopSplatPreview(int item) {
+	const u32 c = kSplatColours[item % countOf(kSplats)];
+	return rgba((u8)(c >> 16), (u8)(c >> 8), (u8)c);
+}
+
+u32 shopSplatColour(u32 juice) { return gSave.splat == 0 ? juice : shopSplatPreview(gSave.splat - 1); }

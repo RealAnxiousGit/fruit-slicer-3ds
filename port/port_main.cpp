@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <sys/stat.h>
 
+#include "adpcm.h"
 #include "app.h"
 #include "common.h"
 #include "port_api.h"
@@ -14,7 +15,10 @@ struct AssetFile {
 	bool streaming;
 	u8* out;
 	size_t want;
-	volatile size_t done;
+	s16* unpackTo;         // set for a packed song, which counts as done only once all of it is unpacked
+	size_t unpackedBytes;
+	volatile size_t have;  // bytes read from the file
+	volatile size_t done;  // bytes ready for the game
 	volatile bool failed, stop;
 };
 static AssetFile sAssets[8];
@@ -33,27 +37,52 @@ AssetFile* assetOpen(const char* path) {
 
 static constexpr size_t kStreamChunk = 16 * 1024;  // small, so stopping a stream never waits long
 
-static void streamMain(void* arg) {
-	AssetFile* a = (AssetFile*)arg;
-	while (!a->stop && a->done < a->want) {
-		size_t n = a->want - a->done;
-		if (n > kStreamChunk) n = kStreamChunk;
-		size_t got = fread(a->out + a->done, 1, n, a->f);
-		__sync_synchronize();  // the bytes are in before the count says so
-		a->done = a->done + got;
-		if (got != n) {
-			a->failed = true;
-			break;
-		}
+static constexpr u32 kUnpackChunk = 8192;  // samples between checks for a stream being stopped
+
+// The packed bytes have all arrived at the end of the buffer: unpack them over itself, front to back.
+static void streamUnpack(AssetFile* a) {
+	const u32 frames = (u32)(a->unpackedBytes / 2);
+	AdpcmState state = adpcmStart(a->out);
+	const u8* nibbles = a->out + kAdpcmHeader;
+	for (u32 i = 0; i < frames && !a->stop; i += kUnpackChunk) {
+		const u32 n = frames - i < kUnpackChunk ? frames - i : kUnpackChunk;
+		adpcmUnpack(state, nibbles, i, n, a->unpackTo);
 	}
+	if (a->stop) return;
+	__sync_synchronize();
+	a->done = a->unpackedBytes;
 }
 
-void streamStart(AssetFile* a, void* out, size_t bytes) {
+static void streamMain(void* arg) {
+	AssetFile* a = (AssetFile*)arg;
+	while (!a->stop && a->have < a->want) {
+		size_t n = a->want - a->have;
+		if (n > kStreamChunk) n = kStreamChunk;
+		size_t got = fread(a->out + a->have, 1, n, a->f);
+		__sync_synchronize();  // the bytes are in before the count says so
+		a->have = a->have + got;
+		if (!a->unpackTo) a->done = a->have;
+		if (got != n) {
+			a->failed = true;
+			return;
+		}
+	}
+	if (a->unpackTo && a->have == a->want) streamUnpack(a);
+}
+
+void streamStart(AssetFile* a, void* out, size_t bytes, size_t packedBytes) {
 	if (a->streaming) return;
 	a->streaming = true;
 	a->out = (u8*)out;
 	a->want = bytes;
-	a->done = 0;
+	a->unpackTo = nullptr;
+	if (packedBytes) {
+		a->unpackTo = (s16*)out;
+		a->unpackedBytes = bytes;
+		a->out = (u8*)out + bytes + kAdpcmRoom - packedBytes;
+		a->want = packedBytes;
+	}
+	a->have = a->done = 0;
 	a->failed = a->stop = false;
 	// Just below the game's own priority, on the game's core: it only runs while the game is waiting.
 	s32 prio = 0x30;
@@ -63,13 +92,15 @@ void streamStart(AssetFile* a, void* out, size_t bytes) {
 
 long streamDone(AssetFile* a) {
 	if (!a->streaming) return 0;
-	if (!a->reader && !a->failed && a->done < a->want) {
+	if (!a->reader && !a->failed && a->have < a->want) {
 		// No thread to spare: read a piece a frame, as before.
-		size_t n = a->want - a->done;
+		size_t n = a->want - a->have;
 		if (n > 24 * 1024) n = 24 * 1024;
-		size_t got = fread(a->out + a->done, 1, n, a->f);
-		a->done = a->done + got;
+		size_t got = fread(a->out + a->have, 1, n, a->f);
+		a->have = a->have + got;
 		if (got != n) a->failed = true;
+		else if (!a->unpackTo) a->done = a->have;
+		else if (a->have == a->want) streamUnpack(a);
 	}
 	return a->failed ? -1 : (long)a->done;
 }

@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "adpcm.h"
 #include "audio_port.h"
 #include "port_api.h"
 #include "shop.h"
@@ -142,11 +143,17 @@ static float makeRoom(Sfx s, float gain, float seconds, float minShare) {
 }
 
 static const char* const kTrackFiles[kTrackCount] = {
-	"music_menu", "music_play", "music_meadow", "music_lantern", "music_zen", "music_moss", "music_bamboo", "music_clouds", "music_summer", "music_hero", "music_trap", "music_unruly", "music_vengeance", "music_explorer",
+	"music_menu", "music_play", "music_meadow", "music_lantern", "music_zen", "music_moss", "music_bamboo", "music_clouds",
+#define SHOP_TRACK(name, price, line, file, bpm) file,
+#include "shop_items.inc"
 };
 // Beats per minute. The made tracks are composed at these; the recorded ones were measured from the
 // files and loop on whole bars. Every track starts on the first beat of a bar.
-static constexpr float kTrackBpm[kTrackCount] = {62, 84, 56, 68, 50, 44, 48, 40, 128, 130, 70, 82, 128, 130};
+static constexpr float kTrackBpm[kTrackCount] = {
+	62, 84, 56, 68, 50, 44, 48, 40,
+#define SHOP_TRACK(name, price, line, file, bpm) bpm,
+#include "shop_items.inc"
+};
 // What each screen plays on Auto: menus, games, and Zen.
 static constexpr int kAutoTrack[MUSIC_COUNT] = {0, 1, 4};
 static constexpr u32 kReadPerFrame = 24 * 1024;  // whole tracks arrive in under a second
@@ -230,6 +237,9 @@ static int resolveTrack(int context, bool* autoPick) {
 
 static float level(u8 slider) { return slider / 100.0f; }
 
+static constexpr u32 kPackedClip = 0x32415346;  // "FSA2": a 3DS song, packed with IMA ADPCM (adpcm.h)
+static u32 sLoadPacked;                         // file bytes of a packed song being read, 0 for plain samples
+
 static port::AssetFile* openClip(const char* name, u32 head[3]) {
 	char path[64];
 	snprintf(path, sizeof path, "audio/%s.pcm", name);
@@ -240,7 +250,7 @@ static port::AssetFile* openClip(const char* name, u32 head[3]) {
 	}
 	// A clip with a bad header is skipped on its own, so one broken file can't stall or flood the mix:
 	// a sample rate of 0 would never finish, and a huge length would eat the memory every sound shares.
-	if (port::assetRead(head, 12, f) != 12 || head[0] != 0x31415346 ||  // "FSA1"
+	if (port::assetRead(head, 12, f) != 12 || (head[0] != 0x31415346 && head[0] != kPackedClip) ||  // "FSA1"
 	    head[1] == 0 || head[1] > 48000u * 600 || head[2] < 8000 || head[2] > 96000) {
 		fprintf(stderr, "[audio] skipping %s: bad header\n", path);
 		port::assetClose(f);
@@ -425,7 +435,7 @@ void update(float dt) {
 		// A cartridge read can take longer than a whole frame, so the 3DS reads music on a background thread
 		// that runs while the game waits for the screen, and the track starts playing as soon as enough is in.
 		const u32 total = sMusicClip.samples * frameBytes;
-		port::streamStart(sLoadFile, sMusicClip.pcm, total);
+		port::streamStart(sLoadFile, sMusicClip.pcm, total, sLoadPacked);
 		const long done = port::streamDone(sLoadFile);
 		if (done < 0) {
 			port::assetClose(sLoadFile);
@@ -639,7 +649,8 @@ static void startTrack(int track, bool autoPick = false, int context = MUSIC_NON
 	sMusicClip.samples = head[1];
 	sMusicClip.rate = head[2];
 	sMusicClip.channels = 1;
-	sMusicClip.pcm = audioport::alloc(sMusicClip.samples * 2);
+	sLoadPacked = head[0] == kPackedClip ? adpcmFileBytes(sMusicClip.samples) : 0;
+	sMusicClip.pcm = audioport::alloc(sMusicClip.samples * 2 + (sLoadPacked ? kAdpcmRoom : 0));
 	if (!sMusicClip.pcm) {
 		port::assetClose(f);
 		return;
@@ -710,7 +721,7 @@ float trackBeat(int track) {
 }
 
 bool trackHasBeat(int track) {
-	if (track >= 0 && track < kTrackCount) return true;
+	if (track >= 0 && track < kTrackCount) return kTrackBpm[track] > 0;
 #if PORT_CUSTOM_MUSIC
 	float bpm, first;
 	return track >= kTrackCount && custom::beat(track - kTrackCount, &bpm, &first);

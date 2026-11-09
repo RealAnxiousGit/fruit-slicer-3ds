@@ -96,17 +96,31 @@ static u32 mixCol(u32 a, u32 b, float t) {
 	return rgba(ch(0), ch(8), ch(16));
 }
 
-// The Shop trails (gSave.trail): 1 Ink, 2 Flame, 3 Rainbow, 4 Ribbon, 5 Sparkle, 6 Comet.
+// The shapes a Shop trail can take. Each trail in shop_items.inc picks one and its two colours.
 enum { TR_PLAIN, TR_INK, TR_FLAME, TR_RAINBOW, TR_RIBBON, TR_SPARKLE, TR_COMET };
+struct TrailLook {
+	u8 shape;
+	u32 a, b;  // 0xRRGGBB
+};
+static const TrailLook kTrailLooks[kTrailCount] = {
+	{TR_PLAIN, 0, 0},
+#define SHOP_TRAIL(name, price, line, shape, a, b) {shape, a, b},
+#include "shop_items.inc"
+};
+static int trailShape(int trail) { return trail >= 0 && trail < kTrailCount ? kTrailLooks[trail].shape : TR_PLAIN; }
+static u32 hexCol(u32 c) { return rgba((u8)(c >> 16), (u8)(c >> 8), (u8)c); }
 
 u32 trailSwatch(int trail, float t) {
-	switch (trail) {
-		case TR_INK: return rgba(34, 32, 52);
-		case TR_FLAME: return mixCol(rgba(220, 40, 20), rgba(255, 220, 70), t);
+	if (trail < 0 || trail >= kTrailCount) return rgba(255, 140, 58);
+	const TrailLook& look = kTrailLooks[trail];
+	const u32 a = hexCol(look.a), b = hexCol(look.b);
+	switch (look.shape) {
+		case TR_INK:
+		case TR_SPARKLE: return a;
+		case TR_FLAME: return mixCol(a, b, t);
 		case TR_RAINBOW: return hueColor(t);
-		case TR_RIBBON: return ((int)(t * 6)) & 1 ? rgba(255, 240, 246) : rgba(255, 110, 170);
-		case TR_SPARKLE: return rgba(255, 236, 150);
-		case TR_COMET: return mixCol(rgba(90, 150, 255), rgba(225, 245, 255), t * t);
+		case TR_RIBBON: return ((int)(t * 6)) & 1 ? a : b;
+		case TR_COMET: return mixCol(a, b, t * t);
 		default: return rgba(255, 140, 58);
 	}
 }
@@ -118,7 +132,7 @@ static float trailLife() { return gSave.trail > 0 && gSave.trail < kTrailCount ?
 
 void Blade::draw() const {
 	if (count < 2) return;
-	const int style = gBladeDull > 0 || gSave.trail >= kTrailCount ? TR_PLAIN : gSave.trail;
+	const int style = gBladeDull > 0 ? TR_PLAIN : trailShape(gSave.trail);
 	if (style == TR_PLAIN) {
 		drawStroke(TR_PLAIN, kTrailLife, 1.0f, true);
 		return;
@@ -165,12 +179,12 @@ void Blade::drawStroke(int style, float life, float width, bool tip) const {
 		u32 color = rainbow ? hueColor(t * 0.8f + (float)strokeId * 0.13f) : baseColor;
 		u32 coreColor = WHITE;
 		switch (style) {
-			case TR_INK: color = trailSwatch(TR_INK, t); coreColor = rgba(80, 76, 120); break;
-			case TR_FLAME: color = trailSwatch(TR_FLAME, t); coreColor = rgba(255, 246, 200); break;
+			case TR_INK: color = trailSwatch(gSave.trail, t); coreColor = rgba(80, 76, 120); break;
+			case TR_FLAME: color = trailSwatch(gSave.trail, t); coreColor = rgba(255, 246, 200); break;
 			case TR_RAINBOW: color = hueColor(t * 1.4f + (float)strokeId * 0.13f); break;
-			case TR_RIBBON: color = trailSwatch(TR_RIBBON, t + strokeId * 0.05f); coreColor = color; break;
-			case TR_SPARKLE: color = trailSwatch(TR_SPARKLE, t); break;
-			case TR_COMET: color = trailSwatch(TR_COMET, t); break;
+			case TR_RIBBON: color = trailSwatch(gSave.trail, t + strokeId * 0.05f); coreColor = color; break;
+			case TR_SPARKLE: color = trailSwatch(gSave.trail, t); break;
+			case TR_COMET: color = trailSwatch(gSave.trail, t); break;
 			default: break;
 		}
 		u32 col = withAlpha(color, fade * (style == TR_INK ? 0.92f : 0.75f));

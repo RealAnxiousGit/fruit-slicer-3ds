@@ -486,8 +486,9 @@ def build_audio():
     s = SFX_RATE
     # Older clip names that no longer exist are removed so they don't bloat the ROM.
     folder = os.path.dirname(path("romfs", "audio", "x"))
-    # The Shop's recorded tracks (licensed, see the credits) are not generated, so they stay.
-    recorded = ("music_summer", "music_hero", "music_trap", "music_unruly", "music_vengeance", "music_explorer")
+    # The Shop's recorded tracks (see the credits) are not generated, so they stay.
+    recorded = ("music_summer", "music_hero", "music_trap", "music_unruly", "music_vengeance", "music_explorer",
+                "music_ahead", "music_spare", "music_fright", "music_worthless", "music_lies", "music_liesvip", "music_staywithme")
     for f in os.listdir(folder):
         if os.path.splitext(f)[0] in recorded:
             continue

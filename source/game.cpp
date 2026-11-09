@@ -9,6 +9,7 @@
 #include "model3d.h"
 #include "progress.h"
 #include "render.h"
+#include "shop.h"
 #include "sprites.h"
 #include "boom.h"
 
@@ -62,13 +63,20 @@ static const FruitDef kFruit[] = {
 	{fruit_honey_idx, fruit_honey_l_idx, fruit_honey_r_idx, 0xFF28B4FAu, CUT_MELON, m3d::MESH_HONEY},
 	{fruit_jelly_idx, fruit_jelly_l_idx, fruit_jelly_r_idx, 0xFFC88CFFu, CUT_SOFT, m3d::MESH_JELLY},
 	{fruit_chili_idx, fruit_chili_l_idx, fruit_chili_r_idx, 0xFF1E3CF0u, CUT_CRISP, m3d::MESH_CHILI},
+	// 1.1: more trick fruit.
+	{fruit_bunch_idx, fruit_bunch_l_idx, fruit_bunch_r_idx, 0xFF8AF0FFu, CUT_SOFT, m3d::MESH_BUNCH},
+	{fruit_pomegranate_idx, fruit_pomegranate_l_idx, fruit_pomegranate_r_idx, 0xFF4A28D2u, CUT_JUICY, m3d::MESH_POMEGRANATE},
+	{fruit_pinata_idx, fruit_pinata_l_idx, fruit_pinata_r_idx, 0xFF8A42EEu, CUT_SHELL, m3d::MESH_PINATA},
 };
 static constexpr int kFruitKinds = sizeof(kFruit) / sizeof(kFruit[0]);
 static_assert(kFruitKinds <= kMaxFruitKinds, "the Fruit Journal needs a count for every fruit");
 static_assert(kFruitKinds == progress::kNamedFruit, "every fruit needs a name in progress.cpp");
 static constexpr int kCoconut = 10;
 static constexpr int kFirstNew = 11, kNewNormal = 4;  // banana to dragon fruit
-enum { kSpiky = 15, kGrapes, kGrape, kHoney, kJelly, kChili };
+static constexpr int kBanana = 11, kDragon = 14;
+enum { kSpiky = 15, kGrapes, kGrape, kHoney, kJelly, kChili, kBunch, kPomegranate, kPinata };
+static constexpr int kPinataHits = 5, kPinataMax = 2, kBunchPieces = 3, kPinataCoins = 3;
+static constexpr float kPinataFrom = 45.0f;  // seconds into a run before one can appear
 
 // Trick fruit start after the first half minute, about one fruit in twenty. Zen never throws the spiky one.
 // Arcade's power-ups, picked evenly.
@@ -80,9 +88,9 @@ static constexpr float kArcadePowerChance = 0.15f;
 static constexpr int kArcadeMaxTime = 3;              // +5 Seconds, so the 60-second clock stays meaningful
 static constexpr float kComboRushStart = 0.4f;        // Combo Rush's meter when the run starts
 static int pickTrick(Mode mode, Rng& rng) {
-	static const int kTricks[] = {kSpiky, kGrapes, kHoney, kJelly, kChili};
-	int n = mode == MODE_ZEN ? 4 : 5;
-	return kTricks[(mode == MODE_ZEN ? 1 : 0) + rng.below(n)];
+	static const int kTricks[] = {kSpiky, kGrapes, kHoney, kJelly, kChili, kBunch, kPomegranate, kPinata};
+	const int n = (int)(sizeof kTricks / sizeof kTricks[0]);
+	return mode == MODE_ZEN ? kTricks[1 + rng.below(n - 1)] : kTricks[rng.below(n)];
 }
 
 // Any everyday fruit but the coconut, which has its own odds.
@@ -328,7 +336,7 @@ void Game::launch(const Pending& p) {
 			o.rotv = (p.vx >= 0 ? 1.0f : -1.0f) * gRng.range(6.5f, 8.5f);  // end over end, as a flipped coin
 			audio::play(SFX_COIN, 0.75f, fieldPan(p.x), gRng.range(0.96f, 1.06f));
 		}
-		o.hits = (p.kind == OBJ_FRUIT && p.fruit == kCoconut) ? 2 : 1;
+		o.hits = p.kind != OBJ_FRUIT ? 1 : (p.fruit == kCoconut ? 2 : (p.fruit == kPinata ? kPinataHits : 1));
 		audio::play(SFX_THROW, 0.3f, fieldPan(p.x), gRng.range(0.9f, 1.15f));
 		if (p.kind == OBJ_BOMB) showCaption("Bomb!");
 #ifdef AUTOTEST
@@ -544,7 +552,11 @@ void Game::spawnWave() {
 			float x = 160, vx = 0, vy = -300;
 			pickThrow(isBomb, stagger * i, x, vx, vy);
 			int fruit = gSpawn.unit() < 0.09f ? kCoconut : normalFruit(gSpawn);
-			if (kinds[i] == OBJ_FRUIT && t > (mode == MODE_ARCADE ? 8.0f : 30.0f) && gSpawn.unit() < (mode == MODE_ARCADE ? kArcadeTrickChance : kTrickChance)) fruit = pickTrick(mode, gSpawn);
+			if (kinds[i] == OBJ_FRUIT && t > (mode == MODE_ARCADE ? 8.0f : 30.0f) && gSpawn.unit() < (mode == MODE_ARCADE ? kArcadeTrickChance : kTrickChance)) {
+				fruit = pickTrick(mode, gSpawn);
+				if (fruit == kPinata && (t < kPinataFrom || pinataThrown >= kPinataMax)) fruit = kBunch;
+				else if (fruit == kPinata) pinataThrown++;
+			}
 			queue(stagger * i, x, vx, vy, kinds[i], fruit);
 		}
 	}
@@ -940,6 +952,27 @@ void Game::addHalves(const Obj& o, const FruitDef& def, const Blade& blade, floa
 			m3d::cutRequest(slots[s], def.mesh, mx * side, my * side, mz * side, offset * side);
 		}
 	}
+	if (o.kind == OBJ_FRUIT && o.fruit == kDragon && !sLightFrenzy) {
+		// A dragon fruit falls in three: a third, ready-made piece flies on along the stroke.
+		Half& h = halves[halfCursor];
+		halfCursor = (halfCursor + 1) % kMaxHalves;
+		if (h.on) m3d::cutRelease(h.cut);
+		h = {};
+		h.on = true;
+		h.x = o.x;
+		h.y = o.y;
+		h.vx = o.vx * 0.9f + dx * 120;
+		h.vy = o.vy * 0.8f + dy * 120 - 40;
+		h.rot = cutRot + 1.57f;
+		h.rotv = gRng.range(-5.0f, 5.0f);
+		h.sprite = (short)def.right;
+		h.mesh = (u8)def.mesh;
+		h.part = m3d::PART_RIGHT;
+		h.axisX = dx;
+		h.axisY = dy;
+		h.tiltv = roll * 2.0f;
+		h.cut = -1;
+	}
 }
 
 void Game::sliceFruit(Obj& o, const Blade& blade) {
@@ -953,7 +986,14 @@ void Game::sliceFruit(Obj& o, const Blade& blade) {
 	dy /= len;
 
 	if (o.hits > 1) {
-		// Tough shell: the first hit only cracks it and knocks it back up.
+		// Tough shell: the first hit only cracks it and knocks it back up. A pinata pays out candy each time.
+		if (o.kind == OBJ_FRUIT && o.fruit == kPinata) {
+			if (mode != MODE_COMBO) {
+				award(2);
+				addPopup("+2", o.x, o.y - 18, rgba(255, 170, 220), 0.8f);
+			}
+			emitSparks(o.x, o.y, hueColor(gRng.unit()), juiceCount(12), 190);
+		}
 		o.hits--;
 		o.hitCooldown = 0.2f;
 		o.vy -= 70;
@@ -970,7 +1010,7 @@ void Game::sliceFruit(Obj& o, const Blade& blade) {
 	if (gSave.effects != FX_NONE) {
 		Splat& sp = splats[splatCursor];
 		splatCursor = (splatCursor + 1) % kMaxSplats;
-		sp = {o.x, o.y, gRng.range(0, 6.28f), gRng.range(0.7f, 1.05f), gSave.effects == FX_LOW ? 1.6f : 3.2f, def.juice, (u8)gRng.below(3), true};
+		sp = {o.x, o.y, gRng.range(0, 6.28f), gRng.range(0.7f, 1.05f), gSave.effects == FX_LOW ? 1.6f : 3.2f, shopSplatColour(def.juice), (u8)gRng.below(3), true};
 	}
 	emitJuice(o.x, o.y, def.juice, juiceCount(def.cut == CUT_MELON ? 22 : 14), dx, dy);
 
@@ -997,7 +1037,7 @@ void Game::sliceFruit(Obj& o, const Blade& blade) {
 			return;
 		}
 	}
-	int pts = o.kind == OBJ_GOLD ? 5 : (def.cut == CUT_SHELL ? 3 : (o.kind == OBJ_FRUIT && o.fruit == kJelly ? 2 : 1));
+	int pts = o.kind == OBJ_GOLD ? 5 : (def.cut == CUT_SHELL ? 3 : (o.kind == OBJ_FRUIT && (o.fruit == kJelly || o.loose) ? 2 : 1));
 	if (mode == MODE_BEAT && phase == PHASE_PLAY && !beatSlice(o)) {
 		// Off the beat: the fruit is cut, but scores nothing and ends the combo.
 		sliced++;
@@ -1111,6 +1151,23 @@ void Game::sliceObj(Obj& o, const Blade& blade) {
 			addRing(o.x, o.y, rgba(255, 220, 110), 1.6f, 0.28f);
 			o.on = false;
 			return;
+		case OBJ_SEED: {
+			// Worth a point, and every seed caught in the swipe that cut the pomegranate adds to its combo.
+			const int pts = mode == MODE_COMBO ? comboRushPoints(chain + 1) : 1;
+			if (pts > 0) award(pts);
+			if (meterLive()) chain++;
+			if (chain > bestCombo) bestCombo = chain;
+			if (comboStroke != blade.strokeId && comboCount > 0) finishCombo();
+			comboStroke = blade.strokeId;
+			comboCount++;
+			comboTimer = 0.32f;
+			comboX = o.x;
+			comboY = o.y;
+			audio::play(SFX_PLINK, 0.5f, pan, gRng.range(1.2f, 1.5f));
+			emitSparks(o.x, o.y, rgba(236, 60, 90), juiceCount(5), 110);
+			o.on = false;
+			return;
+		}
 		case OBJ_FREEZE:
 			freezeT = 6;
 			audio::play(SFX_FREEZE, 1.0f, pan);
@@ -1169,9 +1226,73 @@ void Game::bounceJelly(Obj& o, const Blade& blade) {
 	showCaption("Boing! Swipe faster.");
 }
 
+// A loose piece bursting out of a trick fruit, or null when the air is already full.
+Obj* Game::spawnPiece(const Obj& from, ObjKind kind, int fruit, float radius) {
+	int inAir = 0;
+	for (const auto& q : objs) inAir += q.on;
+	if (inAir >= (sLightFrenzy ? kLightMaxObjs : kMaxObjs)) return nullptr;
+	for (auto& g : objs) {
+		if (g.on) continue;
+		g = {};
+		g.on = true;
+		g.kind = kind;
+		g.fruit = (u8)fruit;
+		g.x = from.x;
+		g.y = from.y;
+		g.rot = gRng.range(0, 6.28f);
+		g.rotv = gRng.range(-5, 5);
+		g.ry = gRng.range(0, 6.28f);
+		g.ryv = gRng.range(-3, 3);
+		g.radius = radius;
+		g.hits = 1;
+		g.hitCooldown = 0.12f;
+		g.loose = true;
+		return &g;
+	}
+	return nullptr;
+}
+
 void Game::trickEffect(const Obj& o, float dx, float dy) {
 	const float pan = fieldPan(o.x);
 	switch (o.fruit) {
+		case kBunch:
+			// It breaks into single bananas, each worth a bonus.
+			for (int i = 0; i < kBunchPieces; i++) {
+				Obj* b = spawnPiece(o, OBJ_FRUIT, kBanana, 21);
+				if (!b) break;
+				b->vx = (i - 1) * gRng.range(90, 130) + dy * 40;
+				b->vy = gRng.range(-290, -210) - dx * 20;
+			}
+			addPopup("BUNCH!", o.x, o.y - 20, rgba(255, 230, 120), 0.6f);
+			break;
+		case kPomegranate: {
+			const int seeds = sLightFrenzy ? 3 : 5;
+			for (int i = 0; i < seeds; i++) {
+				Obj* s = spawnPiece(o, OBJ_SEED, 0, 11);
+				if (!s) break;
+				s->hitCooldown = 0.03f;
+				const float a = i * 6.2832f / seeds + gRng.range(-0.3f, 0.3f);
+				s->vx = o.vx * 0.3f + dx * 150 + cosf(a) * 90;
+				s->vy = o.vy * 0.3f + dy * 150 + sinf(a) * 90 - 120;
+			}
+			addPopup("SEEDS!", o.x, o.y - 20, rgba(255, 130, 150), 0.6f);
+			showCaption("Seeds! Catch them in one swipe.");
+			break;
+		}
+		case kPinata:
+			for (int i = 0; i < kPinataCoins; i++) {
+				Obj* c = spawnPiece(o, OBJ_COIN, 0, 18);
+				if (!c) break;
+				c->vx = (i - 1) * gRng.range(70, 120);
+				c->vy = gRng.range(-300, -230);
+				c->rotv = (c->vx >= 0 ? 1.0f : -1.0f) * gRng.range(6.5f, 8.5f);
+				c->loose = false;
+			}
+			audio::play(SFX_GOLD, 0.9f, pan);
+			addRing(o.x, o.y, rgba(255, 170, 220), 2.0f, 0.3f);
+			setCallout("PINATA!", rgba(255, 170, 220));
+			showCaption("Pinata broken! Grab the coins.");
+			break;
 		case kSpiky:
 			stunT = gSave.sliceAssist ? kStunTime * 0.5f : kStunTime;
 			PORT_VIBRATE(0.5f, 140);
@@ -1183,25 +1304,13 @@ void Game::trickEffect(const Obj& o, float dx, float dy) {
 		case kGrapes: {
 			// The bunch bursts into loose grapes, each one worth a point.
 			int n = 3 + gRng.below(2);
-			for (auto& g : objs) {
-				if (g.on) continue;
-				g = {};
-				g.on = true;
-				g.kind = OBJ_FRUIT;
-				g.fruit = kGrape;
-				g.x = o.x;
-				g.y = o.y;
-				float side = n % 2 ? 1.0f : -1.0f;
-				g.vx = side * gRng.range(50, 150) + dy * 40;
-				g.vy = gRng.range(-280, -180) - dx * 20;
-				g.rot = gRng.range(0, 6.28f);
-				g.rotv = gRng.range(-5, 5);
-				g.ry = gRng.range(0, 6.28f);
-				g.ryv = gRng.range(-3, 3);
-				g.radius = 13;
-				g.hits = 1;
-				g.hitCooldown = 0.12f;
-				if (--n == 0) break;
+			for (; n > 0; n--) {
+				Obj* g = spawnPiece(o, OBJ_FRUIT, kGrape, 13);
+				if (!g) break;
+				g->loose = false;
+				const float side = n % 2 ? 1.0f : -1.0f;
+				g->vx = side * gRng.range(50, 150) + dy * 40;
+				g->vy = gRng.range(-280, -180) - dx * 20;
 			}
 			addPopup("BURST!", o.x, o.y - 20, rgba(200, 150, 255), 0.6f);
 			break;
@@ -1488,8 +1597,8 @@ void Game::updateObjects(float dt) {
 		if (o.hitCooldown > 0) o.hitCooldown -= dt;
 		if (o.vy > 0 && o.y > kKillY) {
 			o.on = false;
-			// A dropped spiky fruit or loose grape is never a miss.
-			bool counts = o.kind == OBJ_GOLD || (o.kind == OBJ_FRUIT && o.fruit != kSpiky && o.fruit != kGrape);
+			// A dropped spiky fruit, pinata or loose piece is never a miss.
+			bool counts = o.kind == OBJ_GOLD || (o.kind == OBJ_FRUIT && o.fruit != kSpiky && o.fruit != kGrape && o.fruit != kPinata && !o.loose);
 			if (counts && phase == PHASE_PLAY) addStrike(o.x);
 		}
 	}
@@ -1818,6 +1927,9 @@ void Game::drawMarks(bool top, float ox, float oy) const {
 	}
 }
 
+static constexpr float kSeedSize = 1.5f;
+static const u32 kSeedColour = rgba(214, 30, 64);
+
 static int powerSprite(ObjKind k) {
 	switch (k) {
 		case OBJ_FREEZE: return sprites_pw_freeze_idx;
@@ -1901,6 +2013,9 @@ void Game::drawField(const Blade& blade) const {
 			case OBJ_COIN:
 				if (!solid) drawCoin(o, 0, 0);
 				break;
+			case OBJ_SEED:
+				gfx::sprite(SHEET_SPRITES, sprites_drop_idx, o.x, o.y, kSeedSize, kSeedSize, o.rot, kSeedColour);
+				break;
 			default:
 				if (powerSprite(o.kind) >= 0) gfx::sprite(SHEET_SPRITES, powerSprite(o.kind), o.x, o.y, 1, 1, sinf(o.age * 3) * 0.3f);
 				break;
@@ -1951,6 +2066,10 @@ void Game::drawFieldTop() const {
 		if (!o.on || o.kind < OBJ_FREEZE || !onThisScreen(o.y, 34, true, kTopOffsetY)) continue;
 		if (o.kind == OBJ_COIN) {
 			if (!use3D()) drawCoin(o, kTopOffsetX, kTopOffsetY);
+			continue;
+		}
+		if (o.kind == OBJ_SEED) {
+			gfx::sprite(SHEET_SPRITES, sprites_drop_idx, o.x + kTopOffsetX, o.y + kTopOffsetY, kSeedSize, kSeedSize, o.rot, kSeedColour);
 			continue;
 		}
 		int spr = powerSprite(o.kind);
@@ -2191,7 +2310,40 @@ bool Game::fruitAhead(float x, float y, float dx, float dy, float range, float* 
 	return found;
 }
 
-#ifdef LAB
+#ifdef AUTOTEST
+// The newest fruit hung in a row, for a photograph.
+void Game::labShowcase() {
+	start(MODE_ZEN);
+	phase = PHASE_PLAY;
+	phaseT = 0;
+	waveTimer = 999;
+	static const int kShow[] = {kBunch, kPomegranate, kPinata, kDragon};
+	int i = 0;
+	for (int f : kShow) {
+		Obj& o = objs[i];
+		o = {};
+		o.on = true;
+		o.kind = OBJ_FRUIT;
+		o.fruit = (u8)f;
+		o.x = 50.0f + i * 62;
+		o.y = 110;
+		o.vy = -30;
+		o.radius = 23;
+		o.hits = 1;
+		i++;
+	}
+	Obj& c = objs[i];
+	c = {};
+	c.on = true;
+	c.kind = OBJ_COIN;
+	c.x = 50.0f + i * 62;
+	c.y = 110;
+	c.vy = -30;
+	c.radius = 18;
+	c.rotv = 7;
+	c.hits = 1;
+}
+
 // The rules of the reworked modes, tried directly on a run set up for each check.
 void Game::labProbes(Blade& blade, void (*check)(bool, const char*, const char*)) {
 	auto fruitAt = [this]() -> Obj& {
@@ -2270,6 +2422,73 @@ void Game::labProbes(Blade& blade, void (*check)(bool, const char*, const char*)
 	snprintf(d, sizeof d, "%d powers, %d tricks, %d fruit", powers, tricks, fruit);
 	check(tricks > 0 && powers > 0, "Arcade throws tricks and power-ups early", d);
 	check(timeThrown <= kArcadeMaxTime, "Arcade limits +5 Seconds", d);
+	check(pinataThrown == 0, "No pinata in the first 45 seconds", "");
+	elapsed = 200;
+	for (int i = 0; i < 400; i++) {
+		memset((void*)pending, 0, sizeof pending);
+		spawnWave();
+	}
+	snprintf(d, sizeof d, "%d thrown", pinataThrown);
+	check(pinataThrown > 0 && pinataThrown <= kPinataMax, "Pinatas appear, and stay rare", d);
+
+	// The 1.1 trick fruit.
+	const auto trick = [&](int f) -> Obj& {
+		setup(MODE_CLASSIC);
+		for (auto& q : objs) q.on = false;
+		for (auto& h : halves) h.on = false;
+		Obj& o = fruitAt();
+		o.fruit = (u8)f;
+		o.hits = f == kPinata ? kPinataHits : 1;
+		return o;
+	};
+	const auto pieces = [this](ObjKind k, bool loose) {
+		int n = 0;
+		for (const auto& q : objs) n += q.on && q.kind == k && q.loose == loose;
+		return n;
+	};
+	sliceFruit(trick(kDragon), blade);
+	int cuts = 0;
+	for (const auto& h : halves) cuts += h.on;
+	snprintf(d, sizeof d, "%d pieces", cuts);
+	check(cuts == 3, "Dragon fruit falls in three", d);
+
+	sliceFruit(trick(kBunch), blade);
+	check(pieces(OBJ_FRUIT, true) == kBunchPieces, "Banana bunch bursts into loose bananas", "");
+	Obj* loose = nullptr;
+	for (auto& q : objs) if (q.on && q.loose) loose = &q;
+	before = score;
+	if (loose) sliceFruit(*loose, blade);
+	snprintf(d, sizeof d, "+%u", (unsigned)(score - before));
+	check(score - before == 2, "A loose banana is worth a bonus", d);
+	const int strikesBefore = strikes;
+	for (auto& q : objs) {
+		if (!q.on) continue;
+		q.y = kKillY + 5;
+		q.vy = 10;
+	}
+	update(blade);
+	check(strikes == strikesBefore, "A dropped loose banana is not a miss", "");
+
+	sliceFruit(trick(kPomegranate), blade);
+	check(pieces(OBJ_SEED, true) == 5, "Pomegranate sprays five seeds", "");
+	const int comboBefore = comboCount;
+	for (auto& q : objs) if (q.on && q.kind == OBJ_SEED) sliceObj(q, blade);
+	snprintf(d, sizeof d, "%d to %d", comboBefore, comboCount);
+	check(comboCount == comboBefore + 5, "Seeds in the swipe add to the combo", d);
+
+	Obj& pinata = trick(kPinata);
+	before = score;
+	for (int i = 0; i < kPinataHits - 1; i++) sliceFruit(pinata, blade);
+	snprintf(d, sizeof d, "+%u", (unsigned)(score - before));
+	check(pinata.on && score - before == 2u * (kPinataHits - 1), "A pinata takes several hits and pays candy", d);
+	check(pieces(OBJ_COIN, false) == 0, "No coins until the pinata breaks", "");
+	sliceFruit(pinata, blade);
+	check(!pinata.on && pieces(OBJ_COIN, false) == kPinataCoins, "A broken pinata drops three coins", "");
+
+	bool zenSpiky = false;
+	for (int i = 0; i < 500; i++) zenSpiky |= pickTrick(MODE_ZEN, gSpawn) == kSpiky;
+	check(!zenSpiky, "Zen never throws a spiky fruit", "");
+	check(progress::fruitName(kPinata)[0] != 0, "Every new fruit has a Journal name", "");
 
 	setup(MODE_ZEN);  // leave nothing live for the screens that follow
 	phase = PHASE_OVER;

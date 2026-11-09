@@ -54,6 +54,12 @@ void setShake(float dx, float dy);
 // Moves everything drawn from now on; screen transitions slide with this.
 void setBase(float dx, float dy);
 void getOffset(float* x, float* y);  // base + shake, without the stereo shift
+// Anything drawn from now on is cut off outside this rectangle, until clearClip. It slides with setBase.
+void setClip(float x, float y, float w, float h);
+void clearClip();
+// For the Lab: letters in font_metrics.h, and images in the loaded font sheet (each letter has two).
+int fontLetterCount();
+int fontImageCount();
 
 #if !PORT_TWO_SCREENS
 // One screen: the board behind everything, the field in its own view, and a fade over all of it.
