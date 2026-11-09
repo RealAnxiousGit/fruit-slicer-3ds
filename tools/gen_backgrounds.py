@@ -475,9 +475,123 @@ def board_autumn_leaves():
     return finish(vignette(np.asarray(img.convert("RGB"), np.float32), 0.6, 0.45))
 
 
+def _edge_spots(rng, count, keep_clear=0.4, stray=0.06):
+    """Places for props: mostly round the edges, so the middle stays clear for the fruit."""
+    W, H = BOARD_W, BOARD_H
+    spots = []
+    while len(spots) < count:
+        cx, cy = rng.uniform(-6, W + 6), rng.uniform(-6, H + 6)
+        if ((cx - W / 2) / (W * keep_clear)) ** 2 + ((cy - H / 2) / (H * keep_clear)) ** 2 < 1 and rng.random() > stray:
+            continue
+        spots.append((cx, cy))
+    return spots
+
+
+def _draw_pumpkin(shadow, draw, S, cx, cy, r):
+    shadow.ellipse([(cx - r + 2) * S, (cy - r * 0.75 + 3) * S, (cx + r + 2) * S, (cy + r * 0.9 + 3) * S], fill=(0, 0, 0, 140))
+    for u, w, shade in ((-0.62, 0.4, 0.68), (0.62, 0.4, 0.68), (-0.32, 0.44, 0.84), (0.32, 0.44, 0.84), (0, 0.42, 1.0)):
+        fill = (int(226 * shade), int(120 * shade), int(30 * shade), 255)
+        tall = 0.82 - abs(u) * 0.14
+        draw.ellipse([(cx + (u - w) * r) * S, (cy - tall * r) * S, (cx + (u + w) * r) * S, (cy + tall * r) * S], fill=fill)
+    stem = [(cx - r * 0.13, cy - r * 0.68), (cx + r * 0.13, cy - r * 0.68), (cx + r * 0.27, cy - r * 1.08), (cx + r * 0.04, cy - r * 1.14)]
+    draw.polygon([(px * S, py * S) for px, py in stem], fill=(86, 104, 44, 255))
+
+
+def board_pumpkin_patch():
+    """A dark patch at night: packed soil, curling vines and pumpkins round the edges."""
+    W, H, K = BOARD_W, BOARD_H, BOARD_K
+    h = board_fractal(26, 601, 4, stretch=1.4)
+    furrow = np.sin(board_grid()[0] * 0.2 + board_fractal(90, 603, 2, stretch=3.0) * 7)
+    t = np.clip(h * 1.5 - 0.3 + furrow * 0.16, 0, 1)
+    img = finish(mix(np.array([24, 18, 34], np.float32), np.array([64, 44, 58], np.float32), t))
+    S = K * 2
+    shadow = Image.new("RGBA", (W * S, H * S), (0, 0, 0, 0))
+    props = Image.new("RGBA", (W * S, H * S), (0, 0, 0, 0))
+    sd, pd = ImageDraw.Draw(shadow), ImageDraw.Draw(props)
+    rng = random.Random(605)
+    for row in (H * 0.09, H * 0.93):
+        phase = rng.uniform(0, 6)
+        path = [(x_ * 1.0, row + math.sin(x_ * 0.05 + phase) * 9 + math.sin(x_ * 0.13) * 3) for x_ in range(-4, W + 5, 2)]
+        pd.line([(px * S, py * S) for px, py in path], fill=(52, 92, 46, 255), width=max(2, int(1.6 * S)))
+        for i in range(0, len(path), 13):
+            px, py = path[i]
+            rot = rng.uniform(0, math.tau)
+            pd.polygon([(ax * S, ay * S) for ax, ay in _oval_points(px, py, 17, 9, rot)], fill=(62, 112, 52, 255))
+    for cx, cy in sorted(_edge_spots(rng, 16 * W // 320, 0.42, 0.0), key=lambda p: p[1]):
+        _draw_pumpkin(sd, pd, S, cx, cy, rng.uniform(13, 23))
+    img.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(2.0 * S)).resize((W * K, H * K), Image.LANCZOS))
+    img.alpha_composite(props.resize((W * K, H * K), Image.LANCZOS))
+    return finish(vignette(np.asarray(img.convert("RGB"), np.float32), 0.7, 0.4))
+
+
+def _draw_blossom(shadow, draw, S, cx, cy, size, rot, petal):
+    centres = [(cx + math.cos(rot + i * math.tau / 5) * size * 0.62, cy + math.sin(rot + i * math.tau / 5) * size * 0.62,
+                rot + i * math.tau / 5) for i in range(5)]
+    for px, py, ang in centres:
+        pts = _oval_points(px, py, size * 1.15, size * 0.85, ang)
+        shadow.polygon([((ax + 1.2) * S, (ay + 1.6) * S) for ax, ay in pts], fill=(0, 0, 0, 110))
+        draw.polygon([(ax * S, ay * S) for ax, ay in pts], fill=petal + (255,))
+    r = size * 0.3
+    draw.ellipse([(cx - r) * S, (cy - r) * S, (cx + r) * S, (cy + r) * S], fill=(250, 204, 84, 255))
+
+
+def board_spring_blossom():
+    """A spring lawn: soft grass, flowers round the edges and petals blown across it."""
+    W, H, K = BOARD_W, BOARD_H, BOARD_K
+    t = np.clip(board_fractal(34, 701, 4, stretch=1.3) * 1.6 - 0.3, 0, 1)
+    blades = board_fractal(3, 703, 2, stretch=0.35) - 0.5
+    arr = mix(np.array([38, 86, 58], np.float32), np.array([78, 128, 66], np.float32), t) * (1 + blades * 0.5)[..., None]
+    img = finish(arr)
+    S = K * 2
+    shadow = Image.new("RGBA", (W * S, H * S), (0, 0, 0, 0))
+    props = Image.new("RGBA", (W * S, H * S), (0, 0, 0, 0))
+    sd, pd = ImageDraw.Draw(shadow), ImageDraw.Draw(props)
+    rng = random.Random(705)
+    pinks = [(246, 178, 202), (252, 214, 226), (232, 136, 176), (255, 240, 236)]
+    for _ in range(110 * W // 320):
+        px, py = rng.uniform(0, W), rng.uniform(0, H)
+        ln = rng.uniform(3.2, 5.6)
+        pd.polygon([(ax * S, ay * S) for ax, ay in _oval_points(px, py, ln, ln * 0.6, rng.uniform(0, math.tau))],
+                   fill=rng.choice(pinks) + (215,))
+    for cx, cy in _edge_spots(rng, 34 * W // 320, 0.42, 0.0):
+        _draw_blossom(sd, pd, S, cx, cy, rng.uniform(5.5, 10), rng.uniform(0, math.tau), rng.choice(pinks))
+    img.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(1.2 * S)).resize((W * K, H * K), Image.LANCZOS))
+    img.alpha_composite(props.resize((W * K, H * K), Image.LANCZOS))
+    return finish(vignette(np.asarray(img.convert("RGB"), np.float32), 0.65, 0.45))
+
+
+def board_bamboo_mat():
+    """A rolled bamboo mat: round slats with knuckles, tied together by three cords."""
+    W, H, K = BOARD_W, BOARD_H, BOARD_K
+    y, x = board_grid()
+    slat_h = 13
+    slat = np.floor(y / slat_h)
+    across = (y - slat * slat_h) / slat_h
+    round_ = np.sin(across * math.pi) ** 0.55
+    streak = board_fractal(5, 801, 2, stretch=14.0)
+    t = np.clip(round_ * 0.78 + (streak - 0.5) * 0.5, 0, 1)
+    tone = 1 + (np.sin(slat * 91.7) * 43.1 % 1 - 0.5) * 0.14
+    arr = mix(np.array([60, 66, 30], np.float32), np.array([166, 164, 92], np.float32), t) * tone[..., None]
+    # Knuckles: dark rings at a spot along each slat that wanders from row to row.
+    for k in range(4):
+        spot = (np.sin(slat * (12.9 + k * 3.1)) * 437.5 % 1) * W * 0.32 + k * W * 0.27
+        arr *= (1 - 0.42 * np.exp(-((x - spot) / 1.2) ** 2) * round_)[..., None]
+        arr += np.exp(-((x - spot - 2.6) / 1.6) ** 2)[..., None] * round_[..., None] * 16
+    # The three cords, wrapping over and under each slat in turn.
+    for u in (0.2, 0.5, 0.8):
+        cx = W * u
+        over = (slat % 2 == 0)
+        offset = np.where(over, -1.3, 1.3)
+        band = np.exp(-((x - cx - offset) / 1.25) ** 4)
+        arr = arr * (1 - band[..., None]) + mix(np.array([88, 56, 34], np.float32), np.array([146, 104, 64], np.float32), round_) * band[..., None]
+    arr += np.random.default_rng(805).normal(0, 1.4, x.shape + (1,))
+    return finish(vignette(arr, 0.7, 0.42))
+
+
 def bg_boards():
     return [board_blanket(), board_wood(), board_plate(), board_marble(), board_sand(), board_starlight(),
-            board_night_picnic(), board_beach_towel(), board_kitchen_counter(), board_snowfall(), board_autumn_leaves()]
+            board_night_picnic(), board_beach_towel(), board_kitchen_counter(), board_snowfall(), board_autumn_leaves(),
+            board_pumpkin_patch(), board_spring_blossom(), board_bamboo_mat()]
 
 
 def add_stars(img, rng, n, limit):

@@ -978,6 +978,7 @@ static const char* const kSceneNames[kSceneCount] = {"Dusk Orchard", "Morning Me
 static const char* const kArtNames[] = {"2D Stickers", "3D Models"};
 static const char* const kEffectNames[] = {"None", "Low", "Medium", "Full"};
 static const char* const kOffOn[] = {"Off", "On"};
+static const char* const kOnOff[] = {"On", "Off"};  // for a setting stored as "turned off"
 static const char* const kUpdateNames[] = {"Ask", "On", "Off"};  // by gSave.updConsent
 #if PORT_TWO_SCREENS
 static const char* const kBgNames[] = {"Simple", "Full"};
@@ -1054,6 +1055,7 @@ static Row kVisualMoreRows[] = {
 	{ROW_CHOICE, "3D Detail", &gSave.detail, 0, 1, kDetailNames, 0, 0, ACT_NONE, "Polygons per fruit, 3D style only.", PORT_DETAIL_HINT},
 	{ROW_CHOICE, "Slice Style", &gSave.sliceStyle, 0, 1, kSliceNames, 0, 0, ACT_NONE, "Exact cuts along your swipe.", "Quick uses ready-made halves."},
 	{ROW_CHOICE, "Transitions", &gSave.transitions, 0, 1, kOffOn, 0, 0, ACT_NONE, "Slides between menus.", ""},
+	{ROW_CHOICE, "Seasonal Boards", &gSave.seasonalOff, 0, 1, kOnOff, 0, 0, ACT_NONE, "Pumpkins, snow and spring flowers", "on free boards, by the date."},
 	{ROW_ACTION, "Reset Visuals", nullptr, 0, 0, nullptr, 0, 0, ACT_RESET_VISUALS, PORT_RESET_HINT, ""},
 #if PORT_HAS_DISPLAY
 	{ROW_ACTION, "Reset Display", nullptr, 0, 0, nullptr, 0, 0, ACT_RESET_DISPLAY, "Back to the default display.", ""},
@@ -4404,6 +4406,8 @@ bool app::frame(Input& in, int steps) {
 #if PORT_3DS && defined(TEST_PROF)
 	const u64 profLogic = svcGetSystemTick();
 #endif
+	gfx::setBoardPicking(sScreen == SCREEN_SECTION && sFocus[SCREEN_SECTION] >= 0 &&
+		kSections[sSection].rows[sFocus[SCREEN_SECTION]].value == &gSave.board);
 	gfx::sync();
 #if PORT_3DS && defined(TEST_PROF)
 	const u64 profGfx = svcGetSystemTick();

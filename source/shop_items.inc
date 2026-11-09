@@ -24,6 +24,9 @@ SHOP_THEME("Beach Towel", 200, "Stripes, sun and a little sand.", 30, 110, 120, 
 SHOP_THEME("Kitchen Counter", 300, "Terrazzo by the window.", 96, 92, 88, 255, 170, 90, 58, 56, 54)
 SHOP_THEME("Snowfall", 400, "Fresh snow and tiny footprints.", 70, 100, 150, 200, 230, 255, 36, 52, 86)
 SHOP_THEME("Autumn Leaves", 500, "Planks under falling maple.", 110, 60, 30, 255, 170, 60, 56, 30, 16)
+SHOP_THEME("Pumpkin Patch", 450, "Vines and pumpkins after dark.", 86, 52, 96, 255, 168, 60, 34, 22, 42)
+SHOP_THEME("Spring Blossom", 450, "Soft grass and drifting petals.", 44, 110, 72, 255, 214, 226, 22, 62, 44)
+SHOP_THEME("Bamboo Mat", 350, "Rolled slats tied with cord.", 96, 106, 54, 255, 222, 120, 50, 58, 28)
 
 SHOP_TRAIL("Ink", 80, "A brush stroke that dries as it goes.", TR_INK, 0x222034, 0x222034)
 SHOP_TRAIL("Flame", 150, "Hot at the tip, embers behind.", TR_FLAME, 0xDC2814, 0xFFDC46)
@@ -43,12 +46,12 @@ SHOP_TRACK("Unruly Beat", 300, "A laid-back hip-hop groove.", "music_unruly", 82
 SHOP_TRACK("Vengeance Electro", 400, "Big electro drops.", "music_vengeance", 128)
 SHOP_TRACK("Eternal Explorer", 450, "Wide, warm and cinematic.", "music_explorer", 130)
 // Songs by NickBin and friends, converted by tools/convert_shop_music.py.
-SHOP_TRACK("Ahead of the Curve", 350, "NickBin, King Bakuyo Pro. Drum & Bass.", "music_ahead", 0)
-SHOP_TRACK("SPARE FOR ME", 350, "NickBin ft. Mq_. Hyperpop.", "music_spare", 0)
-SHOP_TRACK("My Own Fright", 400, "NickBin ft. Cabex Music. Pop.", "music_fright", 0)
-SHOP_TRACK("WORTHLESS ENEMY", 400, "NickBin ft. Aneolent. Metal.", "music_worthless", 0)
-SHOP_TRACK("Lies", 300, "NickBin. EDM.", "music_lies", 0)
-SHOP_TRACK("Lies (VIP Remix)", 450, "NickBin. EDM.", "music_liesvip", 0)
+SHOP_TRACK("Ahead of the Curve", 350, "NickBin, King Bakuyo Pro. Drum & Bass.", "music_ahead", 175)
+SHOP_TRACK("SPARE FOR ME", 350, "NickBin ft. Mq_. Hyperpop.", "music_spare", 180)
+SHOP_TRACK("My Own Fright", 400, "NickBin ft. Cabex Music. Pop.", "music_fright", 160)
+SHOP_TRACK("WORTHLESS ENEMY", 400, "NickBin ft. Aneolent. Metal.", "music_worthless", 180)
+SHOP_TRACK("Lies", 300, "NickBin. EDM.", "music_lies", 128)
+SHOP_TRACK("Lies (VIP Remix)", 450, "NickBin. EDM.", "music_liesvip", 128)
 SHOP_TRACK("JUST STAY WITH ME", 500, "NickBin. Dariacore.", "music_staywithme", 150)
 
 // Colours are 0xRRGGBB.

@@ -134,7 +134,8 @@ struct Settings {
 	u16 dailyFirstDay;  // the day (as dailyDay) the Daily Fruit calendar began, 0 = not yet
 	u8 splat;         // Shop splat colour, 0 keeps each fruit's own juice
 	u8 scoreRules;    // which rule changes this save's bests have been through (see saveRetireOldBests)
-	u8 reserved[36];  // sized so the port block starts on a 4-byte boundary
+	u8 seasonalOff;   // 1 keeps seasonal boards away from the free boards
+	u8 reserved[35];  // sized so the port block starts on a 4-byte boundary
 	// The port's own settings, in a fixed-size block so shared fields never move.
 	union {
 		struct { u8 portRev; PORT_SETTINGS_FIELDS };

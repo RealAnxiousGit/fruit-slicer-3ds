@@ -108,14 +108,15 @@ void sync() {
 		sLoadedScene = gSave.scene;
 		return;
 	}
-	if (sLoadedBoard != gSave.board) {
-		snprintf(path, sizeof path, "romfs:/gfx/board%d.t3x", gSave.board);
+	const int board = shownBoard();
+	if (sLoadedBoard != board) {
+		snprintf(path, sizeof path, "romfs:/gfx/board%d.t3x", board);
 		C2D_SpriteSheet next = load(path);
 		if (next) {
 			retire(sSheets[SHEET_BOARD]);
 			sSheets[SHEET_BOARD] = next;
 		}
-		sLoadedBoard = gSave.board;
+		sLoadedBoard = board;
 		return;
 	}
 	bool wantFruit = gSave.artStyle == 0 || !m3d::usable() || sKeepStickers;

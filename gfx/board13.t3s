@@ -1,0 +1,2 @@
+--atlas -f rgb565 -z auto --border transparent
+png/board13/board.png

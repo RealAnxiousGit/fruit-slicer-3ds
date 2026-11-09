@@ -329,6 +329,25 @@ static void labFinish(Input& in) {
 		labCheck(sLabBlastSeen && !sLabBlastMissed, "every bomb hit sets off a blast");
 		labCheck(gfx::fontImageCount() == gfx::fontLetterCount() * 2, "the font table matches the font sheet");
 		{
+			const u8 board = gSave.board, off = gSave.seasonalOff;
+			gSave.board = 0;
+			gSave.seasonalOff = 0;
+			labCheck(!strcmp(kBoardNames[gfx::shownBoardOn(10, 31)], "Pumpkin Patch"), "late October shows the Pumpkin Patch");
+			labCheck(!strcmp(kBoardNames[gfx::shownBoardOn(12, 1)], "Snowfall"), "December shows Snowfall");
+			labCheck(!strcmp(kBoardNames[gfx::shownBoardOn(4, 10)], "Spring Blossom"), "spring shows Spring Blossom");
+			labCheck(gfx::shownBoardOn(7, 1) == 0, "summer keeps the chosen board");
+			gSave.board = kBaseBoards;
+			labCheck(gfx::shownBoardOn(12, 1) == kBaseBoards, "a bought board is never replaced by the season");
+			gSave.board = 0;
+			gSave.seasonalOff = 1;
+			labCheck(gfx::shownBoardOn(12, 1) == 0, "the setting turns seasonal boards off");
+			gSave.board = board;
+			gSave.seasonalOff = off;
+			bool allBeat = true;
+			for (int t = 0; t < kTrackCount; t++) allBeat = allBeat && audio::trackHasBeat(t);
+			labCheck(allBeat, "every Shop song can be played in Beat Slice");
+		}
+		{
 			const u32 zen = gSave.best[MODE_ZEN], combo = gSave.best[MODE_COMBO], classic = gSave.best[MODE_CLASSIC];
 			const u8 rules = gSave.scoreRules;
 			gSave.scoreRules = 0;

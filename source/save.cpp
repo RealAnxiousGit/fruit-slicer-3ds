@@ -78,6 +78,7 @@ void saveDefaults(bool keepScores, int section) {
 #endif
 		gSave.sliceStyle = gIsNew3ds ? 1 : 0;
 		gSave.transitions = 1;
+		gSave.seasonalOff = 0;
 		PORT_RESET_VISUALS
 	}
 	if (section == SEC_ALL || section == SEC_GAMEPLAY) {
@@ -211,6 +212,7 @@ void saveLoad() {
 	gSave.detail &= 1;
 	gSave.sliceStyle &= 1;
 	gSave.transitions &= 1;
+	gSave.seasonalOff &= 1;
 	gSave.stickStyle &= 1;
 	if (gSave.snapAssist > 2) gSave.snapAssist = 1;
 	gSave.vibration &= 1;

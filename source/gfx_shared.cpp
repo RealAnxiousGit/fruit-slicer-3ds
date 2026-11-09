@@ -1,4 +1,6 @@
 // The parts of drawing that look the same everywhere: board colours and the sign-painted font.
+#include <time.h>
+
 #include "font_metrics.h"
 #include "render.h"
 #include "sprites.h"
@@ -18,14 +20,39 @@ static const BoardTheme kThemes[kBoardCount] = {
 #define SHOP_THEME(name, price, line, pr, pg, pb, ar, ag, ab, br, bg, bb) {{pr, pg, pb}, {ar, ag, ab}, {br, bg, bb}},
 #include "shop_items.inc"
 };
+// Places in shop_items.inc; the Lab checks these still name the right boards.
+static constexpr int kBoardSnowfall = kBaseBoards + 3, kBoardPumpkin = kBaseBoards + 5, kBoardBlossom = kBaseBoards + 6;
+static bool sBoardPicking;
+
+void setBoardPicking(bool picking) { sBoardPicking = picking; }
+
+int shownBoardOn(int month, int day) {
+	if (gSave.seasonalOff || sBoardPicking || gSave.board >= kBaseBoards) return gSave.board;
+	if (month == 10 && day >= 15) return kBoardPumpkin;
+	if (month == 12) return kBoardSnowfall;
+	if ((month == 3 && day >= 20) || month == 4 || month == 5) return kBoardBlossom;
+	return gSave.board;
+}
+
+int shownBoard() {
+	static int month = 0, day = 0;
+	if (!month) {
+		const time_t now = time(nullptr);
+		const struct tm* t = localtime(&now);
+		month = t ? t->tm_mon + 1 : 1;
+		day = t ? t->tm_mday : 1;
+	}
+	return shownBoardOn(month, day) % kBoardCount;
+}
+
 u32 themePlank() {
-	const u8* c = kThemes[gSave.board % kBoardCount].plank;
+	const u8* c = kThemes[shownBoard()].plank;
 	// The plank art is about 84% white, so this lands on the listed colour.
 	auto up = [](u8 v) { int n = v * 6 / 5; return (u8)(n > 255 ? 255 : n); };
 	return C2D_Color32(up(c[0]), up(c[1]), up(c[2]), 255);
 }
 u32 themeAccent() {
-	const u8* c = kThemes[gSave.board % kBoardCount].accent;
+	const u8* c = kThemes[shownBoard()].accent;
 	return C2D_Color32(c[0], c[1], c[2], 255);
 }
 u32 boardColor(int board, int part) {
@@ -34,7 +61,7 @@ u32 boardColor(int board, int part) {
 	return C2D_Color32(c[0], c[1], c[2], 255);
 }
 u32 themeBar() {
-	const u8* c = kThemes[gSave.board % kBoardCount].bar;
+	const u8* c = kThemes[shownBoard()].bar;
 	return C2D_Color32(c[0], c[1], c[2], 255);
 }
 

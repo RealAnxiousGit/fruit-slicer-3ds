@@ -27,6 +27,10 @@ u32 themePlank();   // sign colour for the chosen board
 u32 themeAccent();  // highlight colour for the chosen board
 u32 themeBar();     // dark strip colour for the chosen board
 u32 boardColor(int board, int part);  // part 0 plank, 1 accent, 2 bar: a board's colours without choosing it
+// The board to draw: the chosen one, or the season's while a free board is chosen and Seasonal Boards is on.
+int shownBoard();
+int shownBoardOn(int month, int day);  // month 1-12; shownBoard for a given date
+void setBoardPicking(bool picking);    // while the Board row is chosen, show exactly what it says
 
 // Keeps the chosen scenery and board loaded, and the 2D fruit sheet only while the 2D art style
 // needs it. Replaced textures are freed a few frames later, once the GPU is done with them.
