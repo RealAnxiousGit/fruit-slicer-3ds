@@ -174,6 +174,16 @@ static void botMenuWalk() {
 		case 43: sCardFrame = true; port::shareCard(30, 12, 340, 212); return;  // the card lands in Pictures/Fruit Slicer
 		case 44: botMenuPicture("h2_result_after"); return;
 #endif
+#if PORT_ULTRA
+		// The same field on High and on Ultra, for comparing sharpness (run with FRUIT_SLICER_WINDOW=3840x2160).
+		// Paused, so the fruit hold still between the two pictures.
+		case 45: gSave.texQuality = 2; port::applyGraphics(); sGame.labShowcase(); sScreen = SCREEN_PAUSE; return;
+		case 46: botMenuPicture("i1_high"); return;
+		case 47: gSave.texQuality = 3; port::applyGraphics(); return;
+		case 48: botMenuPicture("i2_ultra"); return;
+		case 49: goTo(SCREEN_TITLE, -1); return;
+		case 50: botMenuPicture("i3_ultra_title"); return;
+#endif
 		default: return;
 	}
 }

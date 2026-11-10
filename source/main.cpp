@@ -1101,6 +1101,8 @@ static const Row kAudioRows[] = {
 static const char* const kWindowModeNames[] = {"Windowed", "Borderless", "Fullscreen"};
 static const char* const kPresetNames[] = {"Performance", "Quality", "Beautiful", "Custom"};
 static const char* const kQualityNames[] = {"Low", "Medium", "High"};
+// Textures alone goes on to Ultra, the 4K art (Windows and Linux).
+static const char* const kTextureNames[] = {"Low", "Medium", "High", "Ultra"};
 static const char* const kShadowNames[] = {"Off", "Simple", "Soft"};
 static const char* const kBloomNames[] = {"Off", "Low", "High"};
 static const char* const kScaleNames[] = {"75%", "100%", "125%"};
@@ -1138,7 +1140,7 @@ static Row kVisualMoreRows[] = {
 #endif
 #if PORT_HAS_DISPLAY
 	{ROW_CHOICE, "Renderer", &gSave.renderer, 0, (u8)(kRendererCount - 1), kRendererNames, 0, 0, ACT_NONE, "How the game draws. Takes effect", "the next time the game starts."},
-	{ROW_CHOICE, "Textures", &gSave.texQuality, 0, 2, kQualityNames, 0, 0, ACT_NONE, "Sharpness of the art.", "Lower uses less memory."},
+	{ROW_CHOICE, "Textures", &gSave.texQuality, 0, PORT_ULTRA ? 3 : 2, kTextureNames, 0, 0, ACT_NONE, PORT_ULTRA ? "Sharpness of the art. Ultra is" : "Sharpness of the art.", PORT_ULTRA ? "for 4K screens and uses more memory." : "Lower uses less memory."},
 	{ROW_CHOICE, "Shadows", &gSave.shadowQuality, 0, 2, kShadowNames, 0, 0, ACT_NONE, "Shadows under 3D fruit.", ""},
 	{ROW_CHOICE, "Ambient Occlusion", &gSave.ambientOcc, 0, 1, kOffOn, 0, 0, ACT_NONE, "Shaded undersides on 3D fruit.", ""},
 	{ROW_CHOICE, "Bloom", &gSave.bloom, 0, 2, kBloomNames, 0, 0, ACT_NONE, "Glow around golden fruit", "and the last big fruit."},

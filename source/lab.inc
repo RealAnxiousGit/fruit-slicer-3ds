@@ -13,6 +13,11 @@
 
 static int sLabPass, sLabFail;
 static FILE* sLabFile;
+#if PORT_ULTRA
+namespace gfx {
+bool ultraLoaded();  // port/render.cpp: the 4K sheets are what's loaded
+}
+#endif
 
 static void labCheck(bool ok, const char* name, const char* detail = "") {
 	if (!sLabFile) {
@@ -460,6 +465,28 @@ static void labFinish(Input& in) {
 				audio::music(MUSIC_MENU);
 			}
 			gSave.beatLatency = latBefore;
+#if PORT_ULTRA
+			{
+				// Textures: Ultra loads the 4K art, the other choices never do, and a saved Ultra comes back.
+				const u8 texBefore = gSave.texQuality;
+				gSave.texQuality = 3;
+				port::applyGraphics();
+				labCheck(gfx::ultraLoaded(), "Textures: Ultra loads the 4K art");
+				for (int q = 0; q < 3; q++) {
+					gSave.texQuality = (u8)q;
+					port::applyGraphics();
+					if (gfx::ultraLoaded()) break;
+				}
+				labCheck(!gfx::ultraLoaded(), "Low, Medium and High never load the 4K art");
+				gSave.texQuality = 3;
+				saveWrite();
+				saveLoad();
+				labCheck(gSave.texQuality == 3, "a saved Ultra is still Ultra after a restart");
+				gSave.texQuality = texBefore;
+				port::applyGraphics();
+				saveWrite();
+			}
+#endif
 #if PORT_3DS
 			// The 3DSX update's file swap, on stand-in files beside the save.
 			static const char* const kLabOld = "sdmc:/3ds/FruitSlicer/lab_swap.bin";
