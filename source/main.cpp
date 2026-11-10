@@ -443,6 +443,36 @@ static void drawPlank(float x, float y, float w, float h, bool focused, bool pre
 	if (focused) gfx::sign(sprites_plank_focus_idx, x - 2, y - 2 + dy, w + 4, h + 4, COL_ACCENT);
 }
 
+// A line centred on x, made smaller only if it would still be wider than room.
+static void fitText(const char* s, float x, float y, float scale, float room, u32 color) {
+	const float w = gfx::textWidth(s, scale);
+	if (w > room) scale *= room / w;
+	gfx::text(s, x, y, scale, color, ALIGN_CENTER);
+}
+
+// A label too wide for room at this scale, split at the space that leaves the two halves most even. False
+// (and nothing written) when it fits as it is, or has no space to split at.
+static bool splitLine(const char* s, float scale, float room, char* first, char* second, size_t size) {
+	if (gfx::textWidth(s, scale) <= room) return false;
+	const int n = (int)strlen(s);
+	int best = -1;
+	float bestWide = 1e9f;
+	char a[64];
+	for (int i = 1; i < n - 1 && i < (int)sizeof a - 1; i++) {
+		if (s[i] != ' ') continue;
+		snprintf(a, sizeof a, "%.*s", i, s);
+		const float wide = fmaxf(gfx::textWidth(a, scale), gfx::textWidth(s + i + 1, scale));
+		if (wide < bestWide) {
+			bestWide = wide;
+			best = i;
+		}
+	}
+	if (best < 0) return false;
+	snprintf(first, size, "%.*s", best, s);
+	snprintf(second, size, "%s", s + best + 1);
+	return true;
+}
+
 // ---------------------------------------------------------------- menu fruit
 // A sign that takes you somewhere carries a fruit, always the same one for the same choice, and a swipe
 // across the sign cuts it to pick it. The back sign carries a small berry on every screen.
@@ -512,7 +542,8 @@ static bool isCut(const Button& b) {
 }
 static Blade sMenuBlade;                  // the trail a swipe leaves across the menus
 static bool menuBladeShown() {
-	return sScreen == SCREEN_TITLE || sScreen == SCREEN_MODES || sScreen == SCREEN_OPTIONS || sScreen == SCREEN_CREDITS || sScreen == SCREEN_HOWTO || sScreen == SCREEN_JOURNAL || sScreen == SCREEN_STATS || sScreen == SCREEN_BEAT || sScreen == SCREEN_BEATTOOL || sScreen == SCREEN_UPDATE || sScreen == SCREEN_PAUSE || sScreen == SCREEN_RESULT || sScreen == SCREEN_PASS_TURN || sScreen == SCREEN_PASS_BOARD || sScreen == SCREEN_LATENCY;
+	// Not on Credits: a drag there scrolls the list, and a blade trail would follow it.
+	return sScreen == SCREEN_TITLE || sScreen == SCREEN_MODES || sScreen == SCREEN_OPTIONS || sScreen == SCREEN_HOWTO || sScreen == SCREEN_JOURNAL || sScreen == SCREEN_STATS || sScreen == SCREEN_BEAT || sScreen == SCREEN_BEATTOOL || sScreen == SCREEN_UPDATE || sScreen == SCREEN_PAUSE || sScreen == SCREEN_RESULT || sScreen == SCREEN_PASS_TURN || sScreen == SCREEN_PASS_BOARD || sScreen == SCREEN_LATENCY;
 }
 
 static bool fruit3D() { return gSave.artStyle == ART_3D && m3d::ready(); }
@@ -539,13 +570,22 @@ static float fruitSize(const Button& b) {
 // the front and reads in one go. Each letter narrows as it turns away and fades before the side of the
 // ring, so letters never crowd there, and nothing is drawn on the far side, so nothing reads backwards.
 // All the outlines go down first and every fill on top, so the letters join up like printed text.
+// The ring a name circles on: wide enough that the name spans about a third of it, so it reads in one go at
+// the front, but no wider than its sign. ringFit is how much the name must shrink to fit it (1: not at all).
+static float ringRadius(float w, float d, float maxW) {
+	const float rx = fmaxf(d * 0.5f + 10, w / 1.7f);
+	return rx > maxW * 0.5f - 4 ? maxW * 0.5f - 4 : rx;
+}
+static float ringFit(const char* label, float d, float maxW, float scale) {
+	const float w = gfx::textWidth(label, scale), rx = ringRadius(w, d, maxW);
+	return w > rx * 1.5f ? rx * 1.5f / w : 1.0f;
+}
+
 static void drawRingText(const char* label, float cx, float cy, float d, float maxW, float scale, u32 color) {
 	int n = (int)strlen(label);
 	if (n == 0 || n > 31) return;
 	float w = gfx::textWidth(label, scale);
-	// Wide enough that the name spans about a third of the ring, so it reads in one go at the front.
-	float rx = fmaxf(d * 0.5f + 10, w / 1.7f);
-	if (rx > maxW * 0.5f - 4) rx = maxW * 0.5f - 4;
+	float rx = ringRadius(w, d, maxW);
 	// A long name shrinks to fit the front of the ring with room to sway.
 	if (w > rx * 1.5f) {
 		scale *= rx * 1.5f / w;
@@ -591,13 +631,17 @@ static void drawFruitChoice(const Button& b, const char* label, bool focused, bo
 	if (fruit3D()) {
 		float ts = scale * 0.9f;
 		if (!cut) drawMenuFruit(fruit, x, y + dy + bob, d, spin);
-		// A name too long for one ring wraps onto a second, so it stays the same size as its neighbours.
+		// A name too long for one ring wraps onto a second, so it stays the same size as its neighbours: after
+		// "and" when it has one, or else at the space that leaves the two halves most even.
 		const char* split = strlen(label) > 16 ? strstr(label, " and ") : nullptr;
+		char first[32], second[32];
 		if (split) {
-			char first[32];
 			snprintf(first, sizeof first, "%.*s and", (int)(split - label), label);
+			snprintf(second, sizeof second, "%s", split + 5);
+		}
+		if (split || (ringFit(label, d, b.w, ts) < 0.8f && splitLine(label, ts, 0, first, second, sizeof first))) {
 			drawRingText(first, x, y + dy - 6, d, b.w, ts * 0.8f, focused ? COL_ACCENT : COL_CREAM);
-			drawRingText(split + 5, x, y + dy + 9, d, b.w, ts * 0.8f, focused ? COL_ACCENT : COL_CREAM);
+			drawRingText(second, x, y + dy + 9, d, b.w, ts * 0.8f, focused ? COL_ACCENT : COL_CREAM);
 		} else {
 			drawRingText(label, x, y + dy, d, b.w, ts, focused ? COL_ACCENT : COL_CREAM);
 		}
@@ -633,7 +677,7 @@ static void drawModeTile(const Button& b, int icon, bool focused, bool pressed) 
 	const float dy = pressed ? 2 : 0, cx = b.x + b.w * 0.5f, iconScale = icon == sprites_coin_idx ? 0.42f : 0.72f;
 	float scale = 0.44f;
 	const float w = gfx::textWidth(b.label, scale);
-	if (w > b.w - 14) scale *= (b.w - 14) / w;
+	if (w > b.w - 22) scale *= (b.w - 22) / w;
 	gfx::sprite(SHEET_SPRITES, icon, cx, b.y + 16 + dy, iconScale, iconScale, icon == sprites_arrow_idx ? 3.14159265f : 0);  // the arrow points on to the next player
 	gfx::text(b.label, cx, b.y + 28 + dy, scale, COL_CREAM, ALIGN_CENTER);
 }
@@ -1934,7 +1978,7 @@ static void updateShop(const Input& in, bool wasTouching) {
 		Input fake{};
 		fake.touching = true;
 		fake.tx = (int)(200 + sinf(sTime * 4.4f) * 110);
-		fake.ty = (int)(140 + sinf(sTime * 8.8f) * 45);
+		fake.ty = (int)(132 + sinf(sTime * 8.8f) * 40);  // between the item's line and its price
 		sPreviewBlade.update(fake);
 	}
 }
@@ -2008,20 +2052,27 @@ static void drawShop() {
 		const bool pressed = sPressed == kShopTile0 + k;
 		drawPlank(b.x, b.y, b.w, b.h, sel, pressed);
 		if (!sel && f == kShopTile0 + k) gfx::sign(sprites_plank_focus_idx, b.x - 2, b.y - 2 + (pressed ? 2 : 0), b.w + 4, b.h + 4, withAlpha(COL_CREAM, 0.5f));
-		drawShopIcon(sShopTab, k, b.x + b.w / 2, b.y + 17);
 		const ShopItem& it = shopItem(sShopTab, k);
-		float s = 0.3f, tw = gfx::textWidth(it.name, s);
-		if (tw > b.w - 10) s *= (b.w - 10) / tw;
-		gfx::text(it.name, b.x + b.w / 2, b.y + 28, s, COL_CREAM, ALIGN_CENTER);
+		// A name too long for one line goes on two, so it stays as big as its neighbours. The icon moves up for it.
+		char top[32], bottom[32];
+		const bool two = splitLine(it.name, 0.3f, b.w - 10, top, bottom, sizeof top);
+		drawShopIcon(sShopTab, k, b.x + b.w / 2, b.y + (two ? 12 : 15));
+		if (two) {
+			fitText(top, b.x + b.w / 2, b.y + 20, 0.28f, b.w - 8, COL_CREAM);
+			fitText(bottom, b.x + b.w / 2, b.y + 30, 0.28f, b.w - 8, COL_CREAM);
+		} else {
+			fitText(it.name, b.x + b.w / 2, b.y + 26, 0.3f, b.w - 10, COL_CREAM);
+		}
+		const float priceY = b.y + 41;
 		if (shopInUse(sShopTab, k)) {
-			gfx::text("IN USE", b.x + b.w / 2, b.y + 40, 0.26f, COL_ACCENT, ALIGN_CENTER);
+			gfx::text("IN USE", b.x + b.w / 2, priceY, 0.27f, COL_ACCENT, ALIGN_CENTER);
 		} else if (shopOwned(sShopTab, k)) {
-			gfx::text("OWNED", b.x + b.w / 2, b.y + 40, 0.26f, COL_DIM, ALIGN_CENTER);
+			gfx::text("OWNED", b.x + b.w / 2, priceY, 0.27f, COL_DIM, ALIGN_CENTER);
 		} else {
 			snprintf(buf, sizeof buf, "%u", (unsigned)it.price);
-			float pw = gfx::textWidth(buf, 0.3f);
-			gfx::sprite(SHEET_SPRITES, sprites_coin_idx, b.x + b.w / 2 - pw / 2 - 5, b.y + 45, 0.3f, 0.3f);
-			gfx::text(buf, b.x + b.w / 2 + 4, b.y + 39, 0.3f, gSave.coins >= it.price ? COL_CREAM : COL_DIM, ALIGN_CENTER);
+			float pw = gfx::textWidth(buf, 0.28f);
+			gfx::sprite(SHEET_SPRITES, sprites_coin_idx, b.x + b.w / 2 - pw / 2 - 5, priceY + 6, 0.28f, 0.28f);
+			gfx::text(buf, b.x + b.w / 2 + 4, priceY, 0.28f, gSave.coins >= it.price ? COL_CREAM : COL_DIM, ALIGN_CENTER);
 		}
 	}
 	gfx::clearClip();
@@ -2047,7 +2098,7 @@ static void drawShopPreview() {
 	gfx::text(it.line, 200, 52, 0.38f, COL_CREAM, ALIGN_CENTER);
 	if (sShopTab == SHOP_THEMES) {
 		gfx::setDepth(0.5f);
-		gfx::image(SHEET_BOARD, 0, 122, 74, 156, 117);
+		gfx::image(SHEET_BOARD, 0, 130, 72, 140, 105);
 	} else if (sShopTab == SHOP_TRAILS) {
 		gfx::setDepth(0.5f);
 		sPreviewBlade.draw();
@@ -2057,9 +2108,9 @@ static void drawShopPreview() {
 	} else {
 		const char* now = shopInUse(sShopTab, sShopItem) ? "Playing in the menus and in games"
 		                  : sPreviewOver ? "Preview over, your music is back"
-		                  : sPreviewT >= 0 ? "Now playing as a preview" : "Your Menu Music, not yet your Game Music";
-		gfx::text(now, 200, 120, 0.36f, COL_DIM, ALIGN_CENTER);
-		if (!shopInUse(sShopTab, sShopItem)) gfx::text("Use it for the Menu and Game Music.", 200, 140, 0.36f, COL_DIM, ALIGN_CENTER);
+		                  : sPreviewT >= 0 ? "Now playing as a preview" : "Your Menu Music, not your Game Music.";
+		fitText(now, 200, 120, 0.36f, 290, COL_DIM);
+		if (!shopInUse(sShopTab, sShopItem)) fitText("Use it for the Menu and Game Music.", 200, 140, 0.36f, 290, COL_DIM);
 	}
 	// What the item costs against the purse, or that it is already yours.
 	char buf[48];
@@ -2068,9 +2119,10 @@ static void drawShopPreview() {
 	if (owned) snprintf(buf, sizeof buf, "%s", inUse ? "Yours, and in use" : "Yours to use");
 	else if (gSave.coins >= it.price) snprintf(buf, sizeof buf, "%u coins. You have %lu.", (unsigned)it.price, (unsigned long)gSave.coins);
 	else snprintf(buf, sizeof buf, "%u coins. %lu more to go.", (unsigned)it.price, (unsigned long)(it.price - gSave.coins));
-	gfx::sprite(SHEET_SPRITES, sprites_coin_idx, 200 - gfx::textWidth(buf, 0.4f) * 0.5f - 12, 205, 0.4f, 0.4f);
-	gfx::text(buf, 200, 197, 0.4f, owned ? COL_ACCENT : COL_CREAM, ALIGN_CENTER);
-	if (sShopNoteT > 0) gfx::text(sShopNote, 200, 214, 0.46f, withAlpha(COL_CREAM, clampf(sShopNoteT * 2, 0, 1)), ALIGN_CENTER);
+	// Clear of the sign's bottom edge, with the note for what just happened under it.
+	gfx::sprite(SHEET_SPRITES, sprites_coin_idx, 200 - gfx::textWidth(buf, 0.4f) * 0.5f - 12, 194, 0.4f, 0.4f);
+	gfx::text(buf, 200, 186, 0.4f, owned ? COL_ACCENT : COL_CREAM, ALIGN_CENTER);
+	if (sShopNoteT > 0) gfx::text(sShopNote, 200, 205, 0.42f, withAlpha(COL_CREAM, clampf(sShopNoteT * 2, 0, 1)), ALIGN_CENTER);
 }
 
 // Moves dir pages along, wrapping past either end. The old page slides out as the new one comes in.
@@ -2669,6 +2721,168 @@ static void drawDailyTop() {
 	}
 	snprintf(buf, sizeof buf, "DAY %d   STREAK %d   BEST %d", number, progress::dailyStreak(today), (int)gSave.dailyBestStreak);
 	gfx::text(buf, 200, 204 - lift[3], 0.34f, COL_DIM, ALIGN_CENTER);
+}
+
+// ---------------------------------------------------------------- credits
+// One long list that scrolls inside its sign: with the wheel, a drag, a flick, or Up and Down. A new name only
+// needs a line here.
+enum CreditKind : u8 { CR_HEAD, CR_NAME, CR_LINE, CR_NOTE, CR_GAP, CR_BUILT };
+struct CreditLine {
+	CreditKind kind;
+	const char* text;
+};
+static const char* const kCreditsBuilt[] = {PORT_CREDITS_BUILT};
+static const CreditLine kCredits[] = {
+	{CR_HEAD, "Programming"},
+	{CR_NAME, "NickBin"},
+	{CR_NOTE, "with Claude Code"},
+	{CR_HEAD, "Music"},
+	{CR_LINE, "Menu, game and Zen music"},
+	{CR_NOTE, "made in code for Fruit Slicer"},
+	{CR_HEAD, "Shop Music"},
+	{CR_NAME, "Of Far Different Nature"},
+	{CR_NOTE, "Loop Box 1 and 4, CC BY 4.0"},  // the font has no #
+	{CR_LINE, "Summer House"},
+	{CR_LINE, "8-Bit Hero Quest"},
+	{CR_LINE, "Friendly Trap"},
+	{CR_LINE, "Unruly Beat"},
+	{CR_LINE, "Vengeance Electro"},
+	{CR_LINE, "Eternal Explorer"},
+	{CR_GAP, nullptr},
+	{CR_NAME, "NickBin and friends"},
+	{CR_NOTE, "All rights reserved, used with permission"},
+	{CR_LINE, "Ahead of the Curve"},
+	{CR_NOTE, "NickBin, King Bakuyo Pro"},
+	{CR_LINE, "SPARE FOR ME"},
+	{CR_NOTE, "NickBin ft. Mq_"},
+	{CR_LINE, "My Own Fright"},
+	{CR_NOTE, "NickBin ft. Cabex Music"},
+	{CR_LINE, "WORTHLESS ENEMY"},
+	{CR_NOTE, "NickBin ft. Aneolent"},
+	{CR_LINE, "Lies"},
+	{CR_NOTE, "NickBin"},
+	{CR_LINE, "Lies (VIP Remix)"},
+	{CR_NOTE, "NickBin"},
+	{CR_LINE, "JUST STAY WITH ME"},
+	{CR_NOTE, "NickBin"},
+	{CR_HEAD, "Art and Sound"},
+	{CR_LINE, "Sprites, 3D models, boards,"},
+	{CR_LINE, "the font and every sound"},
+	{CR_NOTE, "made in code with Python, Pillow and numpy"},
+	{CR_HEAD, "Built With"},
+	{CR_BUILT, nullptr},
+	{CR_HEAD, "Toolkits"},
+	{CR_LINE, "Claude Code"},
+	{CR_LINE, "Claude Code Game Studios"},
+	{CR_NOTE, "by Donchitos"},
+	{CR_LINE, "Anti Slop"},
+	{CR_NOTE, "by miqdadbadjuber"},
+	{CR_LINE, "Graphify"},
+	{CR_HEAD, "License"},
+	{CR_LINE, "Fruit Slicer: CC BY-NC 4.0"},
+	{CR_NOTE, "Free to share and adapt with credit,"},
+	{CR_NOTE, "not for commercial use"},
+	{CR_GAP, nullptr},
+	{CR_NAME, "Thanks for playing!"},
+};
+static constexpr float kCreditX = 10, kCreditY = 48, kCreditW = 300, kCreditH = 186;
+static constexpr float kCreditTop = kCreditY + 6, kCreditBottom = kCreditY + kCreditH - 6;  // where the list shows
+static float sCreditScroll = 0, sCreditFling = 0;  // how far down, and a flick still moving it
+static bool sCreditDrag = false;                   // the touch or mouse press now held began on the list
+
+static float creditStep(CreditKind k) {
+	switch (k) {
+		case CR_HEAD: return 22;
+		case CR_NAME: return 22;
+		case CR_LINE: return 19;
+		case CR_NOTE: return 17;
+		default: return 10;
+	}
+}
+// Calls each(kind, text, y) for every line, y measured from the top of the list. Returns the list's height.
+template <class F>
+static float forEachCredit(F&& each) {
+	float y = 2;
+	for (const CreditLine& c : kCredits) {
+		if (c.kind == CR_BUILT) {
+			for (const char* s : kCreditsBuilt) {
+				each(CR_LINE, s, y);
+				y += creditStep(CR_LINE);
+			}
+			continue;
+		}
+		if (c.kind == CR_HEAD && y > 2) y += 12;  // room above each section
+		if (c.text) each(c.kind, c.text, y);
+		y += creditStep(c.kind);
+	}
+	return y + 4;
+}
+static float creditMaxScroll() {
+	const float h = forEachCredit([](CreditKind, const char*, float) {});
+	return fmaxf(0, h - (kCreditBottom - kCreditTop));
+}
+
+static void updateCredits(const Input& in, bool wasTouching) {
+	static int lastY;
+	bool& dragging = sCreditDrag;
+	if (in.touching) {
+		if (!wasTouching) {
+			dragging = hit({kCreditX, kCreditY, kCreditW, kCreditH, nullptr}, in.tx, in.ty);
+			sCreditFling = 0;
+		} else if (dragging) {
+			const float dy = (float)(in.ty - lastY);
+			sCreditScroll -= dy;
+			sCreditFling = -dy;  // let go mid-move and the list carries on a little way
+		}
+		lastY = in.ty;
+	} else {
+		dragging = false;
+		sCreditScroll += sCreditFling;
+		sCreditFling *= gSave.calmFx ? 0.75f : 0.92f;
+		if (fabsf(sCreditFling) < 0.3f) sCreditFling = 0;
+	}
+	if (in.wheel) {
+		sCreditScroll -= in.wheel * 34.0f;
+		sCreditFling = 0;
+	}
+	if (in.repeat & KEY_DOWN) sCreditScroll += 24;
+	if (in.repeat & KEY_UP) sCreditScroll -= 24;
+	const float most = creditMaxScroll();
+	if (sCreditScroll < 0 || sCreditScroll > most) sCreditFling = 0;
+	sCreditScroll = clampf(sCreditScroll, 0, most);
+}
+
+static void drawCredits() {
+	gfx::sign(sprites_plank_idx, kCreditX, kCreditY, kCreditW, kCreditH, COL_PLANK);
+	gfx::setClip(kCreditX + 4, kCreditTop, kCreditW - 8, kCreditBottom - kCreditTop);
+	const float top = kCreditTop - sCreditScroll, mid = kCreditX + kCreditW * 0.5f - 4;
+	forEachCredit([&](CreditKind k, const char* s, float y) {
+		const float at = top + y;
+		if (at > kCreditBottom || at < kCreditTop - 24) return;
+		float scale = 0.4f;
+		u32 color = COL_CREAM;
+		if (k == CR_HEAD) {
+			scale = 0.44f;
+			color = COL_ACCENT;
+		} else if (k == CR_NAME) {
+			scale = 0.46f;
+		} else if (k == CR_NOTE) {
+			scale = 0.34f;
+			color = COL_DIM;
+		}
+		const float w = gfx::textWidth(s, scale), room = kCreditW - 44;
+		if (w > room) scale *= room / w;
+		gfx::text(s, mid, at, scale, color, ALIGN_CENTER);
+	});
+	gfx::clearClip();
+	// Where in the list you are, along the right edge.
+	const float most = creditMaxScroll();
+	if (most > 0) {
+		const float view = kCreditBottom - kCreditTop, bar = fmaxf(18, view * view / (view + most));
+		const float x = kCreditX + kCreditW - 10, y = kCreditTop + (view - bar) * (sCreditScroll / most);
+		gfx::rect(x, kCreditTop, 3, view, withAlpha(COL_DIM, 0.25f));
+		gfx::rect(x, y, 3, bar, COL_ACCENT);
+	}
 }
 
 // The Fruit Journal: a sticker for every fruit, dark until the first one is sliced.
@@ -4136,9 +4350,10 @@ static void drawRows() {
 			gfx::text(label, 160, ty - 1, 0.42f, color, ALIGN_CENTER);
 			continue;
 		}
+		// The label stops well short of the value's left arrow (at 158), so the two never touch.
 		float ls = 0.36f;
 		float lw = gfx::textWidth(r.label, ls);
-		if (lw > 134) ls *= 134 / lw;
+		if (lw > 126) ls *= 126 / lw;
 		gfx::text(r.label, 18, ty + (0.36f - ls) * 10, ls, labelColor);
 		if (r.kind == ROW_PAGE) {
 			// One arrow, not the pair a choice has: this row goes somewhere rather than changing a value.
@@ -4274,25 +4489,7 @@ static void drawBottomContent(Screen screen) {
 			drawMenuBack();
 			drawHeader("Credits");
 			drawBackArrow(true, sPressed == 0);
-			gfx::sign(sprites_plank_idx, 10, 50, 300, 176, COL_PLANK);
-			gfx::text("PROGRAMMING", 160, 57, 0.3f, COL_ACCENT, ALIGN_CENTER);
-			gfx::text("NickBin", 160, 69, 0.46f, COL_CREAM, ALIGN_CENTER);
-			{
-				const auto line = [](const char* s, float y, u32 color) {
-					float w = gfx::textWidth(s, 0.3f);
-					gfx::text(s, 160, y, w > 280 ? 0.3f * 280 / w : 0.3f, color, ALIGN_CENTER);
-				};
-				line("BUILT WITH", 96, COL_ACCENT);
-				line(PORT_CREDITS_TOOLS_1, 109, COL_CREAM);
-				line(PORT_CREDITS_TOOLS_2, 122, COL_CREAM);
-				line("Python, Pillow, numpy", 135, COL_CREAM);
-				line("TOOLKITS", 152, COL_ACCENT);
-				line("Claude Code, Graphify", 165, COL_CREAM);
-				line("Claude Code Game Studios by Donchitos", 178, COL_CREAM);
-				line("Anti Slop by miqdadbadjuber", 191, COL_CREAM);
-				line("Shop music: Of Far Different Nature (CC BY 4.0), NickBin, King Bakuyo Pro,", 203, COL_DIM);
-				line("Mq_, Cabex Music and Aneolent", 214, COL_DIM);
-			}
+			drawCredits();
 			break;
 		case SCREEN_HOWTO: {
 			static const char* const kLines[] = {
@@ -4573,7 +4770,10 @@ static void updateFrame(const Input& in, bool wasTouching) {
 				sFocus[SCREEN_HOWTO] = 1;
 				goTo(SCREEN_HOWTO, 1);
 			} else if (t == 5) openShop();
-			else if (t == 6) goTo(SCREEN_CREDITS, 1);
+			else if (t == 6) {
+				sCreditScroll = sCreditFling = 0;  // Credits always opens at the top
+				goTo(SCREEN_CREDITS, 1);
+			}
 #if !PORT_3DS
 			else if (t >= kTitleSigns) {
 				audio::click();
@@ -4813,7 +5013,18 @@ static void updateFrame(const Input& in, bool wasTouching) {
 			}
 			break;
 		}
-		case SCREEN_CREDITS:
+		case SCREEN_CREDITS: {
+			if (blocked) break;
+			sFocus[SCREEN_CREDITS] = 0;
+			updateCredits(in, wasTouching);
+			// A drag that started on the list only scrolls it, even if it runs up over the back arrow.
+			int t = sCreditDrag ? -1 : menuInput(kOnlyBack, 1, SCREEN_CREDITS, in, wasTouching);
+			if (t == 0 || (in.down & KEY_B)) {
+				if (t != 0) audio::click();
+				goTo(SCREEN_TITLE, -1);
+			}
+			break;
+		}
 		case SCREEN_STATS: {
 			if (blocked) break;
 			int& f = sFocus[sScreen];

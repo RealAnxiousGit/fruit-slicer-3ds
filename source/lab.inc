@@ -51,6 +51,7 @@ static void labExpect(Screen want, const char* name) {
 }
 
 static u32 sLabCoins;
+static float sLabCredit;  // where the credits were before a drag
 static u8 sLabArt;
 
 // Daily Fruit's calendar, on a scratch copy of the save.
@@ -150,8 +151,9 @@ static void labShopPreview() {
 	labCheck(gSave.menuTrack == menuWas && audio::currentTrack() != kTrackCount - 1 && sPreviewOver, "the music in use comes back after a Shop preview");
 	for (int i = 0; i < 90; i++) updateShop(in, false);
 	labCheck(sReturnT < 0, "the music in use fades back in within a second and a half");
-	const float longest = gfx::textWidth("Your Menu Music, not yet your Game Music", 0.36f);
-	labCheck(longest <= 390 && gfx::textWidth("Use it for the Menu and Game Music.", 0.36f) <= 390, "Shop music notes fit the preview");
+	const float longest = gfx::textWidth("Your Menu Music, not your Game Music.", 0.36f);
+	// fitText keeps them inside 290 of the 340-wide sign; they shouldn't need shrinking by more than a tenth to get there.
+	labCheck(longest * 0.9f <= 290 && gfx::textWidth("Use it for the Menu and Game Music.", 0.36f) * 0.9f <= 290, "Shop music notes fit the preview with a margin");
 
 	gSave.coins += shopItem(SHOP_MUSIC, song).price;
 	shopBuy(SHOP_MUSIC, song);
@@ -185,7 +187,34 @@ static void labMenus() {
 		case 4: labExpect(SCREEN_TITLE, "Journal back arrow cuts its berry and goes back"); botTap(kTitleButtons[3]); return;
 		case 5: labExpect(SCREEN_STATS, "Stats opens"); botTap(kBack); return;
 		case 6: labExpect(SCREEN_TITLE, "Stats back arrow"); botTap(kTitleButtons[6]); return;
-		case 7: labExpect(SCREEN_CREDITS, "Credits opens"); botTap(kBack); return;
+		case 7:
+			labExpect(SCREEN_CREDITS, "Credits opens");
+			labCheck(sCreditScroll == 0 && creditMaxScroll() > 200, "Credits opens at the top of a list longer than its sign");
+			sBotKeys = KEY_DOWN;
+			sBotMenuStep = 60;
+			return;
+		case 60:
+			labCheck(sCreditScroll > 0, "Down scrolls the credits");
+			sLabCredit = sCreditScroll;
+			botDragY(160, 200, -15);  // a drag up of 60, inside the list
+			return;
+		case 61:
+			labCheck(sScreen == SCREEN_CREDITS && sCreditScroll >= sLabCredit + 55, "dragging up scrolls the credits down");
+			sBotWheel = 20;
+			return;
+		case 62:
+			labCheck(sCreditScroll == 0, "the wheel scrolls the credits back to the top");
+			sBotWheel = -100;
+			return;
+		case 63:
+			labCheck(sCreditScroll == creditMaxScroll(), "the credits stop at their end");
+			botDragY(29, 120, -25);  // starts on the list and runs up across the back arrow
+			return;
+		case 64:
+			labCheck(sScreen == SCREEN_CREDITS, "a drag on the list never cuts the back arrow");
+			botTap(kBack);
+			sBotMenuStep = 8;
+			return;
 		case 8:
 			labExpect(SCREEN_TITLE, "Credits back arrow");
 			gSave.coins = 5000;  // the developer tools' Add Coins

@@ -25,6 +25,8 @@ static bool sBotDone = false;
 static int sBotTapX, sBotTapY;
 static bool sBotSwipe = false;  // menu signs need a swipe across them; settings rows take a tap
 static u32 sBotKeys = 0;        // buttons to press for one frame
+static int sBotWheel = 0;       // mouse wheel notches for one frame, up is positive
+static int sBotDragDY = 0;      // a tap that moves this far down each frame: a drag
 static u32 sBotModeFrames = 0;
 #if defined(BOT_ONLY) || defined(TEST_SPEED) || defined(BOT_SHOTS) || defined(TEST_BALANCE)
 static int sBotMenuStep = 100;
@@ -39,6 +41,7 @@ static void botTap(const Button& b) {
 	sBotTapY = (int)(b.y + b.h / 2);
 	sBotTapFrames = 8;
 	sBotSwipe = true;
+	sBotDragDY = 0;
 }
 
 static void botTapXY(int x, int y) {
@@ -46,6 +49,12 @@ static void botTapXY(int x, int y) {
 	sBotTapY = y;
 	sBotTapFrames = 8;
 	sBotSwipe = false;
+	sBotDragDY = 0;
+}
+// A press at x, y that moves dy a frame for four frames, then lets go: a drag up or down.
+static void botDragY(int x, int y, int dy) {
+	botTapXY(x, y);
+	sBotDragDY = dy;
 }
 
 #ifdef LAB
@@ -260,6 +269,8 @@ static void autotestInput(Input& in) {
 	in = Input{};
 	in.down = in.repeat = sBotKeys;
 	sBotKeys = 0;
+	in.wheel = sBotWheel;
+	sBotWheel = 0;
 #ifdef TEST_SPAWN
 	sGame.spawnReport();
 	sBotDone = true;
@@ -298,7 +309,7 @@ static void autotestInput(Input& in) {
 		if (sBotTapFrames > 2) {
 			in.touching = true;
 			in.tx = sBotSwipe ? sBotTapX - 18 + (7 - sBotTapFrames) * 9 : sBotTapX;
-			in.ty = sBotTapY;
+			in.ty = sBotTapY + (7 - sBotTapFrames) * sBotDragDY;
 		}
 		return;
 	}

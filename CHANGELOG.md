@@ -26,6 +26,9 @@ Saves from 1.0 carry over: scores, coins, unlocks and settings are kept. Zen and
 - The Shop shows six items at a time, and only the items scroll.
 - **Shop songs:** Use makes a song both your Menu Music and your Game Music. A song you are trying on plays for 8 seconds, fades out, and the music you chose comes back.
 - **Music sounds better:** the Shop's songs play from their real first beat and all sit at the same loudness. Music is a little louder overall, with the sound effects still clear on top.
+- **Credits** are a list you scroll with Up and Down or by dragging the stylus, in sections: Programming, Music, Shop Music, Art and Sound, Built With, Toolkits and License. There's room to add more.
+- **Shop songs start cleanly:** the end of each song no longer sounds over its first beat.
+- **Roomier text:** long Shop names wrap onto two lines, long menu fruit labels go on two rings, and mode names, settings labels and the Shop's info sign have more space around them.
 
 ### Fixed
 

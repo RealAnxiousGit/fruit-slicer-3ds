@@ -167,7 +167,10 @@ static u32 sLoadDone;
 // Recorded tracks (the Shop's) are Ogg Vorbis on this port, at full quality and in stereo. The file
 // arrives a piece per frame, then decodes a piece per frame, so a new track never stalls a frame.
 static constexpr u32 kOggReadPerFrame = 256 * 1024;
-static constexpr int kOggFramesPerStep = 16384;  // about a third of a second of music
+// Fast until the track can start (a third of a second of music a frame), then a steady twelfth of a second,
+// about four times as fast as it plays at 60 frames a second. Decoding flat out for the first seconds of every
+// track took enough of a phone's time that its sound broke up.
+static constexpr int kOggFramesPerStep = 16384, kOggFramesPlaying = 4096;
 static u8* sOgg;
 static u32 sOggSize;
 static songdec::Decoder* sOggDec;
@@ -415,7 +418,8 @@ void update(float dt) {
 	} else if (sOggDec) {
 		const u32 from = sOggDecoded;
 		u32 left = sMusicClip.samples - sOggDecoded;
-		int want = left < (u32)kOggFramesPerStep ? (int)left : kOggFramesPerStep;
+		const int step = sStarted ? kOggFramesPlaying : kOggFramesPerStep;
+		int want = left < (u32)step ? (int)left : step;
 		int got = songdec::read(sOggDec, sMusicClip.pcm + sOggDecoded * sMusicClip.channels, (int)sMusicClip.channels, want);
 		if (got > 0) sOggDecoded += (u32)got;
 		if (got <= 0 || sOggDecoded >= sMusicClip.samples) {
