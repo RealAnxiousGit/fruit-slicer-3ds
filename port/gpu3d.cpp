@@ -15,7 +15,7 @@ static DVLB_s* sDvlb;
 static void* sShaderData;
 static shaderProgram_s sProgram;
 static C3D_AttrInfo sAttr;
-static int sLocProj, sLocMv, sLocLight, sLocHalf, sLocShade;
+static int sLocProj, sLocMv, sLocLight, sLocHalf, sLocShade, sLocSkin;
 
 bool init() {
 	port::AssetFile* f = port::assetOpen("gfx/fruit.shbin");
@@ -37,6 +37,7 @@ bool init() {
 	sLocLight = shaderInstanceGetUniformLocation(sProgram.vertexShader, "light");
 	sLocHalf = shaderInstanceGetUniformLocation(sProgram.vertexShader, "halfVec");
 	sLocShade = shaderInstanceGetUniformLocation(sProgram.vertexShader, "shade");
+	sLocSkin = shaderInstanceGetUniformLocation(sProgram.vertexShader, "skin");
 	AttrInfo_Init(&sAttr);
 	AttrInfo_AddLoader(&sAttr, 0, GPU_FLOAT, 3);
 	AttrInfo_AddLoader(&sAttr, 1, GPU_BYTE, 4);
@@ -76,7 +77,15 @@ void begin(float screenW, float stereo, bool field) {
 	shear.r[0].z = stereo;  // each vertex shifts by its own z, so depth is true volume for this eye
 	Mtx_Multiply(&proj, &ortho, &shear);
 	C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, sLocProj, &proj);
-	C3D_FVUnifSet(GPU_VERTEX_SHADER, sLocShade, 0.62f, 0.5f, 0.32f, 0);
+	setSkin(nullptr);
+}
+
+void setSkin(const m3d::Skin* skin) {
+	static constexpr float kPlainShine = 0.32f;
+	C3D_FVUnifSet(GPU_VERTEX_SHADER, sLocShade, 0.62f, 0.5f, skin ? skin->shine : kPlainShine, skin ? skin->alpha : 1);
+	C3D_FVUnifSet(GPU_VERTEX_SHADER, sLocSkin, skin ? skin->r : 1, skin ? skin->g : 1, skin ? skin->b : 1, skin ? skin->mix : 0);
+	// See-through fruit show only their near side, or their back faces would draw through patchily.
+	C3D_CullFace(skin && skin->alpha < 1 ? GPU_CULL_BACK_CCW : GPU_CULL_NONE);
 }
 
 void end() {

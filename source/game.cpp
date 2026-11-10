@@ -1865,6 +1865,7 @@ void Game::drawObjects3D(bool top, float ox, float oy) const {
 
 	jobs::wait();  // any cuts asked for this frame must be finished before the GPU sees them
 	m3d::begin(top ? 400 : kFieldW, gfx::stereoPerZ(), true);
+	m3d::setSkin(shopWornSkin());
 	for (const auto& h : halves) {
 		if (!h.on || !onThisScreen(h.y, 30, top, oy)) continue;
 		m3d::Pose pose = {h.x + ox, h.y + oy, kFruitZ, h.rx, h.ry, h.rot, 1, h.axisX, h.axisY, h.tilt};
@@ -1877,9 +1878,11 @@ void Game::drawObjects3D(bool top, float ox, float oy) const {
 			if (!o.on || o.kind > OBJ_BOMB || (o.kind == OBJ_BOMB) != (pass == 1) || !onThisScreen(o.y, 34, top, oy)) continue;
 			int mesh = o.kind == OBJ_BOMB ? m3d::MESH_BOMB : (o.kind == OBJ_GOLD ? m3d::MESH_GOLD : kFruit[o.fruit].mesh);
 			m3d::Pose pose = {o.x + ox, o.y + oy, o.kind == OBJ_BOMB ? kBombZ : kFruitZ, o.rx, o.ry, o.rot, 1, 0, 0, 0};
+			m3d::setSkin(o.kind == OBJ_BOMB ? nullptr : shopWornSkin());  // a bomb must always look like a bomb
 			m3d::draw(mesh, m3d::PART_WHOLE, pose);
 		}
 	}
+	m3d::setSkin(nullptr);
 	// Coins flip end over end as they fly.
 	for (const auto& o : objs) {
 		if (!o.on || o.kind != OBJ_COIN || !onThisScreen(o.y, 34, top, oy)) continue;
@@ -1897,12 +1900,12 @@ void Game::drawObjects3D(bool top, float ox, float oy) const {
 void Game::drawObjects2D(bool top, float ox, float oy) const {
 	if (top) gfx::setDepth(0.7f);
 	for (const auto& h : halves) {
-		if (h.on && onThisScreen(h.y, 30, top, oy)) gfx::sprite(SHEET_FRUIT, h.sprite, h.x + ox, h.y + oy, 1, 1, h.rot);
+		if (h.on && onThisScreen(h.y, 30, top, oy)) gfx::sprite(SHEET_FRUIT, h.sprite, h.x + ox, h.y + oy, 1, 1, h.rot, shopWornSkinTint());
 	}
 	// Fruit first and bombs afterwards, so a bomb is never hidden behind a fruit.
 	for (const auto& o : objs) {
 		if (!o.on || o.kind > OBJ_GOLD || !onThisScreen(o.y, 34, top, oy)) continue;
-		gfx::sprite(SHEET_FRUIT, o.kind == OBJ_GOLD ? kGold.whole : kFruit[o.fruit].whole, o.x + ox, o.y + oy, 1, 1, o.rot);
+		gfx::sprite(SHEET_FRUIT, o.kind == OBJ_GOLD ? kGold.whole : kFruit[o.fruit].whole, o.x + ox, o.y + oy, 1, 1, o.rot, shopWornSkinTint());
 	}
 	if (top) gfx::setDepth(1.1f);
 	for (const auto& o : objs) {

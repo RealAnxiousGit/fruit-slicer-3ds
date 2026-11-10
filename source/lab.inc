@@ -329,6 +329,24 @@ static void labFinish(Input& in) {
 		labCheck(sLabBlastSeen && !sLabBlastMissed, "every bomb hit sets off a blast");
 		labCheck(gfx::fontImageCount() == gfx::fontLetterCount() * 2, "the font table matches the font sheet");
 		{
+			const u32 extras = gSave.ownedExtras, coins = gSave.coins;
+			const u8 skin = gSave.skin;
+			gSave.ownedExtras = 0;
+			gSave.coins = 5000;
+			gSave.skin = 0;
+			labCheck(shopWornSkin() == nullptr && shopWornSkinTint() == WHITE, "no skin leaves fruit as they are");
+			shopBuy(SHOP_SKINS, 0);
+			labCheck(shopOwned(SHOP_SKINS, 0) && !shopOwned(SHOP_SKINS, 1) && !shopOwned(SHOP_SPLATS, 0), "buying a skin doesn't unlock a splat");
+			shopEquip(SHOP_SKINS, 0);
+			labCheck(gSave.skin == 1 && shopWornSkin() == &shopSkinLook(0), "an equipped skin is the one worn");
+			gSave.ownedExtras = 0;
+			shopCheckSave();
+			labCheck(gSave.skin == 0, "a skin not owned is taken off after a load");
+			gSave.ownedExtras = extras;
+			gSave.coins = coins;
+			gSave.skin = skin;
+		}
+		{
 			const u8 board = gSave.board, off = gSave.seasonalOff;
 			gSave.board = 0;
 			gSave.seasonalOff = 0;

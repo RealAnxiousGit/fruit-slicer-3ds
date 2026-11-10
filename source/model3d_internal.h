@@ -24,6 +24,7 @@ void* alloc(u32 bytes);  // memory the renderer can read meshes from
 void release(void* p);
 void flush(const void* p, u32 bytes);  // the CPU just wrote this mesh data, and the renderer is about to read it
 void begin(float screenW, float stereo, bool field);
+void setSkin(const m3d::Skin* skin);
 void end();
 void drawIndexed(int mesh, const m3d::PartData& d, const m3d::Pose& pose);
 // A freshly cut half: `surface` of its vertices are the fruit's skin, and the rest are its cut face.

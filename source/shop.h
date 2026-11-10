@@ -2,8 +2,9 @@
 // What is on sale lives in shop_items.inc: a new item is one line there. A new tab is one line in kTabs.
 #pragma once
 #include "common.h"
+#include "model3d.h"
 
-enum ShopTab { SHOP_THEMES, SHOP_TRAILS, SHOP_MUSIC, SHOP_SPLATS, SHOP_TABS };
+enum ShopTab { SHOP_THEMES, SHOP_TRAILS, SHOP_MUSIC, SHOP_SPLATS, SHOP_SKINS, SHOP_TABS };
 enum BuyResult { BUY_DONE, BUY_OWNED, BUY_SHORT };
 
 struct ShopItem {
@@ -32,3 +33,9 @@ void shopCheckSave();           // puts locked picks back to free ones after a l
 
 u32 shopSplatColour(u32 juice);  // the colour a fruit's splat lands in, with the Shop's choice applied
 u32 shopSplatPreview(int item);  // the colour of a splat on sale
+
+// Fruit skins: how a 3D fruit is recoloured, and the tint for a 2D sticker. nullptr and WHITE mean no skin.
+const m3d::Skin& shopSkinLook(int item);
+u32 shopSkinTint(int item);
+const m3d::Skin* shopWornSkin();
+u32 shopWornSkinTint();

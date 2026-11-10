@@ -1722,6 +1722,16 @@ static void drawShopIcon(int tab, int item, float cx, float cy) {
 			px = x;
 			py = y;
 		}
+	} else if (tab == SHOP_SKINS) {
+		if (gSave.artStyle == ART_3D && m3d::ready()) {
+			m3d::begin(gfx::onTop() ? 400 : 320, gfx::stereoPerZ());
+			m3d::setSkin(&shopSkinLook(item));
+			m3d::Pose pose = {cx, cy, 0, 0.25f, 0.5f, 0, 0.62f, 0, 0, 0};
+			m3d::draw(m3d::MESH_APPLE, m3d::PART_WHOLE, pose);
+			m3d::end();
+		} else {
+			gfx::sprite(SHEET_FRUIT, fruit_apple_idx, cx, cy, 0.62f, 0.62f, 0, shopSkinTint(item));
+		}
 	} else if (tab == SHOP_SPLATS) {
 		// Three drops in the colour on sale, the way it lands on the board.
 		const u32 c = shopSplatPreview(item);
@@ -1805,7 +1815,7 @@ static void drawShopPreview() {
 	} else if (sShopTab == SHOP_TRAILS) {
 		gfx::setDepth(0.5f);
 		sPreviewBlade.draw();
-	} else if (sShopTab == SHOP_SPLATS) {
+	} else if (sShopTab == SHOP_SPLATS || sShopTab == SHOP_SKINS) {
 		gfx::setDepth(0.5f);
 		drawShopIcon(sShopTab, sShopItem, 200, 125);
 	} else {

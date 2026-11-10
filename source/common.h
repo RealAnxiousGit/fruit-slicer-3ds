@@ -135,7 +135,8 @@ struct Settings {
 	u8 splat;         // Shop splat colour, 0 keeps each fruit's own juice
 	u8 scoreRules;    // which rule changes this save's bests have been through (see saveRetireOldBests)
 	u8 seasonalOff;   // 1 keeps seasonal boards away from the free boards
-	u8 reserved[35];  // sized so the port block starts on a 4-byte boundary
+	u8 skin;          // Shop fruit skin, 0 none
+	u8 reserved[34];  // sized so the port block starts on a 4-byte boundary
 	// The port's own settings, in a fixed-size block so shared fields never move.
 	union {
 		struct { u8 portRev; PORT_SETTINGS_FIELDS };

@@ -6,6 +6,7 @@
 // SHOP_TRAIL(name, price, line, shape, colour a, colour b)        shapes are listed in blade.cpp
 // SHOP_TRACK(name, price, line, file in romfs/audio, beats per minute)   0 keeps it out of Beat Slice
 // SHOP_SPLAT(name, price, line, colour)                           0 uses each fruit's own juice
+// SHOP_SKIN(name, price, line, recolour %, colour, brightness %, opacity %, shine %)   the fruit's own colours fade by recolour %
 #ifndef SHOP_THEME
 #define SHOP_THEME(...)
 #endif
@@ -17,6 +18,9 @@
 #endif
 #ifndef SHOP_SPLAT
 #define SHOP_SPLAT(...)
+#endif
+#ifndef SHOP_SKIN
+#define SHOP_SKIN(...)
 #endif
 
 SHOP_THEME("Night Picnic", 120, "Gingham under the fireflies.", 40, 48, 110, 255, 214, 120, 16, 20, 54)
@@ -62,7 +66,11 @@ SHOP_SPLAT("Blue Raspberry", 150, "No fruit has ever been this blue.", 0x2C8CFF)
 SHOP_SPLAT("Golden Honey", 220, "Slow, thick and shining.", 0xF2B420)
 SHOP_SPLAT("Ghost Milk", 280, "A pale splash that barely shows.", 0xE8F0FF)
 
+SHOP_SKIN("Solid Gold", 800, "Every fruit cast in polished gold.", 100, 0xFFC84A, 210, 100, 85)
+SHOP_SKIN("Clear Glass", 700, "Blown glass with a hint of the fruit.", 60, 0xC8E8FF, 180, 60, 75)
+
 #undef SHOP_THEME
 #undef SHOP_TRAIL
 #undef SHOP_TRACK
 #undef SHOP_SPLAT
+#undef SHOP_SKIN

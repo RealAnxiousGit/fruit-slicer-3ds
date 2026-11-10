@@ -19,6 +19,11 @@ struct Pose {
 	float axisX, axisY, tilt;
 };
 
+// A Shop skin: mix fades the fruit's own colours into its brightness times r g b.
+struct Skin {
+	float mix, r, g, b, alpha, shine;
+};
+
 bool init();
 void shutdown();
 
@@ -33,6 +38,7 @@ bool usable();  // false if the shader never loaded, so the game must fall back 
 // field: these are fruit in play; anything else (a menu's fruit) always draws in front of them.
 void begin(float screenW, float stereo, bool field = false);
 void draw(int mesh, Part part, const Pose& pose);
+void setSkin(const Skin* skin);  // for the draws after it, until begin or nullptr; lasts for cut halves too
 void end();  // returns to citro2D
 
 // Halves cut along the actual swipe. A handle is a slot in a small vertex pool, allocated the first

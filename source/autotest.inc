@@ -112,6 +112,9 @@ static void botMenuWalk() {
 		case 28: botMenuPicture("d1_journal"); sJournalList.pos = sJournalList.aim = kJournalStep; return;
 		case 29: botMenuPicture("d2_journal_scrolled"); sGame.labShowcase(); sScreen = SCREEN_GAME; botMenuPicture("e1_fruit"); return;
 		case 30: sGame.labShowcase(); sScreen = SCREEN_PAUSE; botMenuPicture("e2_pause"); return;
+		case 31: shopSetTab(SHOP_SKINS); sShopItem = 0; gSave.ownedExtras |= 3u << 17; gSave.skin = 1; sGame.labShowcase(); sScreen = PORT_3DS ? SCREEN_PAUSE : SCREEN_GAME; botMenuPicture("e3_gold"); return;
+		case 32: gSave.skin = 2; sGame.labShowcase(); sScreen = PORT_3DS ? SCREEN_PAUSE : SCREEN_GAME; botMenuPicture("e4_glass"); return;
+		case 33: sScreen = SCREEN_SHOP; shopSetTab(SHOP_SKINS); sShopItem = 0; botMenuPicture("e5_shop_skins"); return;
 		default: return;
 	}
 }
