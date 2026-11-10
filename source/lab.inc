@@ -366,6 +366,43 @@ static void labFinish(Input& in) {
 			labCheck(allBeat, "every Shop song can be played in Beat Slice");
 		}
 		{
+			// The Mixer: its rules reach the run, its score stays apart, and the fixed-sequence modes ignore it.
+			const u32 savedBest = gSave.best[MODE_CLASSIC], savedMixed = gSave.bestMixer[MODE_CLASSIC];
+			gSave.best[MODE_CLASSIC] = 50;
+			gSave.bestMixer[MODE_CLASSIC] = 0;
+			memset(gSave.mixer, 0, sizeof gSave.mixer);
+			gSave.mixer[MIX_LOW_GRAVITY] = 1;
+			sGame.start(MODE_CLASSIC);
+			labCheck(sGame.mixed && sGame.best == 0 && sGame.gravity < 300, "a Mixer run starts from its own best, with its rules on");
+			sGame.score = 10;
+			sGame.keepBestSoFar();
+			labCheck(gSave.best[MODE_CLASSIC] == 50 && gSave.bestMixer[MODE_CLASSIC] == 10, "a Mixer score is kept apart from the normal best");
+			sGame.start(MODE_DAILY);
+			labCheck(!sGame.mixed, "Daily Fruit ignores the Mixer");
+			gSave.mixer[MIX_LOW_GRAVITY] = 0;
+			gSave.mixer[MIX_SIDES] = 1;
+			sGame.start(MODE_CLASSIC);
+			float tx = kFieldW * 0.5f, tvx = 0, tvy = 0;
+			sGame.labThrow(tx, tvx, tvy);
+			labCheck((tx < 0 && tvx > 0) || (tx > kFieldW && tvx < 0), "Sides Only throws in from the edges");
+			gSave.mixer[MIX_SIDES] = 0;
+			gSave.mixer[MIX_GIANT] = 1;
+			sGame.start(MODE_CLASSIC);
+			labCheck(sGame.fruitSize() > 1, "Giant Fruit makes the fruit bigger");
+			adjustRow(kMixerRows[MIX_TINY], 1);
+			labCheck(gSave.mixer[MIX_TINY] && !gSave.mixer[MIX_GIANT], "Tiny Fruit turns Giant Fruit off");
+			memset(gSave.mixer, 0, sizeof gSave.mixer);
+			gSave.mixer[MIX_MIRROR] = 1;
+			sGame.start(MODE_CLASSIC);
+			Input mirrorTest{};
+			mirrorTest.touching = true;
+			mirrorTest.tx = 40;
+			labCheck(sGame.bladeInput(mirrorTest).tx == kFieldW - 40, "Mirror flips the blade left and right");
+			memset(gSave.mixer, 0, sizeof gSave.mixer);
+			sGame.start(MODE_CLASSIC);
+			labCheck(!sGame.mixed && sGame.best == 50, "with every rule off, a run uses the normal best");
+			gSave.best[MODE_CLASSIC] = savedBest;
+			gSave.bestMixer[MODE_CLASSIC] = savedMixed;
 #if PORT_3DS
 			// The 3DSX update's file swap, on stand-in files beside the save.
 			static const char* const kLabOld = "sdmc:/3ds/FruitSlicer/lab_swap.bin";

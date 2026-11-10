@@ -60,6 +60,9 @@ constexpr int kBladeCount = 6;
 enum ArtStyle { ART_2D, ART_3D };
 enum Effects { FX_NONE, FX_LOW, FX_MEDIUM, FX_FULL };
 enum Difficulty { DIFF_EASY, DIFF_NORMAL, DIFF_HARD, DIFF_INSANE, DIFF_COUNT };
+// The Mixer's switches. Giant and Tiny can't both be on. Daily Fruit and Beat Slice ignore them all,
+// since those two throw a fixed sequence.
+enum MixerRule { MIX_LOW_GRAVITY, MIX_GIANT, MIX_TINY, MIX_MIRROR, MIX_DOUBLE_BOMBS, MIX_SIDES, MIX_COUNT };
 
 static constexpr int kBaseTracks = 8;  // free; the rest come from the Shop
 static constexpr int kTrackCount = kBaseTracks
@@ -136,12 +139,15 @@ struct Settings {
 	u8 scoreRules;    // which rule changes this save's bests have been through (see saveRetireOldBests)
 	u8 seasonalOff;   // 1 keeps seasonal boards away from the free boards
 	u8 skin;          // Shop fruit skin, 0 none
-	u8 reserved[34];  // sized so the port block starts on a 4-byte boundary
+	u8 mixer[MIX_COUNT];  // 1 turns a Mixer rule on
+	u8 reserved[28];  // sized so the port block starts on a 4-byte boundary
 	// The port's own settings, in a fixed-size block so shared fields never move.
 	union {
 		struct { u8 portRev; PORT_SETTINGS_FIELDS };
 		u8 portBlock[32];
 	};
+	// Fields too big for `reserved` go here, after the port block, so nothing already saved moves.
+	u32 bestMixer[kMaxModes];  // runs with any Mixer rule on
 };
 static_assert(MODE_COUNT + 1 <= kMaxModes, "more modes than the save holds");
 extern Settings gSave;

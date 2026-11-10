@@ -100,6 +100,8 @@ struct Game {
 	int bestCombo;
 	bool scoreCommitted;
 	bool assisted;  // Slice Assist or a slower Game Speed was on: the score counts toward the assisted bests
+	bool mix[MIX_COUNT];  // the Mixer rules this run plays by
+	bool mixed;           // any of them is on: the score counts toward the Mixer bests instead
 	float feverGrace;   // fruit thrown by a Frenzy is still landing: misses stay free
 	int chain;          // the running combo: fruit in a row while the meter stays alive
 	int comboCount;
@@ -187,6 +189,13 @@ struct Game {
 #ifdef AUTOTEST
 	void labProbes(Blade& blade, void (*check)(bool, const char*, const char*));
 	void labShowcase();
+	void labThrow(float& x, float& vx, float& vy) { pickThrow(false, 0, x, vx, vy); }
+	Input bladeInput(Input in) const {  // Mixer: on Mirror the blade goes where your hand isn't
+		if (mix[MIX_MIRROR] && in.touching) in.tx = kFieldW - in.tx;
+		return in;
+	}
+	float fruitSize() const { return mix[MIX_GIANT] ? 1.5f : (mix[MIX_TINY] ? 0.65f : 1.0f); }  // Mixer: everything but bombs and coins
+	u32* bestTable() const { return mixed ? gSave.bestMixer : (assisted ? gSave.bestAssisted : gSave.best); }
 #endif
 	bool keepBestSoFar();
 	void update(Blade& blade);

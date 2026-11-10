@@ -35,7 +35,7 @@ struct SettingsV4 {
 static_assert(sizeof(SettingsV4) == 60, "0.4 save layout changed");
 // Fields never move once shipped: these pin the 1.0 layout.
 static_assert(offsetof(Settings, trail) == 486 && offsetof(Settings, modePlays) == 488 && offsetof(Settings, portBlock) == 552, "a saved field moved");
-static_assert(sizeof(Settings) == offsetof(Settings, portBlock) + 32, "the port block must start 4-byte aligned and hold 32 bytes: resize reserved[] or the port fields");
+static_assert(offsetof(Settings, portBlock) % 4 == 0 && offsetof(Settings, bestMixer) == offsetof(Settings, portBlock) + 32, "the port block must start 4-byte aligned and hold 32 bytes: resize reserved[] or the port fields");
 
 static u32 checksum(const void* data, size_t size) {
 	const u8* p = (const u8*)data;
@@ -47,6 +47,7 @@ static u32 checksum(const void* data, size_t size) {
 void saveResetScores() {
 	memset(gSave.best, 0, sizeof gSave.best);
 	memset(gSave.bestAssisted, 0, sizeof gSave.bestAssisted);
+	memset(gSave.bestMixer, 0, sizeof gSave.bestMixer);
 	gSave.totalFruit = 0;
 	gSave.bestCombo = 0;
 	gSave.playSeconds = 0;

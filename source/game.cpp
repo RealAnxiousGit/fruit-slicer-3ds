@@ -238,6 +238,9 @@ static int juiceCount(int base) {
 
 static inline bool use3D() { return gSave.artStyle == ART_3D && m3d::ready(); }
 
+static constexpr float kMixerGravity = 0.6f;
+static_assert(MODE_DAILY == 7 && MODE_DAILY < kMaxModes, "the Mixer plays the modes before Daily Fruit");
+
 // ---------------------------------------------------------------- lifecycle
 void Game::start(Mode m) {
 	boom::clear();
@@ -249,8 +252,14 @@ void Game::start(Mode m) {
 	sLightFrenzy = PORT_LIGHT_FRENZY && (m == MODE_FRENZY || m == MODE_COMBO);
 	phase = PHASE_READY;
 	assisted = assistedRun();
-	best = (assisted ? gSave.bestAssisted : gSave.best)[m];
-	gravity = 300;
+	if (m < MODE_DAILY) {
+		for (int i = 0; i < MIX_COUNT; i++) {
+			mix[i] = gSave.mixer[i] != 0;
+			mixed = mixed || mix[i];
+		}
+	}
+	best = bestTable()[m];
+	gravity = 300 * (mix[MIX_LOW_GRAVITY] ? kMixerGravity : 1.0f);
 	waveTimer = 0.2f;
 	switch (m) {
 		case MODE_CLASSIC: maxStrikes = gSave.misses; break;
@@ -331,7 +340,7 @@ void Game::launch(const Pending& p) {
 		o.ry = gRng.range(0, 6.28f);
 		o.rxv = gRng.range(-1.6f, 1.6f);
 		o.ryv = gRng.range(-2.4f, 2.4f);
-		o.radius = p.kind == OBJ_BOMB ? 19 : (p.kind == OBJ_COIN ? 18 : (p.kind == OBJ_FRUIT && p.fruit == kGrape ? 13 : 23));
+		o.radius = p.kind == OBJ_BOMB ? 19 : (p.kind == OBJ_COIN ? 18 : (p.kind == OBJ_FRUIT && p.fruit == kGrape ? 13 : 23) * fruitSize());
 		if (p.kind == OBJ_COIN) {
 			o.rotv = (p.vx >= 0 ? 1.0f : -1.0f) * gRng.range(6.5f, 8.5f);  // end over end, as a flipped coin
 			audio::play(SFX_COIN, 0.75f, fieldPan(p.x), gRng.range(0.96f, 1.06f));
@@ -401,6 +410,11 @@ void Game::pickThrow(bool bomb, float delay, float& x, float& vx, float& vy) {
 		float cx = gRng.range(36, kFieldW - 36);
 		float air = -2.0f * cvy / gravity;
 		float cvx = clampf((gRng.range(50, kFieldW - 50) - cx) / air, -75, 75);
+		if (mix[MIX_SIDES]) {  // in from just off one edge, landing past the middle, so it crosses the board
+			const bool left = gRng.unit() < 0.5f;
+			cx = left ? -14.0f : kFieldW + 14.0f;
+			cvx = ((left ? gRng.range(kFieldW * 0.55f, kFieldW - 20.0f) : gRng.range(20.0f, kFieldW * 0.45f)) - cx) / air;
+		}
 		float c = kTries > 1 ? clearance(cx, cvx, cvy, delay, bomb) : 0;
 		if (c > bestClear) {
 			bestClear = c;
@@ -425,7 +439,7 @@ bool Game::spawnPattern(float d) {
 	if (bombAround()) return false;
 	const float rise = 200;
 	const float vy = -sqrtf(2.0f * gravity * rise);
-	switch (gSpawn.below(4)) {
+	switch (mix[MIX_SIDES] ? 2 : gSpawn.below(4)) {  // Crossfire is the one pattern that comes from the sides
 		case 0: {  // Row: rises level, so one straight swipe can take them all.
 			int n = 4 + (int)(d * 3) + gSpawn.below(2);
 			float gap = n > 1 ? (kFieldW - 60.0f) / (n - 1) : 0;
@@ -470,7 +484,7 @@ void Game::spawnWave() {
 #endif
 	// Low gravity gives long, floaty arcs with plenty of hang time near the top.
 	const DifficultyInfo& level = kDifficulty[diffIndex()];
-	gravity = lerpf(300, 430, d) * (mode == MODE_ZEN ? 0.9f : 1.0f) * level.gravity;
+	gravity = lerpf(300, 430, d) * (mode == MODE_ZEN ? 0.9f : 1.0f) * level.gravity * (mix[MIX_LOW_GRAVITY] ? kMixerGravity : 1.0f);
 
 	float patternChance = lerpf(0.10f, 0.28f, d);
 	if (mode == MODE_COMBO) patternChance = 0.22f;
@@ -510,11 +524,11 @@ void Game::spawnWave() {
 	if (mode == MODE_MINEFIELD && bombSetting < 0.5f) bombSetting = 0.5f;  // with no bombs, this mode could never end
 	// Even a minefield has to leave some fruit worth going for.
 	const float bombLimit = mode == MODE_MINEFIELD ? (bombSetting > 1 ? 0.65f * bombSetting : 0.65f) : 0.9f;
-	bombChance = clampf(bombChance * level.bombs * bombSetting, 0, bombLimit > 0.9f ? 0.9f : bombLimit);
+	bombChance = clampf(bombChance * level.bombs * bombSetting * (mix[MIX_DOUBLE_BOMBS] ? 2.0f : 1.0f), 0, bombLimit > 0.9f ? 0.9f : bombLimit);
 	maxExtra = maxExtra + level.extra < 0 ? 0 : maxExtra + level.extra;
 	if (mode == MODE_MINEFIELD && maxExtra > 4) maxExtra = 4;
 	// One touch ends Sudden Death, so it never throws two at once.
-	const int bombsAllowed = mode == MODE_MINEFIELD ? 8 : (mode == MODE_SUDDEN || mode == MODE_COMBO ? 1 : level.bombsPerWave);
+	const int bombsAllowed = (mode == MODE_MINEFIELD ? 8 : (mode == MODE_SUDDEN || mode == MODE_COMBO ? 1 : level.bombsPerWave)) * (mix[MIX_DOUBLE_BOMBS] ? 2 : 1);
 	int count = 1 + gSpawn.below(maxExtra + 1);
 	float stagger = gSpawn.below(3) == 0 ? lerpf(0.22f, 0.11f, d) : 0.0f;
 	int bombsUsed = 0;
@@ -835,7 +849,7 @@ void Game::finishCombo() {
 // The app may be closed for good while it is away. Only the best score goes in now: the fruit count
 // waits for commitScore, or a run that carries on would count twice.
 bool Game::keepBestSoFar() {
-	u32* bests = assisted ? gSave.bestAssisted : gSave.best;
+	u32* bests = bestTable();
 	if (mode >= MODE_COUNT || scoreCommitted || score <= bests[mode]) return false;
 	bests[mode] = score;
 	return true;
@@ -855,7 +869,7 @@ void Game::commitScore() {
 		saveWrite();
 		return;
 	}
-	u32* bests = assisted ? gSave.bestAssisted : gSave.best;
+	u32* bests = bestTable();
 	if (score > bests[mode]) bests[mode] = score;
 	if (score > best) {
 		best = score;
@@ -1243,7 +1257,7 @@ Obj* Game::spawnPiece(const Obj& from, ObjKind kind, int fruit, float radius) {
 		g.rotv = gRng.range(-5, 5);
 		g.ry = gRng.range(0, 6.28f);
 		g.ryv = gRng.range(-3, 3);
-		g.radius = radius;
+		g.radius = radius * fruitSize();
 		g.hits = 1;
 		g.hitCooldown = 0.12f;
 		g.loose = true;
@@ -1677,7 +1691,7 @@ void Game::update(Blade& blade) {
 		elapsed += kDt;
 		if (!assisted && assistedRun()) {  // turned on from the pause menu: this run is assisted now
 			assisted = true;
-			best = gSave.bestAssisted[mode];
+			best = bestTable()[mode];
 		}
 		float objDt = (freezeT > 0 ? kDt * 0.45f : kDt) * (0.7f + slider(gSave.fruitSpeed) * 0.006f) * gameSpeedScale();
 		if (chiliT > 0) objDt *= 1.3f;  // the chili rush
@@ -1868,7 +1882,7 @@ void Game::drawObjects3D(bool top, float ox, float oy) const {
 	m3d::setSkin(shopWornSkin());
 	for (const auto& h : halves) {
 		if (!h.on || !onThisScreen(h.y, 30, top, oy)) continue;
-		m3d::Pose pose = {h.x + ox, h.y + oy, kFruitZ, h.rx, h.ry, h.rot, 1, h.axisX, h.axisY, h.tilt};
+		m3d::Pose pose = {h.x + ox, h.y + oy, kFruitZ, h.rx, h.ry, h.rot, fruitSize(), h.axisX, h.axisY, h.tilt};
 		if (h.cut >= 0) m3d::drawCut(h.cut, pose);
 		else m3d::draw(h.mesh, (m3d::Part)h.part, pose);
 	}
@@ -1877,7 +1891,7 @@ void Game::drawObjects3D(bool top, float ox, float oy) const {
 		for (const auto& o : objs) {
 			if (!o.on || o.kind > OBJ_BOMB || (o.kind == OBJ_BOMB) != (pass == 1) || !onThisScreen(o.y, 34, top, oy)) continue;
 			int mesh = o.kind == OBJ_BOMB ? m3d::MESH_BOMB : (o.kind == OBJ_GOLD ? m3d::MESH_GOLD : kFruit[o.fruit].mesh);
-			m3d::Pose pose = {o.x + ox, o.y + oy, o.kind == OBJ_BOMB ? kBombZ : kFruitZ, o.rx, o.ry, o.rot, 1, 0, 0, 0};
+			m3d::Pose pose = {o.x + ox, o.y + oy, o.kind == OBJ_BOMB ? kBombZ : kFruitZ, o.rx, o.ry, o.rot, o.kind == OBJ_BOMB ? 1 : fruitSize(), 0, 0, 0};
 			m3d::setSkin(o.kind == OBJ_BOMB ? nullptr : shopWornSkin());  // a bomb must always look like a bomb
 			m3d::draw(mesh, m3d::PART_WHOLE, pose);
 		}
@@ -1900,12 +1914,12 @@ void Game::drawObjects3D(bool top, float ox, float oy) const {
 void Game::drawObjects2D(bool top, float ox, float oy) const {
 	if (top) gfx::setDepth(0.7f);
 	for (const auto& h : halves) {
-		if (h.on && onThisScreen(h.y, 30, top, oy)) gfx::sprite(SHEET_FRUIT, h.sprite, h.x + ox, h.y + oy, 1, 1, h.rot, shopWornSkinTint());
+		if (h.on && onThisScreen(h.y, 30, top, oy)) gfx::sprite(SHEET_FRUIT, h.sprite, h.x + ox, h.y + oy, fruitSize(), fruitSize(), h.rot, shopWornSkinTint());
 	}
 	// Fruit first and bombs afterwards, so a bomb is never hidden behind a fruit.
 	for (const auto& o : objs) {
 		if (!o.on || o.kind > OBJ_GOLD || !onThisScreen(o.y, 34, top, oy)) continue;
-		gfx::sprite(SHEET_FRUIT, o.kind == OBJ_GOLD ? kGold.whole : kFruit[o.fruit].whole, o.x + ox, o.y + oy, 1, 1, o.rot, shopWornSkinTint());
+		gfx::sprite(SHEET_FRUIT, o.kind == OBJ_GOLD ? kGold.whole : kFruit[o.fruit].whole, o.x + ox, o.y + oy, fruitSize(), fruitSize(), o.rot, shopWornSkinTint());
 	}
 	if (top) gfx::setDepth(1.1f);
 	for (const auto& o : objs) {
@@ -1924,7 +1938,8 @@ void Game::drawMarks(bool top, float ox, float oy) const {
 		if (!o.on || o.kind > OBJ_GOLD || !onThisScreen(o.y, 40, top, oy)) continue;
 		if (gSave.highContrast) {
 			int spr = o.kind == OBJ_BOMB ? fruit_bomb_idx : (o.kind == OBJ_GOLD ? kGold.whole : kFruit[o.fruit].whole);
-			gfx::sprite(SHEET_FRUIT, spr, o.x + ox, o.y + oy, 1.14f, 1.14f, o.rot, rgba(240, 240, 240, 235));  // light, on the dark board
+			const float size = 1.14f * (o.kind == OBJ_BOMB ? 1 : fruitSize());
+			gfx::sprite(SHEET_FRUIT, spr, o.x + ox, o.y + oy, size, size, o.rot, rgba(240, 240, 240, 235));  // light, on the dark board
 		}
 		if (o.kind == OBJ_BOMB) drawBombMark(o.x + ox, o.y + oy, o.radius, o.age);
 	}
@@ -2105,7 +2120,7 @@ void Game::drawHud() const {
 
 	gfx::setDepth(0.9f);
 	gfx::text(modeName(mode), 380, 10, 0.5f, COL_CREAM, ALIGN_RIGHT);
-	snprintf(buf, sizeof buf, assisted ? "ASSISTED BEST %lu" : "BEST %lu", (unsigned long)(score > best ? score : best));
+	snprintf(buf, sizeof buf, mixed ? "MIXER BEST %lu" : (assisted ? "ASSISTED BEST %lu" : "BEST %lu"), (unsigned long)(score > best ? score : best));
 	gfx::text(buf, 380, 28, 0.42f, COL_DIM, ALIGN_RIGHT);
 
 	if (maxStrikes > 0) {
@@ -2240,7 +2255,7 @@ void Game::drawHud() const {
 		drawBeat(rx - 50 * u, 14 * u, u);
 		rx -= 60 * u;
 	}
-	snprintf(buf, sizeof buf, assisted ? "ASSISTED BEST %lu" : "BEST %lu", (unsigned long)(score > best ? score : best));
+	snprintf(buf, sizeof buf, mixed ? "MIXER BEST %lu" : (assisted ? "ASSISTED BEST %lu" : "BEST %lu"), (unsigned long)(score > best ? score : best));
 	gfx::text(buf, rx, 9 * u, 0.3f * u, COL_DIM, ALIGN_RIGHT);
 
 	const float bx = 12, by = 28 * u, bw = kFieldW - 24;

@@ -301,8 +301,9 @@ static void drawLinkIcon(const Button& b, int which, bool focused) {
 #endif
 // Index 0 of every list below is its back arrow, so D-pad and touch treat it like any other sign.
 // Pick a Game runs in pages of up to six, the main modes first. A new mode only needs a place in this list.
-static const u8 kModeOrder[] = {MODE_CLASSIC, MODE_ARCADE, MODE_FRENZY, MODE_ZEN, MODE_SUDDEN, MODE_DAILY, MODE_MINEFIELD, MODE_COMBO, MODE_BEAT};
-static_assert(sizeof kModeOrder == MODE_COUNT, "a sign for every mode");
+enum { SIGN_MIXER = MODE_COUNT + 1 };  // a sign on Pick a Game that opens a page, past the modes and Practice
+static const u8 kModeOrder[] = {MODE_CLASSIC, MODE_ARCADE, MODE_FRENZY, MODE_ZEN, MODE_SUDDEN, MODE_DAILY, MODE_MINEFIELD, MODE_COMBO, MODE_BEAT, SIGN_MIXER};
+static_assert(sizeof kModeOrder == MODE_COUNT + 1, "a sign for every mode");
 static constexpr int kModesPerPage = 6;
 static constexpr int kModePages = ((int)sizeof kModeOrder + kModesPerPage - 1) / kModesPerPage;
 static constexpr float kModeTop = 46, kModeStep = 58, kModeSignW = 124, kModeSignH = 52;
@@ -313,6 +314,20 @@ static int sArrowPressed = -1, sArrowHover = -1;
 // The arrows answer across the whole height of the signs, so they can be hit without aiming.
 static const Button kPageArrows[2] = {{0, kModeTop, 31, kModeStep * 2 + kModeSignH, nullptr}, {289, kModeTop, 31, kModeStep * 2 + kModeSignH, nullptr}};
 
+static int mixerRulesOn() {
+	int n = 0;
+	for (int i = 0; i < MIX_COUNT; i++) n += gSave.mixer[i] != 0;
+	return n;
+}
+
+static const char* modeSignName(int id) {
+	if (id != SIGN_MIXER) return kModes[id].name;
+	if (!mixerRulesOn()) return "Mixer";
+	static char label[16];
+	snprintf(label, sizeof label, "Mixer (%d on)", mixerRulesOn());
+	return label;
+}
+
 // Index 0 is the back arrow, as on every other menu. A last sign alone in its row is centred.
 static int modeSigns(int page, Button* out) {
 	const int left = (int)sizeof kModeOrder - page * kModesPerPage;
@@ -320,7 +335,7 @@ static int modeSigns(int page, Button* out) {
 	out[0] = kBack;
 	for (int i = 0; i < n; i++) {
 		const float x = i == n - 1 && (n & 1) ? 160 - kModeSignW * 0.5f : (i & 1 ? 163.0f : 33.0f);
-		out[i + 1] = {x, kModeTop + kModeStep * (i / 2), kModeSignW, kModeSignH, kModes[kModeOrder[page * kModesPerPage + i]].name};
+		out[i + 1] = {x, kModeTop + kModeStep * (i / 2), kModeSignW, kModeSignH, modeSignName(kModeOrder[page * kModesPerPage + i])};
 	}
 	return n + 1;
 }
@@ -946,7 +961,7 @@ static void drawCut(Screen screen) {
 
 // ---------------------------------------------------------------- settings rows
 enum RowKind { ROW_SLIDER, ROW_CHOICE, ROW_ACTION, ROW_PAGE };  // a page row opens the section numbered by its lo
-enum SectionId { SID_AUDIO, SID_VISUALS, SID_VISUALS_MORE, SID_GAMEPLAY, SID_GAMEPLAY_MORE, SID_ACCESS, SID_ACCESS_MORE, SID_DATA, SID_DEV };
+enum SectionId { SID_AUDIO, SID_VISUALS, SID_VISUALS_MORE, SID_GAMEPLAY, SID_GAMEPLAY_MORE, SID_ACCESS, SID_ACCESS_MORE, SID_DATA, SID_DEV, SID_MIXER };
 enum RowAction { ACT_NONE, ACT_RESET_AUDIO, ACT_RESET_VISUALS, ACT_RESET_GAMEPLAY, ACT_RESET_SCORES, ACT_RESET_ALL, ACT_SPEED_TEST, ACT_APPLY_DISPLAY, ACT_RESET_DISPLAY, ACT_RESET_ACCESS, ACT_RESET_CONTROLS, ACT_DEV_ADD_COINS, ACT_DEV_CLEAR_COINS, ACT_DEV_NEXT_DAY, ACT_CHECK_UPDATES };
 
 struct Row {
@@ -993,6 +1008,14 @@ static const char* const kTrackRowNames[kTrackCount + 1] = {
 #include "shop_items.inc"
 };
 
+static const Row kMixerRows[] = {
+	{ROW_CHOICE, "Low Gravity", &gSave.mixer[MIX_LOW_GRAVITY], 0, 1, kOffOn, 0, 0, ACT_NONE, "Fruit floats and hangs in the air.", "Not used in Daily Fruit or Beat Slice."},
+	{ROW_CHOICE, "Giant Fruit", &gSave.mixer[MIX_GIANT], 0, 1, kOffOn, 0, 0, ACT_NONE, "Every fruit is half as big again.", "Turns Tiny Fruit off."},
+	{ROW_CHOICE, "Tiny Fruit", &gSave.mixer[MIX_TINY], 0, 1, kOffOn, 0, 0, ACT_NONE, "Small fruit, harder to hit.", "Turns Giant Fruit off."},
+	{ROW_CHOICE, "Mirror", &gSave.mixer[MIX_MIRROR], 0, 1, kOffOn, 0, 0, ACT_NONE, "Your blade moves left when", "you move right."},
+	{ROW_CHOICE, "Double Bombs", &gSave.mixer[MIX_DOUBLE_BOMBS], 0, 1, kOffOn, 0, 0, ACT_NONE, "Twice the bombs in every wave.", "Zen stays bomb-free."},
+	{ROW_CHOICE, "Sides Only", &gSave.mixer[MIX_SIDES], 0, 1, kOffOn, 0, 0, ACT_NONE, "Fruit only comes in", "from the left and right."},
+};
 static const Row kAudioRows[] = {
 	{ROW_SLIDER, "Sound Effects", &gSave.sfx, 0, 100, nullptr, 0, 100, ACT_NONE, "Slices, combos and bombs.", ""},
 	{ROW_SLIDER, "Music", &gSave.music, 0, 100, nullptr, 0, 100, ACT_NONE, "Menu and game music.", ""},
@@ -1135,12 +1158,13 @@ struct Section {
 	const Row* rows;
 	int count;
 	SectionId id;
-	int parent;    // the section whose Advanced row opens this one, or -1 for a sign on the Options screen
+	int parent;    // the section whose Advanced row opens this one, -1 for a sign on the Options screen, or kFromModes
 	bool inPause;  // reachable from the pause menu
 	const char* hint1;
 	const char* hint2;
 };
 #define SECTION_ROWS(rows) rows, sizeof rows / sizeof(Row)
+static constexpr int kFromModes = -2;  // opened from Pick a Game, and goes back there
 static const Section kSections[] = {
 	{"Audio", SECTION_ROWS(kAudioRows), SID_AUDIO, -1, true, "Sound, music and menu volume.", ""},
 #if PORT_HAS_DISPLAY
@@ -1159,6 +1183,7 @@ static const Section kSections[] = {
 #ifdef DEV_TOOLS
 	{"Developer", SECTION_ROWS(kDevRows), SID_DEV, -1, false, "Testing tools. Not in", "release builds."},
 #endif
+	{"Mixer", SECTION_ROWS(kMixerRows), SID_MIXER, kFromModes, false, "", ""},
 };
 #undef SECTION_ROWS
 constexpr int kSectionCount = sizeof kSections / sizeof kSections[0];
@@ -1178,7 +1203,7 @@ static int optionButtons() {
 	int n = 0;
 	int visible[kSectionCount];
 	for (int i = 0; i < kSectionCount; i++)
-		if (kSections[i].parent < 0 && (!sOptionsFromPause || kSections[i].inPause)) visible[n++] = i;
+		if (kSections[i].parent == -1 && (!sOptionsFromPause || kSections[i].inPause)) visible[n++] = i;
 	sOptionButtons[0] = kBack;
 	sOptionSection[0] = -1;
 	for (int i = 0; i < n; i++) {
@@ -1305,6 +1330,8 @@ static void changedSetting(const Row& r) {
 	applyAccessibility();
 	sDirty = true;
 	if (r.value == &gSave.music) audio::refreshVolumes();
+	if (r.value == &gSave.mixer[MIX_GIANT] && *r.value) gSave.mixer[MIX_TINY] = 0;
+	if (r.value == &gSave.mixer[MIX_TINY] && *r.value) gSave.mixer[MIX_GIANT] = 0;
 	// Hear a track as soon as it is picked. Leaving the section puts the right one back.
 	if (r.value == &gSave.menuTrack) audio::preview(MUSIC_MENU);
 	if (r.value == &gSave.gameTrack) audio::preview(MUSIC_PLAY);
@@ -1466,7 +1493,7 @@ static void leaveSection(bool clicked = false) {
 	port::displayDiscard();  // a mode or resolution picked but never applied
 #endif
 	audio::reapply();
-	goTo(SCREEN_OPTIONS, -1);
+	goTo(kSections[sSection].parent == kFromModes ? SCREEN_MODES : SCREEN_OPTIONS, -1);
 }
 
 static void setSliderFromTouch(const Row& r, int x) {
@@ -3088,12 +3115,19 @@ static void drawTopContent(Screen screen) {
 			gfx::setDepth(0.7f);
 			if (mode == MODE_DAILY) {
 				drawDailyTop();
+			} else if (mode == SIGN_MIXER) {
+				gfx::text("Mixer", 200, 104, 0.6f, COL_ACCENT, ALIGN_CENTER);
+				gfx::text("Rules that change how any mode", 200, 134, 0.38f, COL_CREAM, ALIGN_CENTER);
+				gfx::text("plays, with bests of their own.", 200, 152, 0.38f, COL_CREAM, ALIGN_CENTER);
+				snprintf(buf, sizeof buf, mixerRulesOn() ? "%d ON" : "ALL OFF", mixerRulesOn());
+				gfx::text(buf, 200, 184, 0.6f, COL_CREAM, ALIGN_CENTER);
 			} else if (mode >= 0) {
 				const ModeInfo& m = kModes[mode];
 				gfx::text(m.name, 200, 104, 0.6f, COL_ACCENT, ALIGN_CENTER);
 				gfx::text(m.line1, 200, 134, 0.38f, COL_CREAM, ALIGN_CENTER);
 				gfx::text(m.line2, 200, 152, 0.38f, COL_CREAM, ALIGN_CENTER);
-				if (assistedRun()) snprintf(buf, sizeof buf, "ASSISTED BEST %lu", (unsigned long)gSave.bestAssisted[mode]);
+				if (mixerRulesOn() && mode < MODE_DAILY) snprintf(buf, sizeof buf, "MIXER BEST %lu", (unsigned long)gSave.bestMixer[mode]);
+				else if (assistedRun()) snprintf(buf, sizeof buf, "ASSISTED BEST %lu", (unsigned long)gSave.bestAssisted[mode]);
 				else snprintf(buf, sizeof buf, "BEST %lu", (unsigned long)gSave.best[mode]);
 				gfx::text(buf, 200, 184, 0.6f, COL_CREAM, ALIGN_CENTER);
 			} else {
@@ -3264,7 +3298,7 @@ static void drawTopContent(Screen screen) {
 			if (sGame.newBest) {
 				gfx::text("NEW BEST!", 200, 116, 0.7f + sinf(sTime * 6) * 0.04f, COL_CREAM, ALIGN_CENTER);
 			} else {
-				snprintf(buf, sizeof buf, sGame.assisted ? "ASSISTED BEST %lu" : "BEST %lu", (unsigned long)sGame.best);
+				snprintf(buf, sizeof buf, sGame.mixed ? "MIXER BEST %lu" : (sGame.assisted ? "ASSISTED BEST %lu" : "BEST %lu"), (unsigned long)sGame.best);
 				gfx::text(buf, 200, 116, 0.6f, COL_DIM, ALIGN_CENTER);
 			}
 			if (sGame.mode == MODE_BEAT) snprintf(buf, sizeof buf, "SLICED %d   ON THE BEAT %d", sGame.sliced, sGame.beatHits);
@@ -3522,7 +3556,8 @@ static void drawBottomContent(Screen screen) {
 				for (int i = 1; i < n; i++) {
 					Button b = signs[i];
 					b.x += dx;
-					drawModeTile(b, kIcons[modeOnSign(page, i)], live && f == i, live && sPressed == i);
+					const int id = modeOnSign(page, i);
+					drawModeTile(b, id == SIGN_MIXER ? sprites_knob_idx : kIcons[id], live && f == i, live && sPressed == i);
 				}
 			};
 			if (sModeSlide != 0) drawPage(sModeOldPage, sModeSlide - (sModeSlide > 0 ? 320 : -320), false);
@@ -3832,7 +3867,13 @@ static void updateFrame(const Input& in, bool wasTouching) {
 			}
 			const int mode = t > 0 ? modeOnSign(sModePage, t) : -1;
 			if (t == 0) goTo(SCREEN_TITLE, -1);
-			else if (mode == MODE_BEAT) {
+			else if (mode == SIGN_MIXER) {
+				sSection = sectionIndex(SID_MIXER);
+				sScroll = 0;
+				sArmed = -1;
+				sFocus[SCREEN_SECTION] = 0;
+				goTo(SCREEN_SECTION, 1);
+			} else if (mode == MODE_BEAT) {
 				// Beat Slice picks its track first, playing each one as it is chosen.
 				sFocus[SCREEN_BEAT] = 1;
 #if PORT_CUSTOM_MUSIC
@@ -4047,7 +4088,7 @@ static void updateFrame(const Input& in, bool wasTouching) {
 				break;
 			}
 #endif
-			sBlade.update(in);
+			sBlade.update(sGame.bladeInput(in));
 			sGame.update(sBlade);
 			sGame.kickParticles();
 			if (in.down & KEY_START) {
@@ -4359,7 +4400,7 @@ static void stickBlade(Input& in) {
 	}
 	float vx = sx * speed, vy = sy * speed;
 	float fx, fy;
-	if (gSave.snapAssist && speed > 60 && sGame.fruitAhead(sPointX, sPointY, sx, sy, 70, &fx, &fy)) {
+	if (gSave.snapAssist && !sGame.mix[MIX_MIRROR] && speed > 60 && sGame.fruitAhead(sPointX, sPointY, sx, sy, 70, &fx, &fy)) {
 		// Bend a third of the way toward the fruit, keeping the speed.
 		float tx = fx - sPointX, ty = fy - sPointY, tl = sqrtf(tx * tx + ty * ty);
 		if (tl > 1) {
@@ -4377,8 +4418,9 @@ static void stickBlade(Input& in) {
 static void drawStickPoint() {
 	if (sScreen != SCREEN_GAME || sPointShow <= 0 || sWasTouching) return;
 	float a = clampf(sPointShow, 0, 1);
-	gfx::sprite(SHEET_SPRITES, sprites_glow_idx, sPointX, sPointY, 0.5f, 0.5f, 0, withAlpha(COL_ACCENT, 0.8f * a));
-	gfx::rect(sPointX - 2, sPointY - 2, 4, 4, withAlpha(COL_CREAM, a));
+	const float x = sGame.mix[MIX_MIRROR] ? kFieldW - sPointX : sPointX;  // shows where the blade really is
+	gfx::sprite(SHEET_SPRITES, sprites_glow_idx, x, sPointY, 0.5f, 0.5f, 0, withAlpha(COL_ACCENT, 0.8f * a));
+	gfx::rect(x - 2, sPointY - 2, 4, 4, withAlpha(COL_CREAM, a));
 }
 
 bool app::frame(Input& in, int steps) {

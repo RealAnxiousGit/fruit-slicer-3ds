@@ -80,6 +80,12 @@ static void botMenuPicture(const char* name) {
 #endif
 static void botMenuWalk() {
 	const auto open = [](SectionId id) { botTap(optionButtonFor(id)); };
+#if !PORT_3DS
+	// FRUIT_SLICER_WALK_FROM=n starts the walk at step n, to photograph the newest pages without the wait.
+	static bool jumped = false;
+	if (!jumped && getenv("FRUIT_SLICER_WALK_FROM")) sBotMenuStep = atoi(getenv("FRUIT_SLICER_WALK_FROM"));
+	jumped = true;
+#endif
 	switch (sBotMenuStep++) {
 		case 0: gSave.practiceDone = 1; botTap(kTitleButtons[0]); return;
 		case 1: botMenuPicture("a1_modes1"); sFocus[SCREEN_MODES] = 2; sBotKeys = KEY_RIGHT; return;
@@ -112,9 +118,12 @@ static void botMenuWalk() {
 		case 28: botMenuPicture("d1_journal"); sJournalList.pos = sJournalList.aim = kJournalStep; return;
 		case 29: botMenuPicture("d2_journal_scrolled"); sGame.labShowcase(); sScreen = SCREEN_GAME; botMenuPicture("e1_fruit"); return;
 		case 30: sGame.labShowcase(); sScreen = SCREEN_PAUSE; botMenuPicture("e2_pause"); return;
-		case 31: shopSetTab(SHOP_SKINS); sShopItem = 0; gSave.ownedExtras |= 3u << 17; gSave.skin = 1; sGame.labShowcase(); sScreen = PORT_3DS ? SCREEN_PAUSE : SCREEN_GAME; botMenuPicture("e3_gold"); return;
-		case 32: gSave.skin = 2; sGame.labShowcase(); sScreen = PORT_3DS ? SCREEN_PAUSE : SCREEN_GAME; botMenuPicture("e4_glass"); return;
-		case 33: sScreen = SCREEN_SHOP; shopSetTab(SHOP_SKINS); sShopItem = 0; botMenuPicture("e5_shop_skins"); return;
+		case 31: gSave.ownedExtras |= 3u << 17; sScreen = SCREEN_SHOP; shopSetTab(SHOP_SKINS); sShopItem = 0; botMenuPicture("e5_shop_skins"); return;
+		case 32: sSection = sectionIndex(SID_MIXER); sFocus[SCREEN_SECTION] = 1; sScroll = 0; sScreen = SCREEN_SECTION; botMenuPicture("e6_mixer"); return;
+		case 33: gSave.skin = 1; sGame.labShowcase(); sScreen = PORT_3DS ? SCREEN_PAUSE : SCREEN_GAME; botMenuPicture("e3_gold"); return;
+		case 34: gSave.skin = 2; sGame.labShowcase(); sScreen = PORT_3DS ? SCREEN_PAUSE : SCREEN_GAME; botMenuPicture("e4_glass"); return;
+		case 35: gSave.skin = 0; gSave.mixer[MIX_GIANT] = 1; sGame.labShowcase(); sScreen = PORT_3DS ? SCREEN_PAUSE : SCREEN_GAME; botMenuPicture("e7_giant"); return;
+		case 36: gSave.mixer[MIX_GIANT] = 0; gSave.mixer[MIX_TINY] = 1; sGame.labShowcase(); sScreen = PORT_3DS ? SCREEN_PAUSE : SCREEN_GAME; botMenuPicture("e8_tiny"); return;
 		default: return;
 	}
 }
