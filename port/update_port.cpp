@@ -2,7 +2,8 @@
 // thread. The CIA build installs a new CIA as it downloads, 64 KB at a time, straight into the system's
 // installer (AM), as the update test proved on a New 2DS XL; nothing is written to the SD card first. A
 // download that fails or comes up short is cancelled, leaving the installed game as it was. The 3DSX build
-// can't install itself, so it only says that a new version is out.
+// downloads beside itself as "<name>.3dsx.new". Its art and music live inside its own file, so the swap waits
+// until the game has closed that file, and returning from main then lands in the Homebrew Launcher.
 #include <3ds.h>
 #include <curl/curl.h>
 #include <malloc.h>
@@ -29,6 +30,30 @@ u64 sWritten;
 bool sWriteFailed;
 u8 sBlock[64 * 1024] __attribute__((aligned(0x1000)));
 u32 sBlockLen;
+FILE* sOut;            // the 3DSX build's download; null while installing a CIA
+char sIncoming[300];
+bool sSwapDue;         // a whole new 3DSX is waiting beside the running one
+
+// libctru keeps the launcher's arguments here. The first is the running file, when a launcher passed one.
+extern "C" int __system_argc;
+extern "C" char** __system_argv;
+
+const char* selfPath() {
+	if (__system_argc < 1 || !__system_argv || !__system_argv[0]) return nullptr;
+	const char* p = __system_argv[0];
+	const size_t n = strlen(p);
+	if (strncmp(p, "sdmc:/", 6) != 0 || n < 11 || n > 280 || strcmp(p + n - 5, ".3dsx") != 0) return nullptr;
+	return p;
+}
+
+bool isHomebrewFile(const char* path) {
+	FILE* f = fopen(path, "rb");
+	if (!f) return false;
+	char magic[4] = {};
+	const bool read = fread(magic, 1, 4, f) == 4;
+	fclose(f);
+	return read && memcmp(magic, "3DSX", 4) == 0;
+}
 
 bool netUp() {
 	if (sSocBuf) return true;
@@ -67,7 +92,9 @@ size_t toText(char* p, size_t size, size_t n, void*) {
 bool flushBlock() {
 	if (!sBlockLen) return true;
 	u32 w = 0;
-	if (R_FAILED(FSFILE_Write(sCia, &w, sWritten, sBlock, sBlockLen, 0)) || w != sBlockLen) {
+	if (sOut) w = fwrite(sBlock, 1, sBlockLen, sOut);
+	else if (R_FAILED(FSFILE_Write(sCia, &w, sWritten, sBlock, sBlockLen, 0))) w = 0;
+	if (w != sBlockLen) {
 		sWriteFailed = true;
 		return false;
 	}
@@ -112,6 +139,13 @@ void work(void*) {
 	}
 	if (sText) {
 		ok = ok && sReply;
+	} else if (sOut) {
+		ok = ok && flushBlock() && sGot == sExpect && !sWriteFailed;
+		ok = fclose(sOut) == 0 && ok;
+		sOut = nullptr;
+		ok = ok && isHomebrewFile(sIncoming);
+		if (ok) sSwapDue = true;
+		else remove(sIncoming);
 	} else {
 		ok = ok && flushBlock() && sGot == sExpect && !sWriteFailed;
 		if (ok) ok = R_SUCCEEDED(AM_FinishCiaInstall(sCia));
@@ -144,7 +178,43 @@ bool begin(bool text, const char* url) {
 
 namespace port {
 const char* updateRepo() { return "RealAnxiousGit/fruit-slicer-3ds"; }
-const char* updateAsset() { return envIsHomebrew() ? nullptr : ".cia"; }
+const char* updateAsset() {
+	if (!envIsHomebrew()) return ".cia";
+	return selfPath() ? ".3dsx" : nullptr;  // started without its path, it can't know which file to replace
+}
+
+// Put the new file in place of the old. The old one is only deleted once the new one has its name.
+bool replaceFile(const char* target, const char* incoming) {
+	if (strlen(target) > 280) return false;
+	FILE* f = fopen(incoming, "rb");
+	if (!f) return false;
+	fclose(f);
+	char old[300];
+	snprintf(old, sizeof old, "%s.old", target);
+	remove(old);
+	if (rename(target, old) != 0) return false;
+	if (rename(incoming, target) != 0) {
+		rename(old, target);
+		return false;
+	}
+	remove(old);
+	return true;
+}
+
+void updateTidy() {
+	const char* self = envIsHomebrew() ? selfPath() : nullptr;
+	if (!self) return;
+	char path[300];
+	snprintf(path, sizeof path, "%s.new", self);
+	remove(path);  // a download the console was switched off before using
+	snprintf(path, sizeof path, "%s.old", self);
+	remove(path);
+}
+
+void updateFinish() {
+	if (sSwapDue && selfPath()) replaceFile(selfPath(), sIncoming);
+	sSwapDue = false;
+}
 
 bool netGetText(const char* url) {
 	sExpect = 0;
@@ -158,6 +228,19 @@ bool netDownload(const char* url, unsigned long long size) {
 	sBlockLen = 0;
 	sWritten = 0;
 	sWriteFailed = false;
+	if (envIsHomebrew()) {
+		snprintf(sIncoming, sizeof sIncoming, "%s.new", selfPath());
+		sSwapDue = false;
+		sOut = fopen(sIncoming, "wb");
+		if (!sOut) return false;
+		if (!begin(false, url)) {
+			fclose(sOut);
+			sOut = nullptr;
+			remove(sIncoming);
+			return false;
+		}
+		return true;
+	}
 	if (R_FAILED(amInit())) return false;
 	if (R_FAILED(AM_StartCiaInstall(MEDIATYPE_SD, &sCia))) {
 		amExit();
@@ -184,6 +267,6 @@ int netPoll(float* progress) {
 
 char* netText() { return sReply; }
 
-// The new version is already installed; closing the game goes back to the HOME Menu, where it opens.
+// A CIA is already installed, and a 3DSX swaps in updateFinish: either way, closing the game is all that's left.
 void updateRestart() {}
 }  // namespace port

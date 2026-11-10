@@ -9,7 +9,7 @@ enum State {
 	ASK,          // first start: may the game check?
 	CHECKING,     // asking GitHub
 	OFFER,        // a newer version, which this build can install
-	NOTE,         // a newer version, but this build can't install itself (3DSX, a read-only folder)
+	NOTE,         // a newer version, but this build can't install itself (a 3DSX with no known path, a read-only folder)
 	DOWNLOADING,  // fetching and installing it
 	READY,        // installed: restart (or close to HOME) to finish
 	LATEST,       // Check Now found nothing newer

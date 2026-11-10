@@ -150,6 +150,7 @@ static void onApt(APT_HookType hook, void*) {
 
 int main() {
 	romfsInit();
+	port::updateTidy();
 #if defined(AUTOTEST) || defined(TEST_DLOG)
 	consoleDebugInit(debugDevice_SVC);  // stderr goes to svcOutputDebugString, visible in Azahar's log
 #endif
@@ -208,5 +209,6 @@ int main() {
 	app::shutdown();
 	cfguExit();
 	romfsExit();
+	port::updateFinish();  // only now is the game's own file free to be replaced
 	return 0;
 }

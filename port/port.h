@@ -38,6 +38,13 @@
 #define PORT_VIBRATE(strength, ms) ((void)0)
 #define PORT_STICK_HINT "Hold: slices while A, L or R is held."
 
+// The 3DSX build updating itself (update_port.cpp).
+namespace port {
+bool replaceFile(const char* target, const char* incoming);
+void updateTidy();    // at boot: clears anything an unfinished update left beside the game
+void updateFinish();  // after the game has closed its own file: puts a downloaded update in place
+}
+
 // Filling the GPU's command list drops its closing commands and hangs the GPU, so draws stop short of that.
 inline bool gpuHasRoom() {
 	u32* addr;

@@ -366,6 +366,37 @@ static void labFinish(Input& in) {
 			labCheck(allBeat, "every Shop song can be played in Beat Slice");
 		}
 		{
+#if PORT_3DS
+			// The 3DSX update's file swap, on stand-in files beside the save.
+			static const char* const kLabOld = "sdmc:/3ds/FruitSlicer/lab_swap.bin";
+			static const char* const kLabNew = "sdmc:/3ds/FruitSlicer/lab_swap.bin.new";
+			const auto write = [](const char* path, const char* text) {
+				FILE* f = fopen(path, "wb");
+				if (f) {
+					fputs(text, f);
+					fclose(f);
+				}
+			};
+			const auto holds = [](const char* path, const char* text) {
+				char got[8] = {};
+				FILE* f = fopen(path, "rb");
+				if (!f) return false;
+				fread(got, 1, sizeof got - 1, f);
+				fclose(f);
+				return strcmp(got, text) == 0;
+			};
+			write(kLabOld, "old");
+			remove(kLabNew);
+			labCheck(!port::replaceFile(kLabOld, kLabNew) && holds(kLabOld, "old"), "a 3DSX update with no download leaves the game alone");
+			write(kLabNew, "new");
+			labCheck(port::replaceFile(kLabOld, kLabNew) && holds(kLabOld, "new"), "a 3DSX update replaces the game file");
+			FILE* leftover = fopen("sdmc:/3ds/FruitSlicer/lab_swap.bin.new", "rb");
+			FILE* backup = fopen("sdmc:/3ds/FruitSlicer/lab_swap.bin.old", "rb");
+			labCheck(!leftover && !backup, "a 3DSX update leaves no extra files behind");
+			if (leftover) fclose(leftover);
+			if (backup) fclose(backup);
+			remove(kLabOld);
+#endif
 			const u32 zen = gSave.best[MODE_ZEN], combo = gSave.best[MODE_COMBO], classic = gSave.best[MODE_CLASSIC];
 			const u8 rules = gSave.scoreRules;
 			gSave.scoreRules = 0;
