@@ -24,13 +24,13 @@
 #endif
 
 SHOP_THEME("Night Picnic", 120, "Gingham under the fireflies.", 40, 48, 110, 255, 214, 120, 16, 20, 54)
-SHOP_THEME("Beach Towel", 200, "Stripes, sun and a little sand.", 30, 110, 120, 255, 206, 80, 120, 40, 36)
-SHOP_THEME("Kitchen Counter", 300, "Terrazzo by the window.", 96, 92, 88, 255, 170, 90, 58, 56, 54)
-SHOP_THEME("Snowfall", 400, "Fresh snow and tiny footprints.", 70, 100, 150, 200, 230, 255, 36, 52, 86)
+SHOP_THEME("Beach Towel", 200, "Stripes, sun and a little sand.", 26, 95, 103, 255, 206, 80, 120, 40, 36)
+SHOP_THEME("Kitchen Counter", 300, "Terrazzo by the window.", 79, 75, 72, 255, 170, 90, 58, 56, 54)
+SHOP_THEME("Snowfall", 400, "Fresh snow and tiny footprints.", 61, 87, 130, 200, 230, 255, 36, 52, 86)
 SHOP_THEME("Autumn Leaves", 500, "Planks under falling maple.", 110, 60, 30, 255, 170, 60, 56, 30, 16)
 SHOP_THEME("Pumpkin Patch", 450, "Vines and pumpkins after dark.", 86, 52, 96, 255, 168, 60, 34, 22, 42)
-SHOP_THEME("Spring Blossom", 450, "Soft grass and drifting petals.", 44, 110, 72, 255, 214, 226, 22, 62, 44)
-SHOP_THEME("Bamboo Mat", 350, "Rolled slats tied with cord.", 96, 106, 54, 255, 222, 120, 50, 58, 28)
+SHOP_THEME("Spring Blossom", 450, "Soft grass and drifting petals.", 39, 97, 63, 255, 214, 226, 22, 62, 44)
+SHOP_THEME("Bamboo Mat", 350, "Rolled slats tied with cord.", 82, 90, 46, 255, 222, 120, 50, 58, 28)
 
 SHOP_TRAIL("Ink", 80, "A brush stroke that dries as it goes.", TR_INK, 0x222034, 0x222034)
 SHOP_TRAIL("Flame", 150, "Hot at the tip, embers behind.", TR_FLAME, 0xDC2814, 0xFFDC46)

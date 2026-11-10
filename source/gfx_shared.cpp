@@ -10,12 +10,13 @@ struct BoardTheme {
 	u8 plank[3], accent[3], bar[3];
 };
 // Picked from each board: its check, its wood, its plate rim, its veins, its sea, its night.
+// Sign colours are dark enough for the dim hint text and the accent to reach 4.5:1 on them.
 static const BoardTheme kThemes[kBoardCount] = {
 	{{46, 84, 116}, {255, 204, 96}, {22, 42, 62}},
-	{{112, 68, 36}, {255, 170, 60}, {62, 36, 18}},
+	{{108, 65, 35}, {255, 170, 60}, {62, 36, 18}},
 	{{44, 84, 148}, {255, 214, 120}, {70, 50, 40}},
 	{{78, 82, 100}, {130, 214, 240}, {52, 54, 68}},
-	{{24, 100, 108}, {255, 214, 110}, {16, 70, 76}},
+	{{23, 95, 103}, {255, 214, 110}, {16, 70, 76}},
 	{{66, 46, 118}, {255, 200, 120}, {24, 18, 54}},
 #define SHOP_THEME(name, price, line, pr, pg, pb, ar, ag, ab, br, bg, bb) {{pr, pg, pb}, {ar, ag, ab}, {br, bg, bb}},
 #include "shop_items.inc"
