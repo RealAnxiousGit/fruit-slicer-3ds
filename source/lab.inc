@@ -269,6 +269,15 @@ static void labMenus() {
 	}
 }
 
+// The Mixer page, each time Pick a Game's checks open it: counted, then left by its back arrow.
+static int sLabMixerOpens = 0;
+static void labMixerPage() {
+	const bool mixer = kSections[sSection].id == SID_MIXER;
+	if (mixer) sLabMixerOpens++;
+	else labCheck(false, "only the Mixer opens from Pick a Game here", kSections[sSection].title);
+	botTap(kBack);
+}
+
 // Pick a Game's pages, the first time the bot reaches it. Returns true while there are steps left.
 static bool labModePages() {
 	static int step = 0;
@@ -293,7 +302,32 @@ static bool labModePages() {
 			return true;
 		case 4:
 			labCheck(sModePage == 0, "turning past the last page wraps to the first");
+			sBotKeys = KEY_SELECT;  // a 3DS's Select, or Back or View on a controller
+			return true;
+		case 5:
+			labCheck(sLabMixerOpens == 1 && !sShowDebug, "Select on Pick a Game opens the Mixer");
+#if PORT_3DS
+			return false;  // the 3DS keeps its Mixer sign
+#else
+			{
+				bool onPage = false;
+				for (int i = 0; i < (int)sizeof kModeOrder; i++) onPage |= kModeOrder[i] == SIGN_MIXER;
+				const Button m = mixerButton();
+				labCheck(!onPage && modeAt(0, kMixFocus) == SIGN_MIXER, "the Mixer is a fruit of its own, not a sign among the modes");
+				labCheck(m.w > 0 && (m.x + m.w < 0 || m.x > 320 || m.y + m.h < 0 || m.y > 240), "the Mixer fruit sits on the picture side, under the info sign");
+			}
+			sFocus[SCREEN_MODES] = kMixFocus;
+			sBotKeys = KEY_LEFT;
+			return true;
+		case 6:
+			labCheck(sModePage == 0, "Left on the Mixer fruit doesn't turn the page");
+			sFocus[SCREEN_MODES] = kMixFocus;
+			sBotKeys = KEY_A;
+			return true;
+		case 7:
+			labCheck(sLabMixerOpens == 2, "confirm on the Mixer fruit opens the Mixer");
 			return false;
+#endif
 		default:
 			return false;
 	}

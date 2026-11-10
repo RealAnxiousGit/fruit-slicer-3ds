@@ -30,7 +30,7 @@ A free, fan-made fruit-slicing arcade game for the Nintendo 3DS. Swipe the touch
 
 Pick a Game shows six signs a page. The arrows beside the signs, or left and right, turn the page.
 
-**Mixer:** rules that change any mode, in any mix: Low Gravity, Giant Fruit, Tiny Fruit, Mirror, Double Bombs (Zen stays bomb-free) and Sides Only. Runs with a rule on keep their own best scores. Daily Fruit and Beat Slice always play without them.
+**Mixer:** rules that change any mode, in any mix: Low Gravity, Giant Fruit, Tiny Fruit, Mirror, Double Bombs (Zen stays bomb-free) and Sides Only. Runs with a rule on keep their own best scores. Daily Fruit and Beat Slice always play without them. Its sign is on Pick a Game, and Select opens it from any page there.
 
 **Pass and Play:** 2 to 4 players take one run each on the same console, in Classic, Arcade, Frenzy, Sudden Death, Minefield or Combo Rush. Each player has a colour and a name typed on the system keyboard, and a results board shows who won. These runs don't change your bests.
 

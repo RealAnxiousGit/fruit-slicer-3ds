@@ -7,7 +7,7 @@ Saves from 1.0 carry over: scores, coins, unlocks and settings are kept. Zen and
 ### New
 
 - **The 3DSX version updates itself:** it downloads the new version from GitHub, goes back to the Homebrew Launcher, and the next start is the new version. This works from 1.1 on, so copy 1.1's 3DSX over by hand once. The CIA version installs updates as before.
-- **Mixer:** a sign on Pick a Game with rules that combine on any mode: Low Gravity, Giant Fruit, Tiny Fruit, Mirror, Double Bombs and Sides Only. Runs with any rule on keep their own best scores. Daily Fruit and Beat Slice always play without them.
+- **Mixer:** a sign on Pick a Game with rules that combine on any mode: Low Gravity, Giant Fruit, Tiny Fruit, Mirror, Double Bombs and Sides Only. Select opens it from any page of Pick a Game. Runs with any rule on keep their own best scores. Daily Fruit and Beat Slice always play without them.
 - **Pass and Play:** 2 to 4 players take one run each on the same console, in Classic, Arcade, Frenzy, Sudden Death, Minefield or Combo Rush. Each player has a colour and a name typed on the system keyboard, and a results board shows who won. These runs don't change your bests.
 - **New trick fruit:** a banana bunch that breaks into bananas you can slice again, a pomegranate whose seeds add to the combo when caught in the same swipe, and a rare piñata that takes several hits, pays candy points and then drops coins. Dragon fruit now splits into three pieces. Each has a Fruit Journal page.
 - **3D coins** that flip as they fly, in the 3D art style.

@@ -302,8 +302,15 @@ static void drawLinkIcon(const Button& b, int which, bool focused) {
 // Index 0 of every list below is its back arrow, so D-pad and touch treat it like any other sign.
 // Pick a Game runs in pages of up to six, the main modes first. A new mode only needs a place in this list.
 enum { SIGN_MIXER = MODE_COUNT + 1, SIGN_PASS };  // signs on Pick a Game that open a page, past the modes and Practice
+// The Mixer changes any mode, so where the info side can be touched it is a fruit of its own under the
+// mode's info sign. The 3DS can't touch its top screen, so there it stays a sign among the modes.
+static constexpr bool kMixerFruit = !PORT_3DS;
+#if PORT_3DS
 static const u8 kModeOrder[] = {MODE_CLASSIC, MODE_ARCADE, MODE_FRENZY, MODE_ZEN, MODE_SUDDEN, MODE_DAILY, MODE_MINEFIELD, MODE_COMBO, MODE_BEAT, SIGN_MIXER, SIGN_PASS};
-static_assert(sizeof kModeOrder == MODE_COUNT + 2, "a sign for every mode");
+#else
+static const u8 kModeOrder[] = {MODE_CLASSIC, MODE_ARCADE, MODE_FRENZY, MODE_ZEN, MODE_SUDDEN, MODE_DAILY, MODE_MINEFIELD, MODE_COMBO, MODE_BEAT, SIGN_PASS};
+#endif
+static_assert(sizeof kModeOrder == MODE_COUNT + 2 - (kMixerFruit ? 1 : 0), "a sign for every mode");
 static constexpr int kModesPerPage = 6;
 static constexpr int kModePages = ((int)sizeof kModeOrder + kModesPerPage - 1) / kModesPerPage;
 static constexpr float kModeTop = 46, kModeStep = 58, kModeSignW = 124, kModeSignH = 52;
@@ -341,6 +348,45 @@ static int modeSigns(int page, Button* out) {
 	return n + 1;
 }
 static int modeOnSign(int page, int sign) { return kModeOrder[page * kModesPerPage + sign - 1]; }
+
+// The Mixer fruit keeps one place in Pick a Game's list on every page, after the six sign places.
+static constexpr int kMixFocus = kMixerFruit ? kModesPerPage + 1 : -5;
+static constexpr float kMixPicX = 200, kMixPicY = 221;  // its middle, on the picture side
+
+// What a place in Pick a Game's list opens: a mode, the Mixer or Pass and Play. -1 for an empty place.
+static int modeAt(int page, int sign) {
+	if (sign == kMixFocus) return SIGN_MIXER;
+	const int i = page * kModesPerPage + sign - 1;
+	return sign >= 1 && sign <= kModesPerPage && i < (int)sizeof kModeOrder ? kModeOrder[i] : -1;
+}
+
+#if !PORT_3DS
+// Where the Mixer fruit is, in the units of Pick a Game's signs, which reach across the whole window.
+static Button mixerButton() {
+	float x0, y0, x1, y1;
+	gfx::topToCorner(kMixPicX - 58, kMixPicY - 17, &x0, &y0);
+	gfx::topToCorner(kMixPicX + 58, kMixPicY + 17, &x1, &y1);
+	return {x0, y0, x1 - x0, y1 - y0, "Mixer"};
+}
+
+// The fruit sits at the left of its place, with the name beside it.
+static void mixerFruitSpot(const Button& b, float* x, float* y, float* d) {
+	*d = b.h * 0.82f;
+	*x = b.x + b.h * 0.6f;
+	*y = b.y + b.h * 0.5f;
+}
+#endif
+
+// Pick a Game's whole list: the back arrow, this page's signs, empty places up to six, and the Mixer fruit.
+static int modeList(int page, Button* out) {
+	int n = modeSigns(page, out);
+#if !PORT_3DS
+	for (; n <= kModesPerPage; n++) out[n] = {-1000, -1000, 0, 0, nullptr};
+	out[kMixFocus] = mixerButton();
+	n = kMixFocus + 1;
+#endif
+	return n;
+}
 
 static const Button kOnlyBack[] = {kBack};
 static const Button kHowtoButtons[] = {kBack, {90, 188, 140, 48, "Practice"}};
@@ -426,7 +472,7 @@ static int fruitFor(const char* label) {
 		int fruit;
 	} kMap[] = {
 		{"Play", MF_MELON}, {"Options", MF_ORANGE}, {"Credits", MF_PLUM}, {"How to Play", MF_LEMON}, {"Shop", MF_GOLD},
-		{"Journal", MF_KIWI}, {"Stats", MF_PEACH}, {"Practice", MF_APPLE}, {"Let's Play", MF_MELON},
+		{"Journal", MF_KIWI}, {"Stats", MF_PEACH}, {"Practice", MF_APPLE}, {"Let's Play", MF_MELON}, {"Mixer", MF_COCONUT},
 		{"Resume", MF_APPLE}, {"Main Menu", MF_PEAR}, {"Again", MF_PEACH}, {"Modes", MF_KIWI}, {"Keep", MF_LEMON}, {"Try Again", MF_PEACH}, {"Share", MF_PLUM},
 		{"Audio", MF_APPLE}, {"Visuals", MF_PEACH}, {"Visuals and Display", MF_PEACH}, {"Gameplay and Controls", MF_PINEAPPLE}, {"Accessibility", MF_PEAR}, {"Scores and Data", MF_PLUM},
 	};
@@ -758,7 +804,7 @@ static void dpadNav(const Button* btns, int n, u32 keys, int& focus) {
 	int best = -1;
 	float bestRank = 1e9f;
 	for (int i = 0; i < n; i++) {
-		if (i == focus || sameRow(btns[i], c) != (dy == 0)) continue;
+		if (i == focus || btns[i].w <= 0 || sameRow(btns[i], c) != (dy == 0)) continue;  // w 0: an empty place
 		float along = dy != 0 ? (btns[i].y + btns[i].h * 0.5f - cy) * dy : (btns[i].x + btns[i].w * 0.5f - cx) * dx;
 		float rank = wrapRank(along);
 		if (rank < bestRank) {
@@ -770,7 +816,7 @@ static void dpadNav(const Button* btns, int n, u32 keys, int& focus) {
 		const Button row = btns[best];
 		float bestAcross = 1e9f;
 		for (int i = 0; i < n; i++) {
-			if (i == focus || !sameRow(btns[i], row) || sameRow(btns[i], c)) continue;
+			if (i == focus || btns[i].w <= 0 || !sameRow(btns[i], row) || sameRow(btns[i], c)) continue;
 			float across = fabsf(btns[i].x + btns[i].w * 0.5f - cx);
 			if (across < bestAcross) {
 				bestAcross = across;
@@ -787,7 +833,8 @@ static void dpadNav(const Button* btns, int n, u32 keys, int& focus) {
 static void startCut(const Button* btns, int i, Screen screen, float ang) {
 	const Button& b = btns[i];
 	int fruit = i == 0 && !b.label ? MF_BERRY : (b.label ? fruitFor(b.label) : MF_BERRY);
-	bool hasFruit = i == 0 || screen != SCREEN_MODES;  // mode signs show their icon, not a fruit
+	const bool mixer = screen == SCREEN_MODES && i == kMixFocus;
+	bool hasFruit = i == 0 || screen != SCREEN_MODES || mixer;  // mode signs show their icon, not a fruit
 	sCut = {};
 	sCut.on = sCut.pending = true;
 	sCut.btn = b;
@@ -798,6 +845,11 @@ static void startCut(const Button* btns, int i, Screen screen, float ang) {
 	if (i == 0 && !b.label) {
 		sCut.x = kBack.x + 15;
 		sCut.y = kBack.y + kBack.h * 0.5f;
+#if !PORT_3DS
+	} else if (mixer) {
+		float d;
+		mixerFruitSpot(b, &sCut.x, &sCut.y, &d);
+#endif
 	} else if (hasFruit) {
 		float d;
 		fruitSpot(b, &sCut.x, &sCut.y, &d);
@@ -941,8 +993,10 @@ static bool backCut(Screen screen, const Input& in, bool wasTouching, bool* leav
 }
 
 // The halves and juice of a cut sign, drawn over the screen it was on.
-static void drawCut(Screen screen) {
+// corner: the Mixer fruit's cut, which is drawn with the fruit over the whole window, not on the signs.
+static void drawCut(Screen screen, bool corner = false) {
 	if (!sCut.on || sCut.screen != screen) return;
+	if ((screen == SCREEN_MODES && sCut.index == kMixFocus) != corner) return;
 	float t = sCut.t, a = 1 - clampf(t / kCutLife, 0, 1);
 	float r0 = sCut.ang - 1.5707963f, ux = cosf(r0), uy = sinf(r0);
 	u32 juice = sCut.fruit >= 0 ? kMenuFruit[sCut.fruit].juice : COL_ACCENT;
@@ -961,7 +1015,7 @@ static void drawCut(Screen screen) {
 		gfx::rect(px - s * 0.5f, py - s * 0.5f, s, s, withAlpha(juice, a));
 	}
 	if (sCut.fruit < 0) return;
-	float size = sCut.index == 0 ? 18 : fruitSize(sCut.btn);
+	float size = sCut.index == 0 ? 18 : (sCut.screen == SCREEN_MODES ? sCut.btn.h * 0.82f : fruitSize(sCut.btn));  // the Mixer fruit
 	float off = 4 + 70 * t, fall = 300 * t * t, spin = gSave.calmFx ? 0 : t * 3;
 	drawMenuFruit(sCut.fruit, sCut.x - ux * off, sCut.y - uy * off + fall, size, 0, r0 - spin, 1);
 	drawMenuFruit(sCut.fruit, sCut.x + ux * off, sCut.y + uy * off + fall, size, 0, r0 + spin, 2);
@@ -2058,6 +2112,7 @@ static bool updateModePages(Input& keys, bool wasTouching) {
 	if (dir == 0) return false;
 	Button signs[kModesPerPage + 1];
 	int& focus = sFocus[SCREEN_MODES];
+	if (focus == kMixFocus) return false;  // the Mixer fruit isn't on a page
 	const int n = modeSigns(sModePage, signs) - 1, i = focus - 1;
 	const bool alone = i < 0 || (i == n - 1 && (n & 1));
 	if (!alone && (i & 1) != (dir > 0 ? 1 : 0)) return false;
@@ -2579,10 +2634,12 @@ static void benchUpdate(const Input& hw) {
 static void drawDailyTop() {
 	char buf[48];
 	const u32 today = progress::today();
-	gfx::text("Daily Fruit", 200, 100, 0.56f, COL_ACCENT, ALIGN_CENTER);
+	// Packed tighter where the Mixer fruit sits under the sign: the title, the line, the week, the footer.
+	const float lift[4] = {PORT_3DS ? 0.0f : 6, PORT_3DS ? 0.0f : 10, PORT_3DS ? 0.0f : 14, PORT_3DS ? 0.0f : 20};
+	gfx::text("Daily Fruit", 200, 100 - lift[0], 0.56f, COL_ACCENT, ALIGN_CENTER);
 	if (progress::dailyPlayed(today)) snprintf(buf, sizeof buf, "TODAY'S BEST %lu", (unsigned long)progress::dailyScore(today));
 	else snprintf(buf, sizeof buf, "First run today pays %lu coins", (unsigned long)progress::dailyBonusPreview(today));
-	gfx::text(buf, 200, 126, 0.4f, COL_CREAM, ALIGN_CENTER);
+	gfx::text(buf, 200, 126 - lift[1], 0.4f, COL_CREAM, ALIGN_CENTER);
 	// A week of the player's own calendar: day 1 is the first day they played, and today's box moves along
 	// the row. Day 8 starts the next row of seven. The day number on top, the score below once played.
 	const int number = progress::dailyNumber(today);
@@ -2591,7 +2648,7 @@ static void drawDailyTop() {
 	const float x0 = 200 - (7 * kCell + 6 * kGap) / 2;
 	for (int i = 0; i < 7; i++) {
 		const u32 day = today - todayCell + i;
-		const float x = x0 + i * (kCell + kGap), y = 150;
+		const float x = x0 + i * (kCell + kGap), y = 150 - lift[2];
 		const bool played = progress::dailyPlayed(day);
 		const bool ahead = day > today;
 		gfx::rect(x, y, kCell, 44, played ? withAlpha(COL_ACCENT, 0.3f) : rgba(0, 0, 0, ahead ? 30 : 60));
@@ -2611,7 +2668,7 @@ static void drawDailyTop() {
 		}
 	}
 	snprintf(buf, sizeof buf, "DAY %d   STREAK %d   BEST %d", number, progress::dailyStreak(today), (int)gSave.dailyBestStreak);
-	gfx::text(buf, 200, 204, 0.34f, COL_DIM, ALIGN_CENTER);
+	gfx::text(buf, 200, 204 - lift[3], 0.34f, COL_DIM, ALIGN_CENTER);
 }
 
 // The Fruit Journal: a sticker for every fruit, dark until the first one is sliced.
@@ -2854,6 +2911,11 @@ static void beatImportTick() {
 	if (sAddNoteT > 0) sAddNoteT -= kDt;
 	char first[128];
 	const int added = custom::importDone(first, sizeof first);
+	if (added == -2) {
+		// No file picker on this system: the folder to copy songs into by hand, or its path.
+		if (!custom::openFolder()) sFolderNote = 6;
+		return;
+	}
 	if (added < 0) return;
 	char chosen[600] = "";
 	if (beatSong() >= kTrackCount) snprintf(chosen, sizeof chosen, "%s", custom::path(beatSong() - kTrackCount));
@@ -3577,32 +3639,35 @@ static void drawTopContent(Screen screen) {
 			break;
 		case SCREEN_MODES: {
 			const int f = sFocus[SCREEN_MODES];
-			const int mode = f >= 1 ? modeOnSign(sModePage, f) : -1;
-			topPanel(30, 96, 340, 134);
+			const int mode = f >= 1 ? modeAt(sModePage, f) : -1;
+			// Where the Mixer fruit sits under it, the sign is shorter and its lines closer together.
+			const float yName = kMixerFruit ? 96 : 104, yLine = kMixerFruit ? 124 : 134, yBest = kMixerFruit ? 166 : 184;
+			if (kMixerFruit) topPanel(30, 90, 340, 108);
+			else topPanel(30, 96, 340, 134);
 			gfx::setDepth(1.0f);
 			gfx::sprite(SHEET_LOGO, logo_logo_idx, 200, 50, 0.62f, 0.62f);
 			gfx::setDepth(0.7f);
 			if (mode == MODE_DAILY) {
 				drawDailyTop();
 			} else if (mode == SIGN_PASS) {
-				gfx::text("Pass and Play", 200, 104, 0.6f, COL_ACCENT, ALIGN_CENTER);
-				gfx::text("2 to 4 players take turns on one", 200, 134, 0.38f, COL_CREAM, ALIGN_CENTER);
-				gfx::text("device. The highest score wins.", 200, 152, 0.38f, COL_CREAM, ALIGN_CENTER);
+				gfx::text("Pass and Play", 200, yName, 0.6f, COL_ACCENT, ALIGN_CENTER);
+				gfx::text("2 to 4 players take turns on one", 200, yLine, 0.38f, COL_CREAM, ALIGN_CENTER);
+				gfx::text("device. The highest score wins.", 200, yLine + 18, 0.38f, COL_CREAM, ALIGN_CENTER);
 			} else if (mode == SIGN_MIXER) {
-				gfx::text("Mixer", 200, 104, 0.6f, COL_ACCENT, ALIGN_CENTER);
-				gfx::text("Rules that change how any mode", 200, 134, 0.38f, COL_CREAM, ALIGN_CENTER);
-				gfx::text("plays, with bests of their own.", 200, 152, 0.38f, COL_CREAM, ALIGN_CENTER);
+				gfx::text("Mixer", 200, yName, 0.6f, COL_ACCENT, ALIGN_CENTER);
+				gfx::text("Rules that change how any mode", 200, yLine, 0.38f, COL_CREAM, ALIGN_CENTER);
+				gfx::text("plays, with bests of their own.", 200, yLine + 18, 0.38f, COL_CREAM, ALIGN_CENTER);
 				snprintf(buf, sizeof buf, mixerRulesOn() ? "%d ON" : "ALL OFF", mixerRulesOn());
-				gfx::text(buf, 200, 184, 0.6f, COL_CREAM, ALIGN_CENTER);
+				gfx::text(buf, 200, yBest, 0.6f, COL_CREAM, ALIGN_CENTER);
 			} else if (mode >= 0) {
 				const ModeInfo& m = kModes[mode];
-				gfx::text(m.name, 200, 104, 0.6f, COL_ACCENT, ALIGN_CENTER);
-				gfx::text(m.line1, 200, 134, 0.38f, COL_CREAM, ALIGN_CENTER);
-				gfx::text(m.line2, 200, 152, 0.38f, COL_CREAM, ALIGN_CENTER);
+				gfx::text(m.name, 200, yName, 0.6f, COL_ACCENT, ALIGN_CENTER);
+				gfx::text(m.line1, 200, yLine, 0.38f, COL_CREAM, ALIGN_CENTER);
+				gfx::text(m.line2, 200, yLine + 18, 0.38f, COL_CREAM, ALIGN_CENTER);
 				if (mixerRulesOn() && mode < MODE_DAILY) snprintf(buf, sizeof buf, "MIXER BEST %lu", (unsigned long)gSave.bestMixer[mode]);
 				else if (assistedRun()) snprintf(buf, sizeof buf, "ASSISTED BEST %lu", (unsigned long)gSave.bestAssisted[mode]);
 				else snprintf(buf, sizeof buf, "BEST %lu", (unsigned long)gSave.best[mode]);
-				gfx::text(buf, 200, 184, 0.6f, COL_CREAM, ALIGN_CENTER);
+				gfx::text(buf, 200, yBest, 0.6f, COL_CREAM, ALIGN_CENTER);
 			} else {
 				gfx::text("Back to the title", 200, 150, 0.46f, COL_CREAM, ALIGN_CENTER);
 			}
@@ -3959,6 +4024,30 @@ static bool holdQuit(const Input& in, int focus) {
 }
 
 // The bomb and its label, in the corner. alpha fades it with a slide.
+// The Mixer fruit under Pick a Game's info sign: its name, and how many of its rules are on.
+static void drawMixerFruit(float alpha) {
+	if (alpha <= 0) return;
+	const Button b = mixerButton();
+	const bool focused = sFocus[SCREEN_MODES] == kMixFocus, pressed = sPressed == kMixFocus;
+	const bool cut = sCut.on && sCut.screen == SCREEN_MODES && sCut.index == kMixFocus;
+	float x, y, d;
+	mixerFruitSpot(b, &x, &y, &d);
+	const float dy = pressed ? 2 : 0, k = b.h / 34;
+	if (focused) gfx::sprite(SHEET_SPRITES, sprites_ring_idx, x, y + dy, d / 34, d / 34, 0, withAlpha(COL_ACCENT, 0.9f * alpha));
+	if (!cut) {
+		// Like the Quit bomb, the fruit grows in and out with a slide, as a model can't fade.
+		const float grow = alpha * alpha * (3 - 2 * alpha);
+		const float bob = focused && !gSave.calmFx ? sinf(sTime * 4) * 1.5f * k : 0;
+		drawMenuFruit(MF_COCONUT, x, y + dy + bob, d * grow, sTime * 0.8f);
+	}
+	const float tx = b.x + b.h * 1.2f;
+	gfx::text("Mixer", tx, b.y + dy - 1 * k, 0.5f * k, withAlpha(focused ? COL_ACCENT : COL_CREAM, alpha));
+	char state[16];
+	if (mixerRulesOn()) snprintf(state, sizeof state, "%d ON", mixerRulesOn());
+	else snprintf(state, sizeof state, "ALL OFF");
+	gfx::text(state, tx, b.y + b.h * 0.56f + dy, 0.34f * k, withAlpha(COL_DIM, alpha));
+}
+
 static void drawQuitBomb(bool focused, float alpha) {
 	if (alpha <= 0) return;
 	const Button b = quitButton();
@@ -4432,7 +4521,8 @@ static void updateFrame(const Input& in, bool wasTouching) {
 #if PORT_3DS && defined(TEST_READINGS)
 	readingsTick();
 #endif
-	if (in.down & KEY_SELECT) sShowDebug = !sShowDebug;
+	// On Pick a Game, Select opens the Mixer instead.
+	if ((in.down & KEY_SELECT) && sScreen != SCREEN_MODES) sShowDebug = !sShowDebug;
 	if (sSuspended) {
 		sSuspended = false;
 		pauseGame();
@@ -4501,14 +4591,22 @@ static void updateFrame(const Input& in, bool wasTouching) {
 			if (blocked) break;
 			Input keys = in;
 			if (updateModePages(keys, wasTouching)) break;
-			Button signs[kModesPerPage + 1];
-			const int count = modeSigns(sModePage, signs);
+			Button signs[kModesPerPage + 2];
+			const int count = modeList(sModePage, signs);
+			int& focus = sFocus[SCREEN_MODES];
+			if (focus >= count || signs[focus].w <= 0) focus = count - (kMixerFruit ? 2 : 1);  // the last sign left on this page
+			while (focus > 0 && signs[focus].w <= 0) focus--;
 			int t = menuInput(signs, count, SCREEN_MODES, keys, wasTouching);
 			if (in.down & KEY_B) {
 				audio::click();
 				t = 0;
 			}
-			const int mode = t > 0 ? modeOnSign(sModePage, t) : -1;
+			int mode = t > 0 ? modeAt(sModePage, t) : -1;
+			// Select opens the Mixer from any page, on a controller or a 3DS.
+			if (t < 0 && !sCut.pending && (in.down & KEY_SELECT)) {
+				audio::click();
+				mode = SIGN_MIXER;
+			}
 			if (t == 0) goTo(SCREEN_TITLE, -1);
 			else if (mode == SIGN_MIXER || mode == SIGN_PASS) {
 				for (int i = 0; i < kPassMax; i++)
@@ -4928,6 +5026,8 @@ static void drawFrame() {
 	bool field = showsField(sScreen) || (sSliding && showsField(sSlideFrom));
 	gfx::beginFrame();
 	gfx::drawBackdrop(field ? WHITE : rgba(205, 205, 205));
+	const float mixerIn = sScreen == SCREEN_MODES ? (sSliding ? e : 1) : (sSliding && sSlideFrom == SCREEN_MODES ? 1 - e : 0);
+	const bool mixerShown = mixerIn > 0;
 	if (field) {
 		gfx::beginField();
 		sGame.drawField(sBlade);
@@ -4960,7 +5060,19 @@ static void drawFrame() {
 		} else {
 			content(sScreen);
 		}
-		if (pass == 1 && menuBladeShown()) {
+		if (pass == 1 && menuBladeShown() && !mixerShown) {
+			sMenuBlade.draw();
+			if (!sSliding) drawMenuStickPoint();
+		}
+	}
+	// The Mixer fruit sits under Pick a Game's info sign, so it is drawn over the whole window, with its cut,
+	// and the blade over it, since a swipe can cross from the signs to the fruit.
+	if (mixerShown) {
+		gfx::beginCorner();
+		sDrawing = SCREEN_MODES;
+		drawMixerFruit(mixerIn);
+		drawCut(SCREEN_MODES, true);
+		if (menuBladeShown()) {
 			sMenuBlade.draw();
 			if (!sSliding) drawMenuStickPoint();
 		}

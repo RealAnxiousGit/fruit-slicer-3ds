@@ -464,6 +464,14 @@ static void autotestInput(Input& in) {
 		case SCREEN_GAME:
 			break;
 
+#ifdef LAB
+		case SCREEN_SECTION:  // the Mixer, opened by Pick a Game's checks
+			if (sBotPhaseFrames < 45 || sSliding || sFade > 0) return;
+			sBotPhaseFrames = 0;
+			labMixerPage();
+			return;
+#endif
+
 		default:
 			return;
 	}

@@ -49,6 +49,7 @@ void beginBottom();
 // wide window reaches left of and above the signs. beginCorner draws in those units anywhere in the window.
 void windowArea(float* x, float* y, float* w, float* h);
 void beginCorner();
+void topToCorner(float x, float y, float* cx, float* cy);  // a point on the picture side, in beginCorner's units (not the 3DS)
 bool onTop();
 // Stereo plane for following top-screen draws: >0 pops out, <0 sinks behind the screen.
 void setDepth(float depth);
