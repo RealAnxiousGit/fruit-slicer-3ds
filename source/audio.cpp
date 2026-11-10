@@ -510,9 +510,19 @@ void play(Sfx s, float volume, float pan, float pitch) {
 	audioport::playSfx(clip, v * clampf(1.0f - pan, 0.0f, 1.0f), v * clampf(1.0f + pan, 0.0f, 1.0f), (float)clip.rate * pitch);
 }
 
+// The music's share of the mix at full slider. The songs all sit at -19 LUFS, so this puts music at about
+// -21 LUFS, with its peaks still inside the room the sound effects leave (kMaxPeak).
+static constexpr float kMusicGain = 0.8f;
+static float sPreviewFade = 1.0f;
+
+void previewFade(float level) {
+	sPreviewFade = clampf(level, 0.0f, 1.0f);
+	refreshVolumes();
+}
+
 void refreshVolumes() {
 	if (!sReady) return;
-	audioport::musicVolume(0.6f * level(gSave.music));
+	audioport::musicVolume(kMusicGain * level(gSave.music) * sPreviewFade);
 }
 
 #if PORT_CUSTOM_MUSIC

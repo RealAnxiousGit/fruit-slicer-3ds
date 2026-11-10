@@ -55,6 +55,7 @@ void setDepth(float depth);
 // Sideways shift per unit of model z for the eye being drawn, used by the 3D fruit.
 float stereoPerZ();
 void setShake(float dx, float dy);
+void shakeMenus(bool on);  // the menus take the shake as well (Windows, Linux and Android: the Quit Game blast)
 // Moves everything drawn from now on; screen transitions slide with this.
 void setBase(float dx, float dy);
 void getOffset(float* x, float* y);  // base + shake, without the stereo shift

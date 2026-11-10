@@ -48,7 +48,7 @@ Pick a Game shows six signs a page. The arrows beside the signs, or left and rig
 
 **Trick fruit** turn up after the first half minute (from early on in Arcade): spiky fruit stun the blade, grapes burst, honey drags, jelly bounces, chili brings a rush of double points, a banana bunch breaks into bananas you can slice again, a pomegranate sprays seeds that add to the combo when caught in the same swipe, and a rare piñata takes several hits, pays candy points and then drops coins. Dragon fruit splits into three pieces.
 
-**Latency Test:** in Audio settings, a metronome ticks and you slice a fruit in time with it, with the stylus or A. It sets Beat Timing, which moves Beat Slice's beat to match your timing. Beat Timing can also be set by hand.
+**Latency Test:** in Audio settings, a metronome ticks and you slice a fruit in time with it, with the stylus or A. You can keep swiping back and forth without lifting the stylus. It sets Beat Timing, which moves Beat Slice's beat to match your timing. Beat Timing can also be set by hand.
 
 **Fruit patterns:** rows, fountains, crossfire and staircases are thrown only when no bomb is in play. Normal throws try several paths and keep the one that stays furthest from any bomb, so fruit is much less likely to sit on top of one. If you cut a fruit that is close to a bomb, the bomb only counts on a much closer pass.
 
@@ -58,7 +58,7 @@ Pick a Game shows six signs a page. The arrows beside the signs, or left and rig
 
 **Coins** spin through the air now and then. Slicing one is worth 5 points and 5 coins, and every 100 points of a run pays 1 more. A coin is never a strike, and a missed one costs nothing.
 
-**Shop:** spend coins on board themes, blade trails, splat colours, fruit skins (Solid Gold and Clear Glass) and thirteen recorded songs. Each tab shows six items; drag with the stylus for the rest. Items are tried on while selected.
+**Shop:** spend coins on board themes, blade trails, splat colours, fruit skins (Solid Gold and Clear Glass) and thirteen recorded songs. Each tab shows six items; drag with the stylus for the rest. Items are tried on while selected; a song plays for 8 seconds, then your own music comes back. Use puts a song on as both the Menu and the Game Music.
 
 **Seasonal boards:** late October, December and spring bring pumpkins, snow or blossom in place of a free board, never one you bought. Seasonal Boards in Advanced Visuals turns them off.
 

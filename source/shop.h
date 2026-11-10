@@ -18,7 +18,7 @@ const ShopItem& shopItem(int tab, int i);
 const char* shopTabName(int tab);
 bool shopOwned(int tab, int i);
 BuyResult shopBuy(int tab, int i);  // takes the coins and marks it owned; the caller saves
-void shopEquip(int tab, int i);     // puts the item in use; on a tab that allows it, a second go takes it off
+void shopEquip(int tab, int i);     // puts the item in use (a song: as Menu and Game Music); on a tab that allows it, a second go takes it off
 
 // The saved choice a tab controls, what that choice is for item i, and whether the tab can have nothing in use.
 u8* shopSlot(int tab);

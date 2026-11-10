@@ -88,6 +88,7 @@ void shopEquip(int tab, int i) {
 	const ShopTabInfo& t = kTabs[tab];
 	const u8 value = (u8)shopValue(tab, i);
 	*t.slot = t.canTakeOff && *t.slot == value ? 0 : value;
+	if (tab == SHOP_MUSIC) gSave.gameTrack = *t.slot;  // a song from the Shop plays in the menus and in games
 }
 
 bool boardUnlocked(int board) { return board < kBaseBoards || (board < kBoardCount && shopOwned(SHOP_THEMES, board - kBaseBoards)); }

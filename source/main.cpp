@@ -364,6 +364,8 @@ static const Button kToolTaps[] = {
 };
 static constexpr int kToolTapCount = sizeof kToolTaps / sizeof kToolTaps[0];
 static float sFolderNote = 0;  // seconds the folder's path stays up, where it can't be opened
+static char sAddNote[64];      // what Add Songs did, shown under the list for a few seconds
+static float sAddNoteT = 0;
 #endif
 static const Button kResultButtons[] = {kBack, {20, 170, 134, 52, "Again"}, {166, 170, 134, 52, "Modes"}, {110, 104, 100, 52, "Share"}};
 // Share saves a score card: Windows, Linux and Android. The 3DS can't keep or send a picture.
@@ -1645,13 +1647,58 @@ static void shopPutBack() {
 	for (int t = 0; t < SHOP_TABS; t++) *shopSlot(t) = sKeep[t];
 }
 
-static bool shopInUse(int tab, int item) { return sKeep[tab] == shopValue(tab, item); }
+// A song is in use once it is both the Menu and the Game Music.
+static bool shopInUse(int tab, int item) {
+	const int v = shopValue(tab, item);
+	return sKeep[tab] == v && (tab != SHOP_MUSIC || gSave.gameTrack == v);
+}
+
+// A song tried on plays for a few seconds, fades out, and the menu music in use comes back.
+static constexpr float kPreviewPlay = 8.0f, kPreviewFadeOut = 1.5f, kPreviewFadeIn = 1.0f;
+static float sPreviewT = -1;  // seconds the song on show has played; below 0, none is playing as a preview
+static float sReturnT = -1;   // seconds since the music in use came back, while it fades in
+static bool sPreviewOver;     // the song on show had its turn, and the music in use is back
 
 static void shopTryOn() {
 	const u8 track = gSave.menuTrack;
 	shopPutBack();
 	*shopSlot(sShopTab) = (u8)shopValue(sShopTab, sShopItem);
-	if (gSave.menuTrack != track) audio::preview(MUSIC_MENU);
+	if (gSave.menuTrack != track) {
+		audio::previewFade(1);
+		audio::preview(MUSIC_MENU);
+		sPreviewT = gSave.menuTrack != sKeep[SHOP_MUSIC] ? 0 : -1;
+		sReturnT = -1;
+		sPreviewOver = false;
+	}
+}
+
+static void shopPreviewTick() {
+	if (sPreviewT >= 0) {
+		sPreviewT += kDt;
+		if (sPreviewT < kPreviewPlay) return;
+		if (sPreviewT < kPreviewPlay + kPreviewFadeOut) {
+			audio::previewFade(1 - (sPreviewT - kPreviewPlay) / kPreviewFadeOut);
+			return;
+		}
+		// Its turn is over: back to the real choice, which fades in from silence.
+		gSave.menuTrack = sKeep[SHOP_MUSIC];
+		audio::previewFade(0);
+		audio::preview(MUSIC_MENU);
+		sPreviewT = -1;
+		sReturnT = 0;
+		sPreviewOver = true;
+	} else if (sReturnT >= 0) {
+		sReturnT += kDt;
+		audio::previewFade(sReturnT / kPreviewFadeIn);
+		if (sReturnT >= kPreviewFadeIn) sReturnT = -1;
+	}
+}
+
+// Leaving the Shop, or a song put in use, ends any preview at full volume.
+static void shopPreviewStop() {
+	sPreviewT = sReturnT = -1;
+	sPreviewOver = false;
+	audio::previewFade(1);
 }
 
 // Saves with the real choices in place, never the one being tried on.
@@ -1677,6 +1724,7 @@ static void openShop() {
 static void leaveShop() {
 	bool trackChanged = gSave.menuTrack != sKeep[SHOP_MUSIC];
 	shopPutBack();
+	shopPreviewStop();
 	if (trackChanged) audio::reapply();
 	sMenuBlade.reset();
 	goTo(SCREEN_TITLE, -1);
@@ -1694,6 +1742,11 @@ static void shopEquipNow() {
 	shopRemember();
 	shopTryOn();
 	shopSave();
+	if (sShopTab == SHOP_MUSIC) {
+		// In use now: it plays on in full, even if its preview had already given way.
+		shopPreviewStop();
+		audio::preview(MUSIC_MENU);
+	}
 }
 
 static void shopAct() {
@@ -1736,6 +1789,7 @@ static void updateShop(const Input& in, bool wasTouching) {
 	int& f = sFocus[SCREEN_SHOP];
 	if (sShopArmT > 0) sShopArmT -= kDt;
 	if (sShopNoteT > 0) sShopNoteT -= kDt;
+	shopPreviewTick();
 	const int n = shopCount(sShopTab);
 	if (in.down & KEY_B) {
 		audio::click();
@@ -1947,8 +2001,11 @@ static void drawShopPreview() {
 		gfx::setDepth(0.5f);
 		drawShopIcon(sShopTab, sShopItem, 200, 125);
 	} else {
-		gfx::text("Now playing as a preview", 200, 120, 0.36f, COL_DIM, ALIGN_CENTER);
-		gfx::text("Use it to make it the menu music.", 200, 140, 0.36f, COL_DIM, ALIGN_CENTER);
+		const char* now = shopInUse(sShopTab, sShopItem) ? "Playing in the menus and in games"
+		                  : sPreviewOver ? "Preview over, your music is back"
+		                  : sPreviewT >= 0 ? "Now playing as a preview" : "Your Menu Music, not yet your Game Music";
+		gfx::text(now, 200, 120, 0.36f, COL_DIM, ALIGN_CENTER);
+		if (!shopInUse(sShopTab, sShopItem)) gfx::text("Use it for the Menu and Game Music.", 200, 140, 0.36f, COL_DIM, ALIGN_CENTER);
 	}
 	// What the item costs against the purse, or that it is already yours.
 	char buf[48];
@@ -2790,6 +2847,42 @@ static void beatSelect(int t) {
 #endif
 }
 
+#if PORT_CUSTOM_MUSIC
+// Songs picked with Add Songs are in the folder: the list reads it again and the first new song is picked,
+// which starts finding its beat. Songs sort by name, so the one already chosen is found again by its path.
+static void beatImportTick() {
+	if (sAddNoteT > 0) sAddNoteT -= kDt;
+	char first[128];
+	const int added = custom::importDone(first, sizeof first);
+	if (added < 0) return;
+	char chosen[600] = "";
+	if (beatSong() >= kTrackCount) snprintf(chosen, sizeof chosen, "%s", custom::path(beatSong() - kTrackCount));
+	listenStop();
+	sListenFailed = -1;
+	custom::scan();
+	int pick = -1, keep = -1;
+	const size_t folderLen = strlen(custom::folder());
+	for (int i = 0; i < custom::count(); i++) {
+		const char* p = custom::path(i);
+		if (added > 0 && first[0] && strcmp(p + folderLen, first) == 0) pick = i;
+		if (chosen[0] && strcmp(p, chosen) == 0) keep = i;
+	}
+	if (pick >= 0) {
+		beatSelect(kTrackCount + pick);
+	} else if (chosen[0]) {
+		// Still there: the same song under its new place in the list. Gone: back to the first track.
+		const int t = keep >= 0 ? kTrackCount + keep : 1;
+		gSave.beatTrack = (u8)(t + 1);
+		audio::musicBeat(t);
+		beatScrollTo(t);
+		listenFor(t);
+	}
+	if (added == 0) snprintf(sAddNote, sizeof sAddNote, "No new songs added.");
+	else snprintf(sAddNote, sizeof sAddNote, added == 1 ? "Added 1 song." : "Added %d songs.", added);
+	sAddNoteT = 4;
+}
+#endif
+
 // The next track you have, either way round.
 static void beatPick(int dir) {
 	int t = beatSong();
@@ -2862,7 +2955,9 @@ static void drawBeatScreen() {
 #if PORT_CUSTOM_MUSIC
 	if (t >= kTrackCount) drawTap(kBeatTool, kBeatTool.label);
 	drawTap(kBeatFolder, kBeatFolder.label);
-	if (custom::count() == 0) hint = "Add .mp3, .ogg, .flac or .wav songs to the Custom Music folder.";
+	if (custom::count() == 0) hint = "Add Songs takes .mp3, .ogg, .flac and .wav files.";
+	if (custom::importOpen()) hint = "Pick your songs in the window that opened.";
+	if (sAddNoteT > 0) hint = sAddNote;
 	if (sFolderNote > 0) hint = custom::folder();
 #endif
 	float s = 0.28f, w = gfx::textWidth(hint, s);
@@ -3269,6 +3364,8 @@ static float sLatMarks[kLatMarks];         // newest first
 static int sLatMarkCount;
 static float sLatBump;                     // the fruit's jolt from the last slice
 static u32 sLatStroke;
+static bool sLatIn;                        // the blade is over the fruit; it must leave before it can slice again
+static constexpr float kLatLeave = 10;     // how far past the fruit's reach the blade must go to have left it
 static bool sLatDone;
 static float sLatResult;                   // seconds, once done
 
@@ -3290,6 +3387,7 @@ static void latencyReset() {
 	sLatTicks = sLatSlices = sLatMarkCount = 0;
 	sLatBump = 0;
 	sLatStroke = sMenuBlade.strokeId;
+	sLatIn = sMenuBlade.active;  // a finger still down from Try Again has to cross the fruit fresh
 	sLatDone = false;
 	sLatResult = 0;
 }
@@ -3370,10 +3468,20 @@ static void updateLatency(const Input& in, bool wasTouching, bool blocked) {
 		return;
 	}
 	if (in.down & KEY_A) latencySlice();
+	// Every pass across the fruit is a slice, so one long held swipe can slice back and forth on each tick.
 	const Blade& b = sMenuBlade;
-	if (b.active && b.strokeId != sLatStroke && segmentReach(b.px, b.py, b.x, b.y, kLatX, kLatY) < kLatReach) {
-		sLatStroke = b.strokeId;  // one slice per swipe
-		latencySlice();
+	if (b.strokeId != sLatStroke || !b.active) {
+		sLatStroke = b.strokeId;
+		sLatIn = false;
+	}
+	if (b.active) {
+		const float reach = segmentReach(b.px, b.py, b.x, b.y, kLatX, kLatY);
+		if (!sLatIn && reach < kLatReach) {
+			sLatIn = true;
+			latencySlice();
+		} else if (sLatIn && reach > kLatReach + kLatLeave) {
+			sLatIn = false;
+		}
 	}
 }
 
@@ -3395,7 +3503,7 @@ static void drawLatencyTop() {
 		return;
 	}
 	gfx::text("Slice the fruit on every tick:", 200, 134, 0.38f, COL_CREAM, ALIGN_CENTER);
-	gfx::text("swipe across it, or press A.", 200, 152, 0.38f, COL_CREAM, ALIGN_CENTER);
+	gfx::text("swipe back and forth, or press A.", 200, 152, 0.38f, COL_CREAM, ALIGN_CENTER);
 	if (sLatSlices < kLatSettle) snprintf(buf, sizeof buf, "SETTLING IN: %d MORE", kLatSettle - sLatSlices);
 	else snprintf(buf, sizeof buf, "SLICE %d OF %d", sLatSlices - kLatSettle + 1, kLatTake);
 	gfx::text(buf, 200, 182, 0.5f, COL_CREAM, ALIGN_CENTER);
@@ -3783,17 +3891,42 @@ static void startQuit() {
 	sQuitT = 0;
 	boom::clear();
 	const float bx = b.x + b.w * 0.5f, by = b.y + 22;
-	boom::start(bx, by, 1.6f);
+	boom::start(bx, by, 2.2f);
 	// Then a chain of blasts runs out from the corner across the whole window, the farthest last.
 	const float reach = sqrtf(w * w + h * h);
-	for (int i = 0; i < 12; i++) {
-		const float px = x + w * ((i % 4) + 0.5f + 0.3f * sinf(i * 2.7f)) / 4, py = y + h * ((i / 4) + 0.5f + 0.3f * cosf(i * 1.9f)) / 3;
+	for (int i = 0; i < 18; i++) {
+		const float px = x + w * ((i % 6) + 0.5f + 0.3f * sinf(i * 2.7f)) / 6, py = y + h * ((i / 6) + 0.5f + 0.3f * cosf(i * 1.9f)) / 3;
 		const float d = sqrtf((px - bx) * (px - bx) + (py - by) * (py - by));
-		boom::start(px, py, 2.2f + 0.8f * ((i * 7) % 5) / 4.0f, 0.06f + 0.5f * d / reach);
+		boom::start(px, py, 2.4f + 1.0f * ((i * 7) % 5) / 4.0f, 0.05f + 0.5f * d / reach);
 	}
 	audio::play(SFX_BOOM, 1.0f, -0.6f);
 	audio::play(SFX_FINALE_BURST, 0.8f);
 	PORT_VIBRATE(1.0f, 400);
+}
+
+// How hard the quit blast shakes the window now, in menu units: the Screen Shake slider sets it, Calm
+// Effects softens it, and it settles to a rumble while the chain of blasts runs, then dies with the dark.
+static float quitQuake() {
+	if (sQuitT < 0) return 0;
+	const float strength = gSave.shake / 100.0f * (gSave.calmFx ? 0.35f : 1.0f);
+	const float dark = clampf((sQuitT - (kQuitBlast - 0.45f)) / 0.4f, 0, 1);
+	return 14 * strength * (0.3f + 0.7f * expf(-sQuitT / 0.3f)) * (1 - dark);
+}
+
+// Each frame of the blast: the shake, and more booms rolling out across the window with the chain.
+static void quitTick() {
+	static int rolled;
+	if (sQuitT < 0) return;
+	if (sQuitT <= kDt) rolled = 0;
+	static const float kRoll[] = {0.2f, 0.42f};
+	if (rolled < 2 && sQuitT >= kRoll[rolled]) {
+		audio::play(SFX_BOOM, 0.85f - 0.2f * rolled, 0.1f + 0.5f * rolled, 0.85f - 0.1f * rolled);
+		PORT_VIBRATE(0.7f, 150);
+		rolled++;
+	}
+	const float a = quitQuake();
+	gfx::setShake(a * sinf(sQuitT * 97), a * cosf(sQuitT * 83 + 1));
+	gfx::shakeMenus(a > 0);
 }
 
 // Holding the bomb down (mouse or finger), Escape, or Enter or A while the bomb is selected lights its fuse.
@@ -3862,9 +3995,22 @@ static void drawQuitBomb(bool focused, float alpha) {
 	if (sQuitT >= 0) {
 		float x, y, w, h;
 		gfx::windowArea(&x, &y, &w, &h);
-		// A white flash, the blasts, then everything goes dark just before the game closes.
+		// The flat colours reach past the window's edges, so the shake never shows a gap.
+		x -= 30;
+		y -= 30;
+		w += 60;
+		h += 60;
+		// A white flash, a shock ring racing out from the bomb, the blasts, then everything goes dark
+		// just before the game closes.
 		const float flash = 1 - clampf(sQuitT / 0.25f, 0, 1);
 		boom::draw();
+		const float ring = clampf(sQuitT / 0.5f, 0, 1);
+		if (ring < 1) {
+			const Button b = quitButton();
+			const float grow = 1 - (1 - ring) * (1 - ring);
+			const float s = 0.8f + 18 * grow;
+			gfx::sprite(SHEET_SPRITES, sprites_ring_idx, b.x + b.w * 0.5f, b.y + 22, s, s, 0, withAlpha(rgba(255, 220, 140, 255), (1 - ring) * (gSave.calmFx ? 0.35f : 0.8f)));
+		}
 		if (flash > 0) gfx::rect(x, y, w, h, withAlpha(WHITE, flash * (gSave.calmFx ? 0.4f : 0.9f)));
 		const float dark = clampf((sQuitT - (kQuitBlast - 0.45f)) / 0.4f, 0, 1);
 		if (dark > 0) gfx::rect(x, y, w, h, rgba(0, 0, 0, (u8)(255 * dark)));
@@ -3877,6 +4023,7 @@ static float sQuitT = -1;
 static const Button* titleButtons() { return kTitleButtons; }
 static void startQuit() {}
 static bool holdQuit(const Input&, int) { return false; }
+static void quitTick() {}
 #endif
 static constexpr int kTitleAll = PORT_3DS ? kTitleCount : kTitleCount + 1;  // with the Quit Game bomb
 
@@ -4442,10 +4589,12 @@ static void updateFrame(const Input& in, bool wasTouching) {
 					openBeatTool(beatSong() - kTrackCount);
 					break;
 				}
-				if ((tap && hit(kBeatFolder, in.tx, in.ty)) || (in.down & KEY_Y)) {
+				if (((tap && hit(kBeatFolder, in.tx, in.ty)) || (in.down & KEY_Y)) && !custom::importOpen()) {
 					audio::click();
-					if (!custom::openFolder()) sFolderNote = 6;  // no file manager to show it in: the path instead
+					// The system's file picker; without one, the folder to copy songs into by hand.
+					if (!custom::importSongs() && !custom::openFolder()) sFolderNote = 6;
 				}
+				beatImportTick();
 			}
 #endif
 			int t = menuInput(kBeatButtons, 2, SCREEN_BEAT, keys, wasTouching);
@@ -5065,6 +5214,7 @@ bool app::frame(Input& in, int steps) {
 #else
 		if (sQuitT >= 0) sQuitT += kDt;
 #endif
+		quitTick();
 		if (sLeaving || sUpdateQuit || sQuitT > kQuitBlast) return false;
 		// A press belongs to the first step only.
 		in.down = 0;

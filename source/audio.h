@@ -31,6 +31,7 @@ void music(Music m);        // what the current screen wants; the player's track
 void preview(Music m);      // plays what that screen would, for the settings rows
 void reapply();             // back to the current screen's track after a preview or a changed choice
 void refreshVolumes();
+void previewFade(float level);  // 0..1 on top of the Music slider: the Shop fades a song it is playing as a preview
 // The sizzle that plays while a bomb is in the air.
 void fuse(bool on, float pan = 0.0f);
 void musicSpeed(float factor);  // the chili pepper plays the music a little faster for a while

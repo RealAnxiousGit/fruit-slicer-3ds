@@ -11,7 +11,7 @@ Saves from 1.0 carry over: scores, coins, unlocks and settings are kept. Zen and
 - **Pass and Play:** 2 to 4 players take one run each on the same console, in Classic, Arcade, Frenzy, Sudden Death, Minefield or Combo Rush. Each player has a colour and a name typed on the system keyboard, and a results board shows who won. These runs don't change your bests.
 - **New trick fruit:** a banana bunch that breaks into bananas you can slice again, a pomegranate whose seeds add to the combo when caught in the same swipe, and a rare piñata that takes several hits, pays candy points and then drops coins. Dragon fruit now splits into three pieces. Each has a Fruit Journal page.
 - **3D coins** that flip as they fly, in the 3D art style.
-- **Latency Test** in Audio settings: a metronome ticks and you slice a fruit in time with it, with the stylus or A. It sets **Beat Timing**, which moves Beat Slice's beat to match your timing. Beat Timing can also be set by hand.
+- **Latency Test** in Audio settings: a metronome ticks and you slice a fruit in time with it, with the stylus or A. Keep the stylus down and swipe back and forth: every pass across the fruit counts. It sets **Beat Timing**, which moves Beat Slice's beat to match your timing. Beat Timing can also be set by hand.
 - **Seasonal boards:** late October, December and spring bring pumpkins, snow or blossom in place of a free board, never one you bought. Seasonal Boards in Advanced Visuals turns them off.
 - **Shop:** three boards (Pumpkin Patch, Spring Blossom, Bamboo Mat), three trails (Sunset, Candy Cane, Aurora), a Splats tab with six juice colours, a Skins tab with Solid Gold and Clear Glass fruit, and seven songs by NickBin and friends. Each song's description names its artists and genre, and every song plays in Beat Slice.
 
@@ -24,6 +24,8 @@ Saves from 1.0 carry over: scores, coins, unlocks and settings are kept. Zen and
 - **Options** has five signs: Audio, Visuals, Gameplay and Controls, Accessibility, and Scores and Data. Fine tuning and resets moved to an Advanced page at the bottom of each one.
 - **Scrolling:** the Shop, the Fruit Journal, the update notes and the Beat Slice track list scroll by dragging with the stylus. A drag never counts as picking something.
 - The Shop shows six items at a time, and only the items scroll.
+- **Shop songs:** Use makes a song both your Menu Music and your Game Music. A song you are trying on plays for 8 seconds, fades out, and the music you chose comes back.
+- **Music sounds better:** the Shop's songs play from their real first beat and all sit at the same loudness. Music is a little louder overall, with the sound effects still clear on top.
 
 ### Fixed
 

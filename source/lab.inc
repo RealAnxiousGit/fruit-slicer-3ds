@@ -128,6 +128,43 @@ static void labShopScroll() {
 	labCheck(sShopList.pos == shopHiddenRows(SHOP_MUSIC) * kShopStep, "Shop list stops at its last row");
 }
 
+// A song tried on plays for 8 to 10 seconds, then the music in use comes back; Use makes a song both
+// the Menu and the Game Music. Driven through updateShop, a frame at a time, on the last song on sale.
+static void labShopPreview() {
+	Input in{};
+	const int song = shopCount(SHOP_MUSIC) - 1, value = shopValue(SHOP_MUSIC, song);
+	const u8 menuWas = sKeep[SHOP_MUSIC], gameWas = gSave.gameTrack;
+	labCheck(!shopInUse(SHOP_MUSIC, song) && gSave.menuTrack == value, "the song tried on is on show, not in use");
+	sPreviewT = 0;
+	int frames = 0;
+	bool faded = false;
+	while (sPreviewT >= 0 && frames < 900) {
+		updateShop(in, false);
+		frames++;
+		faded = faded || (sPreviewT > kPreviewPlay && audio::currentTrack() == kTrackCount - 1);
+	}
+	char d[48];
+	snprintf(d, sizeof d, "%.2f s", frames * kDt);
+	labCheck(frames * kDt >= 8.0f && frames * kDt <= 10.0f, "a Shop preview gives way after 8 to 10 seconds", d);
+	labCheck(faded, "a Shop preview fades out before it gives way");
+	labCheck(gSave.menuTrack == menuWas && audio::currentTrack() != kTrackCount - 1 && sPreviewOver, "the music in use comes back after a Shop preview");
+	for (int i = 0; i < 90; i++) updateShop(in, false);
+	labCheck(sReturnT < 0, "the music in use fades back in within a second and a half");
+	const float longest = gfx::textWidth("Your Menu Music, not yet your Game Music", 0.36f);
+	labCheck(longest <= 390 && gfx::textWidth("Use it for the Menu and Game Music.", 0.36f) <= 390, "Shop music notes fit the preview");
+
+	gSave.coins += shopItem(SHOP_MUSIC, song).price;
+	shopBuy(SHOP_MUSIC, song);
+	shopEquipNow();
+	labCheck(gSave.menuTrack == value && gSave.gameTrack == value && shopInUse(SHOP_MUSIC, song), "Using a Shop song makes it the Menu and the Game Music");
+	labCheck(audio::currentTrack() == kTrackCount - 1 && sPreviewT < 0, "a song put in use plays on, with no preview timer");
+	sKeep[SHOP_MUSIC] = menuWas;  // back as it was, so later steps play the usual tracks
+	gSave.gameTrack = gameWas;
+	shopTryOn();
+	shopPreviewStop();
+	shopSave();
+}
+
 static void labMenus() {
 	const float firstRowY = kListTop + kRowH * 0.5f;
 	switch (sBotMenuStep++) {
@@ -179,11 +216,13 @@ static void labMenus() {
 			// The last song on sale, the longest kind of file the game loads: give it time to arrive.
 			sShopItem = shopCount(SHOP_MUSIC) - 1;
 			shopTryOn();
+			sPreviewT = -1;  // held while it loads: labShopPreview times the preview on its own
 			sBotPhaseFrames = -420;
 			return;
 		case 16: {
 			labCheck(audio::currentTrack() == kTrackCount - 1 && audio::musicTime() >= 0 && !audio::musicPending(), "A full-length Shop song loads and plays");
 			labCheck(strchr(shopItem(SHOP_MUSIC, shopCount(SHOP_MUSIC) - 1).name, '.') == nullptr, "Shop song names carry no file extension");
+			labShopPreview();
 			sBotMenuStep = 55;
 			botTap(kBack);
 			return;
@@ -370,6 +409,35 @@ static void labFinish(Input& in) {
 			for (int t = 0; t < kTrackCount; t++) allBeat = allBeat && audio::trackHasBeat(t);
 			labCheck(allBeat, "every Shop song can be played in Beat Slice");
 		}
+#if !PORT_3DS
+		{
+			// The Quit Game blast shakes the window as hard as Screen Shake says, and not at all at 0.
+			const u8 shakeWas = gSave.shake, calmWas = gSave.calmFx;
+			gSave.calmFx = 0;
+			sQuitT = 0.05f;
+			gSave.shake = 100;
+			const float full = quitQuake();
+			gSave.shake = 50;
+			const float half = quitQuake();
+			gSave.shake = 0;
+			const float none = quitQuake();
+			gSave.shake = 100;
+			gSave.calmFx = 1;
+			const float calm = quitQuake();
+			gSave.calmFx = 0;
+			sQuitT = kQuitBlast;
+			const float end = quitQuake();
+			char d[64];
+			snprintf(d, sizeof d, "%.1f, %.1f, %.1f, calm %.1f, end %.1f", full, half, none, calm, end);
+			labCheck(full >= 10 && fabsf(half - full * 0.5f) < 0.01f && none == 0 && calm < full * 0.5f && end < 0.01f,
+			         "the Quit Game blast follows the Screen Shake setting", d);
+			sQuitT = -1;
+			gSave.shake = shakeWas;
+			gSave.calmFx = calmWas;
+			gfx::setShake(0, 0);
+			gfx::shakeMenus(false);
+		}
+#endif
 		{
 			// Pass and Play: names are cleaned, the winner is right, and the bests stay untouched.
 			passSetName(0, " J@ne 2");
@@ -461,10 +529,86 @@ static void labFinish(Input& in) {
 					}
 				}
 				labCheck(sLatDone && fabsf(sLatResult - 3 * kDt) < 0.002f, "the Latency Test measures slices three frames late");
+
+				// The same with one swipe held down the whole time, sweeping across the fruit and back on each tick.
+				startLatencyTest();
+				Input hold{};
+				hold.touching = true;
+				hold.tx = (int)kLatX - 80;
+				hold.ty = (int)kLatY;
+				sMenuBlade.update(hold);
+				const u32 stroke = sMenuBlade.strokeId;
+				int dir = 1, steps = 0;
+				seen = 0;
+				wait = -1;
+				for (int i = 0; i < 60 * 40 && !sLatDone; i++) {
+					if (wait == 0) steps = 4;
+					if (wait >= 0) wait--;
+					if (steps > 0) {
+						hold.tx += dir * 40;
+						if (--steps == 0) dir = -dir;
+					}
+					sMenuBlade.update(hold);
+					updateLatency(hold, true, false);
+					if (sLatTicks != seen) {
+						seen = sLatTicks;
+						wait = 2;  // the sweep starts three frames after the tick and crosses the fruit on its first step
+					}
+				}
+				char d[48];
+				snprintf(d, sizeof d, "%d slices, %.1f ms", sLatSlices, sLatResult * 1000);
+				labCheck(sLatDone && sMenuBlade.strokeId == stroke && fabsf(sLatResult - 3 * kDt) < 0.002f,
+				         "a swipe held down slices on every pass across the Latency Test fruit", d);
+				sMenuBlade.update(Input{});
 				sScreen = wasScreen;
 				audio::music(MUSIC_MENU);
 			}
 			gSave.beatLatency = latBefore;
+#if PORT_CUSTOM_MUSIC
+			{
+				// Add Songs: what the file picker hands back is copied into Custom Music, and the list picks it up.
+				const u8 beatWas = gSave.beatTrack;
+				static const char* const kNames[] = {"Lab Song A.wav", "Lab Song B.ogg", "Lab Notes.txt"};
+				char src[3][520];
+				const auto writeFile = [](const char* path, int bytes) {
+					if (FILE* f = fopen(path, "wb")) {
+						for (int i = 0; i < bytes; i++) fputc(i & 0x7f, f);
+						fclose(f);
+					}
+				};
+				for (int i = 0; i < 3; i++) {
+					port::dataPath(src[i], sizeof src[i], kNames[i]);
+					writeFile(src[i], 4000 + i);
+				}
+				const char* picked[] = {src[0], src[1], src[2], nullptr};
+				const int added = custom::importFiles(picked);
+				beatImportTick();
+				char d[80];
+				snprintf(d, sizeof d, "%d copied, chosen %s", added, beatSong() >= kTrackCount ? custom::name(beatSong() - kTrackCount) : "a game track");
+				labCheck(added == 2 && beatSong() >= kTrackCount && strcmp(custom::name(beatSong() - kTrackCount), "Lab Song A") == 0,
+				         "Add Songs copies the songs picked, skips other files, and picks the first new one", d);
+				labCheck(strcmp(sAddNote, "Added 2 songs.") == 0 && sAddNoteT > 0, "Add Songs says how many it added");
+				labCheck(custom::importFiles(picked) == 0, "the same songs picked again are not copied twice");
+				beatImportTick();
+				writeFile(src[0], 5000);
+				const char* again[] = {src[0], nullptr};
+				custom::importFiles(again);
+				beatImportTick();
+				labCheck(beatSong() >= kTrackCount && strcmp(custom::name(beatSong() - kTrackCount), "Lab Song A (2)") == 0,
+				         "a different song with a name already there is added under a new name");
+				const char* made[] = {"Lab Song A.wav", "Lab Song A (2).wav", "Lab Song B.ogg"};
+				for (const char* m : made) {
+					char p[600];
+					snprintf(p, sizeof p, "%s%s", custom::folder(), m);
+					remove(p);
+				}
+				for (auto& s : src) remove(s);
+				custom::scan();
+				gSave.beatTrack = beatWas;
+				sAddNoteT = 0;
+				audio::music(MUSIC_MENU);
+			}
+#endif
 			{
 				// The 3DS black screen readings count the kinds of fruit on show.
 				sGame.start(MODE_CLASSIC);
