@@ -2314,6 +2314,50 @@ static void drawDebug() {
 }
 #endif
 
+// ---------------------------------------------------------------- black screen readings (3DS test build)
+// `make TESTDEFS=-DTEST_READINGS`. The 3DS can go black in busy moments with only the fruit still drawn, and
+// HOME then crashes it. This keeps a line a second in sd:/3ds/FruitSlicer/readings.txt, and one straight away
+// when the screen changes or more kinds of fruit are on show than ever before. The file is closed after every
+// line, so holding the power button afterwards loses nothing. The last run's file is kept as readings_prev.txt.
+#if PORT_3DS && defined(TEST_READINGS)
+static const char* const kReadingsFile = "sdmc:/3ds/FruitSlicer/readings.txt";
+static float sReadT;
+static int sReadFrame, sReadKindsMax;
+static Screen sReadScreen = SCREEN_COUNT;
+
+static void readingsStart() {
+	remove("sdmc:/3ds/FruitSlicer/readings_prev.txt");
+	rename(kReadingsFile, "sdmc:/3ds/FruitSlicer/readings_prev.txt");
+	if (FILE* f = fopen(kReadingsFile, "w")) {
+		fprintf(f, "Fruit Slicer %s readings. new3ds=%d. One line a second, and one on each change.\n", VERSION_STRING, gIsNew3ds);
+		fprintf(f, "frame why screen mode art fps cpu%% gpu%% draws objs halves parts kinds linearK vramK appK fade slide stickers fx\n");
+		fclose(f);
+	}
+}
+
+static void readingsTick() {
+	sReadFrame++;
+	sReadT += kDt;
+	const int kinds = sScreen == SCREEN_GAME || sScreen == SCREEN_PAUSE ? sGame.activeKinds() : 0;
+	const char* why = nullptr;
+	if (sScreen != sReadScreen) why = "screen";
+	else if (kinds > sReadKindsMax) why = "kinds";
+	else if (sReadT >= 1) why = "tick";
+	if (!why) return;
+	sReadT = 0;
+	sReadScreen = sScreen;
+	if (kinds > sReadKindsMax) sReadKindsMax = kinds;
+	FILE* f = fopen(kReadingsFile, "a");
+	if (!f) return;
+	fprintf(f, "%d %s %d %d %s %.1f %.0f %.0f %lu %d %d %d %d %lu %lu %lu %.2f %d %d %d\n", sReadFrame, why, (int)sScreen, (int)sGame.mode,
+	        gSave.artStyle == ART_3D ? "3d" : "2d", sFps, C3D_GetProcessingTime() * 6.0f, C3D_GetDrawingTime() * 6.0f,
+	        (unsigned long)gfx::drawCalls, sGame.activeObjects(), sGame.activeHalves(), sGame.activeParticles(), kinds,
+	        (unsigned long)(linearSpaceFree() / 1024), (unsigned long)(vramSpaceFree() / 1024),
+	        (unsigned long)(osGetMemRegionFree(MEMREGION_APPLICATION) / 1024), sFade, (int)sSliding, (int)gfx::stickersLoaded(), (int)gSave.effects);
+	fclose(f);
+}
+#endif
+
 // ---------------------------------------------------------------- speed test
 #if PORT_3DS
 struct BenchProfile {
@@ -4238,6 +4282,9 @@ static void updateTransitions() {
 
 static void updateFrame(const Input& in, bool wasTouching) {
 	sTime += kDt;
+#if PORT_3DS && defined(TEST_READINGS)
+	readingsTick();
+#endif
 	if (in.down & KEY_SELECT) sShowDebug = !sShowDebug;
 	if (sSuspended) {
 		sSuspended = false;
@@ -4877,6 +4924,9 @@ bool app::init() {
 	bool audioOk = audio::init();
 	sNoSound = !audioOk;
 	DLOG("[boot] Fruit Slicer %s audio=%d new3ds=%d 3dscreen=%d\n", VERSION_STRING, audioOk, gIsNew3ds, gHas3dScreen);
+#if PORT_3DS && defined(TEST_READINGS)
+	readingsStart();
+#endif
 	return true;
 }
 

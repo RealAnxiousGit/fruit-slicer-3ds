@@ -191,13 +191,13 @@ struct Game {
 	void labProbes(Blade& blade, void (*check)(bool, const char*, const char*));
 	void labShowcase();
 	void labThrow(float& x, float& vx, float& vy) { pickThrow(false, 0, x, vx, vy); }
+#endif
 	Input bladeInput(Input in) const {  // Mixer: on Mirror the blade goes where your hand isn't
 		if (mix[MIX_MIRROR] && in.touching) in.tx = kFieldW - in.tx;
 		return in;
 	}
 	float fruitSize() const { return mix[MIX_GIANT] ? 1.5f : (mix[MIX_TINY] ? 0.65f : 1.0f); }  // Mixer: everything but bombs and coins
 	u32* bestTable() const { return mixed ? gSave.bestMixer : (assisted ? gSave.bestAssisted : gSave.best); }
-#endif
 	bool keepBestSoFar();
 	void update(Blade& blade);
 	void drawField(const Blade& blade) const;   // bottom screen
@@ -210,6 +210,8 @@ struct Game {
 	void drawHud() const;                       // top screen, one eye at a time
 	int activeObjects() const;
 	int activeParticles() const;
+	int activeHalves() const;
+	int activeKinds() const;  // different fruit and cut-fruit meshes on screen (3DS test readings)
 	// First live object the AUTOTEST bot should aim for (or avoid).
 	const Obj* botTarget(bool wantBomb) const;
 	bool timed() const { return timeLeft > 0 || mode == MODE_ARCADE || mode == MODE_FRENZY || mode == MODE_DAILY || mode == MODE_BEAT; }

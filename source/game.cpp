@@ -1843,6 +1843,21 @@ int Game::activeObjects() const {
 	for (const auto& o : objs) n += o.on;
 	return n;
 }
+int Game::activeHalves() const {
+	int n = 0;
+	for (const auto& h : halves) n += h.on;
+	return n;
+}
+int Game::activeKinds() const {
+	u64 whole = 0, cut = 0;
+	for (const auto& o : objs)
+		if (o.on) whole |= 1ull << (o.fruit & 63);
+	for (const auto& h : halves)
+		if (h.on) cut |= 1ull << (h.mesh & 63);
+	int n = 0;
+	for (int i = 0; i < 64; i++) n += (int)((whole >> i) & 1) + (int)((cut >> i) & 1);
+	return n;
+}
 int Game::activeParticles() const {
 	int n = 0;
 	for (const auto& p : parts) n += p.on;

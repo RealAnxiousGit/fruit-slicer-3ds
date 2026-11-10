@@ -465,6 +465,18 @@ static void labFinish(Input& in) {
 				audio::music(MUSIC_MENU);
 			}
 			gSave.beatLatency = latBefore;
+			{
+				// The 3DS black screen readings count the kinds of fruit on show.
+				sGame.start(MODE_CLASSIC);
+				for (auto& o : sGame.objs) o.on = false;
+				for (auto& h : sGame.halves) h.on = false;
+				for (int i = 0; i < 3; i++) {
+					sGame.objs[i].on = true;
+					sGame.objs[i].fruit = (u8)(i < 2 ? 2 : 5);
+				}
+				labCheck(sGame.activeKinds() == 2, "the readings count two kinds of fruit, not three fruit");
+				for (auto& o : sGame.objs) o.on = false;
+			}
 #if PORT_ULTRA
 			{
 				// Textures: Ultra loads the 4K art, the other choices never do, and a saved Ultra comes back.
