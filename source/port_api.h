@@ -42,4 +42,10 @@ void textStop();
 
 // Opens a web page in the system browser (Windows, Linux and Android only: the main menu's link icons).
 void openLink(const char* url);
+
+// Score cards (Windows, Linux and Android only): keeps this part of the top screen, in its own units, from
+// the next finished frame as a picture. Windows and Linux save it in Pictures, in a Fruit Slicer folder;
+// Android hands it to the share sheet. shareCardPoll: 0 still waiting, 1 done, -1 failed, with a line to show.
+void shareCard(float x, float y, float w, float h);
+int shareCardPoll(const char** note);
 }  // namespace port

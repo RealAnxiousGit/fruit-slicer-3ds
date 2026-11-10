@@ -157,7 +157,23 @@ static void botMenuWalk() {
 			return;
 		}
 		case 41: sLatDone = true; sLatResult = 0.036f; botMenuPicture("g2_latency_done"); return;
-		case 42: leaveLatencyTest(); return;
+		case 42: {
+			leaveLatencyTest();
+			sGame.start(MODE_CLASSIC);
+			sGame.phase = PHASE_OVER;
+			sGame.phaseT = 5;
+			sGame.score = 1234;
+			sGame.sliced = 88;
+			sGame.bestCombo = 7;
+			sScreen = SCREEN_RESULT;
+			sFocus[SCREEN_RESULT] = kResultCount - 1;
+			botMenuPicture("h1_result_share");
+			return;
+		}
+#if !PORT_3DS
+		case 43: sCardFrame = true; port::shareCard(30, 12, 340, 212); return;  // the card lands in Pictures/Fruit Slicer
+		case 44: botMenuPicture("h2_result_after"); return;
+#endif
 		default: return;
 	}
 }

@@ -365,7 +365,12 @@ static const Button kToolTaps[] = {
 static constexpr int kToolTapCount = sizeof kToolTaps / sizeof kToolTaps[0];
 static float sFolderNote = 0;  // seconds the folder's path stays up, where it can't be opened
 #endif
-static const Button kResultButtons[] = {kBack, {20, 170, 134, 52, "Again"}, {166, 170, 134, 52, "Modes"}};
+static const Button kResultButtons[] = {kBack, {20, 170, 134, 52, "Again"}, {166, 170, 134, 52, "Modes"}, {110, 104, 100, 52, "Share"}};
+// Share saves a score card: Windows, Linux and Android. The 3DS can't keep or send a picture.
+static constexpr int kResultCount = PORT_3DS ? 3 : 4;
+static bool sCardFrame;          // this frame is the score card: the sign shows the logo, not the coins
+static const char* sCardNote;    // what became of the last card, shown for a while
+static float sCardNoteT;
 #if PORT_PAUSE_BUTTON
 static const Button kPauseSign = {2, kFieldTop + 2, 36, 36, nullptr};  // in field units: top-left, just under the score sign
 #endif
@@ -420,7 +425,7 @@ static int fruitFor(const char* label) {
 	} kMap[] = {
 		{"Play", MF_MELON}, {"Options", MF_ORANGE}, {"Credits", MF_PLUM}, {"How to Play", MF_LEMON}, {"Shop", MF_GOLD},
 		{"Journal", MF_KIWI}, {"Stats", MF_PEACH}, {"Practice", MF_APPLE}, {"Let's Play", MF_MELON},
-		{"Resume", MF_APPLE}, {"Main Menu", MF_PEAR}, {"Again", MF_PEACH}, {"Modes", MF_KIWI}, {"Keep", MF_LEMON}, {"Try Again", MF_PEACH},
+		{"Resume", MF_APPLE}, {"Main Menu", MF_PEAR}, {"Again", MF_PEACH}, {"Modes", MF_KIWI}, {"Keep", MF_LEMON}, {"Try Again", MF_PEACH}, {"Share", MF_PLUM},
 		{"Audio", MF_APPLE}, {"Visuals", MF_PEACH}, {"Visuals and Display", MF_PEACH}, {"Gameplay and Controls", MF_PINEAPPLE}, {"Accessibility", MF_PEAR}, {"Scores and Data", MF_PLUM},
 	};
 	if (!label) return MF_BERRY;
@@ -3650,7 +3655,11 @@ static void drawTopContent(Screen screen) {
 			if (sGame.mode == MODE_BEAT) snprintf(buf, sizeof buf, "SLICED %d   ON THE BEAT %d", sGame.sliced, sGame.beatHits);
 			else snprintf(buf, sizeof buf, "SLICED %d   BEST COMBO %d", sGame.sliced, sGame.bestCombo);
 			gfx::text(buf, 200, 152, 0.42f, COL_CREAM, ALIGN_CENTER);
-			if (sGame.scoreCommitted && sPassTurn < 0) {
+			if (sCardFrame) {
+				// The score card: the game's name where the coins go, which are nobody else's business.
+				gfx::setDepth(1.2f);
+				gfx::sprite(SHEET_LOGO, logo_logo_idx, 200, 194, 0.3f, 0.3f);
+			} else if (sGame.scoreCommitted && sPassTurn < 0) {
 				snprintf(buf, sizeof buf, "+%lu COINS", (unsigned long)sGame.coinsEarned);
 				float cw = gfx::textWidth(buf, 0.5f);
 				gfx::sprite(SHEET_SPRITES, sprites_coin_idx, 200 - cw / 2 - 12, 189, 0.5f, 0.5f);
@@ -4093,8 +4102,10 @@ static void drawBottomContent(Screen screen) {
 				kPassResultButtons[1].label = sPassTurn + 1 < passCount() ? "Next Player" : "See Results";
 				drawSign(kPassResultButtons[1], kPassResultButtons[1].label, f == 1, sPressed == 1, 0.56f, -1, fruitFor(kPassResultButtons[1].label));
 			} else if (sGame.mode == MODE_PRACTICE) drawSign(kPracticeEndButtons[1], kPracticeEndButtons[1].label, f == 1, sPressed == 1, 0.56f, -1, fruitFor(kPracticeEndButtons[1].label));
-			else
-				for (int i = 1; i < 3; i++) drawSign(kResultButtons[i], kResultButtons[i].label, f == i, sPressed == i, 0.56f, -1, fruitFor(kResultButtons[i].label));
+			else {
+				for (int i = 1; i < kResultCount; i++) drawSign(kResultButtons[i], kResultButtons[i].label, f == i, sPressed == i, 0.56f, -1, fruitFor(kResultButtons[i].label));
+				if (sCardNoteT > 0 && sCardNote) gfx::text(sCardNote, 160, 159, 0.34f, withAlpha(COL_CREAM, clampf(sCardNoteT, 0, 1)), ALIGN_CENTER);
+			}
 			break;
 		}
 #if PORT_3DS
@@ -4121,6 +4132,7 @@ static void drawBottomContent(Screen screen) {
 // ---------------------------------------------------------------- flow
 
 static void startGame() {
+	sCardNoteT = 0;
 	sGame.start(sStartMode);
 	sBlade.reset();
 	gfx::setShake(0, 0);
@@ -4595,6 +4607,17 @@ static void updateFrame(const Input& in, bool wasTouching) {
 		case SCREEN_RESULT: {
 			sGame.update(sBlade);  // keeps debris falling behind the buttons
 			sGame.kickParticles();
+#if !PORT_3DS
+			if (sCardFrame) {
+				const char* note;
+				if (port::shareCardPoll(&note)) {
+					sCardFrame = false;
+					sCardNote = note;
+					sCardNoteT = 4;
+				}
+			}
+#endif
+			sCardNoteT -= kDt;
 			if (blocked) break;
 			// A short lock-out stops a frantic swipe from tapping a sign by accident. Keys can't do that.
 			if (sGame.phaseT <= (in.touching || wasTouching ? 0.7f : 0.25f)) break;
@@ -4619,17 +4642,25 @@ static void updateFrame(const Input& in, bool wasTouching) {
 				else if (t == 1) passNext();
 				break;
 			}
-			int t = menuInput(kResultButtons, 3, SCREEN_RESULT, in, wasTouching);
+			int t = menuInput(kResultButtons, kResultCount, SCREEN_RESULT, in, wasTouching);
 			if (in.down & KEY_B) {
 				audio::click();
 				t = 0;
 			}
 			if (t == 1) {
+				sCardFrame = false;
 				sStartMode = sGame.mode;
 				fadeThen(startGame);
 			} else if (t == 0 || t == 2) {
+				sCardFrame = false;
 				fadeThen(toModes);
 			}
+#if !PORT_3DS
+			else if (t == 3 && !sCardFrame) {
+				sCardFrame = true;  // drawn next, and kept from that frame
+				port::shareCard(30, 12, 340, 212);
+			}
+#endif
 			break;
 		}
 #if PORT_3DS
