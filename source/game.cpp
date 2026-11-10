@@ -87,9 +87,10 @@ static constexpr float kArcadeTrickChance = 0.12f;   // Arcade is the mode for t
 static constexpr float kArcadePowerChance = 0.15f;
 static constexpr int kArcadeMaxTime = 3;              // +5 Seconds, so the 60-second clock stays meaningful
 static constexpr float kComboRushStart = 0.4f;        // Combo Rush's meter when the run starts
-static int pickTrick(Mode mode, Rng& rng) {
+// The pinata is last, so a run that can't have one yet picks evenly from the rest.
+static int pickTrick(Mode mode, Rng& rng, bool pinata) {
 	static const int kTricks[] = {kSpiky, kGrapes, kHoney, kJelly, kChili, kBunch, kPomegranate, kPinata};
-	const int n = (int)(sizeof kTricks / sizeof kTricks[0]);
+	const int n = (int)(sizeof kTricks / sizeof kTricks[0]) - (pinata ? 0 : 1);
 	return mode == MODE_ZEN ? kTricks[1 + rng.below(n - 1)] : kTricks[rng.below(n)];
 }
 
@@ -541,7 +542,7 @@ void Game::spawnWave() {
 		if (gSpawn.unit() < bombChance && bombsUsed < bombsAllowed) {
 			kind = OBJ_BOMB;
 			bombsUsed++;
-#ifdef AUTOTEST
+#if defined(AUTOTEST) && !defined(TEST_SPAWN)
 		} else if (mode == MODE_ARCADE && gSpawn.unit() < 0.3f) {
 			// Test builds cycle the power-ups so that every one gets exercised.
 			static int nextPower = 0;
@@ -567,9 +568,8 @@ void Game::spawnWave() {
 			pickThrow(isBomb, stagger * i, x, vx, vy);
 			int fruit = gSpawn.unit() < 0.09f ? kCoconut : normalFruit(gSpawn);
 			if (kinds[i] == OBJ_FRUIT && t > (mode == MODE_ARCADE ? 8.0f : 30.0f) && gSpawn.unit() < (mode == MODE_ARCADE ? kArcadeTrickChance : kTrickChance)) {
-				fruit = pickTrick(mode, gSpawn);
-				if (fruit == kPinata && (t < kPinataFrom || pinataThrown >= kPinataMax)) fruit = kBunch;
-				else if (fruit == kPinata) pinataThrown++;
+				fruit = pickTrick(mode, gSpawn, t >= kPinataFrom && pinataThrown < kPinataMax);
+				if (fruit == kPinata) pinataThrown++;
 			}
 			queue(stagger * i, x, vx, vy, kinds[i], fruit);
 		}
@@ -663,6 +663,69 @@ void Game::spawnReport() {
 				fprintf(stderr, "SPAWN %s %d %.1f fruit/min=%.1f bombs/min=%.1f bomb%%=%.1f biggest=%.0f gravity=%.0f\n", names[m], diff, want[stage], fruit / seconds * 60, bombs / seconds * 60, bombs / (fruit + bombs) * 100, biggest, gravity);
 			}
 		}
+	}
+
+	// Whole runs at the real odds on Normal: what one run throws, on average. Score stays 0, so only time ramps it.
+	gSave.difficulty = DIFF_NORMAL;
+	static const float runLength[MODE_COUNT] = {90, 60, 180, 30, 90, 90, 90};
+	static constexpr int kRuns = 3000;
+	for (int m = 0; m <= MODE_COMBO; m++) {
+		double kinds[16] = {}, fruits[kMaxFruitKinds] = {}, tricks = 0, waves = 0, pinataRuns = 0;
+		for (int run = 0; run < kRuns; run++) {
+			start((Mode)m);
+			phase = PHASE_PLAY;
+			bool pinata = false;
+			for (elapsed = 0; elapsed < runLength[m];) {
+				if (m == MODE_COMBO) chain = (int)(elapsed * 0.5f);  // a steady player: a 30 combo at the end of a minute
+				spawnWave();
+				waves++;
+				for (auto& p : pending) {
+					if (!p.on) continue;
+					kinds[p.kind]++;
+					if (p.kind == OBJ_FRUIT) {
+						fruits[p.fruit]++;
+						if (p.fruit >= kSpiky) tricks++;
+						if (p.fruit == kPinata) pinata = true;
+					}
+					p.on = false;
+				}
+				elapsed += waveTimer > 0.05f ? waveTimer : 0.05f;
+			}
+			pinataRuns += pinata;
+		}
+		const double r = kRuns;
+		fprintf(stderr, "RUN %s %.0fs waves=%.1f fruit=%.1f gold=%.2f bombs=%.1f coins=%.2f tricks=%.2f (%.1f%% of fruit)\n", names[m], runLength[m], waves / r, kinds[OBJ_FRUIT] / r,
+		        kinds[OBJ_GOLD] / r, kinds[OBJ_BOMB] / r, kinds[OBJ_COIN] / r, tricks / r, tricks / (kinds[OBJ_FRUIT] + 1e-9) * 100);
+		fprintf(stderr, "    powers freeze=%.2f double=%.2f frenzy=%.2f magnet=%.2f wide=%.2f shield=%.2f time=%.2f\n", kinds[OBJ_FREEZE] / r, kinds[OBJ_DOUBLE] / r, kinds[OBJ_FRENZY] / r,
+		        kinds[OBJ_MAGNET] / r, kinds[OBJ_WIDE] / r, kinds[OBJ_SHIELD] / r, kinds[OBJ_TIME] / r);
+		fprintf(stderr, "    dragon=%.2f spiky=%.2f grapes=%.2f honey=%.2f jelly=%.2f chili=%.2f bunch=%.2f pomegranate=%.2f pinata=%.2f (in %.0f%% of runs)\n", fruits[kDragon] / r,
+		        fruits[kSpiky] / r, fruits[kGrapes] / r, fruits[kHoney] / r, fruits[kJelly] / r, fruits[kChili] / r, fruits[kBunch] / r, fruits[kPomegranate] / r, fruits[kPinata] / r,
+		        pinataRuns / r * 100);
+	}
+
+	// Combo Rush by combo size: how fast it throws, and whether slicing everything keeps the meter up.
+	static const int kChains[] = {0, 5, 10, 20, 30, 45, 60, 80, 100};
+	for (int c : kChains) {
+		start(MODE_COMBO);
+		phase = PHASE_PLAY;
+		elapsed = 30;
+		chain = c;
+		double fruit = 0, bombs = 0, seconds = 0;
+		for (int i = 0; i < 20000; i++) {
+			spawnWave();
+			seconds += waveTimer;
+			for (auto& p : pending) {
+				if (!p.on) continue;
+				if (p.kind == OBJ_BOMB) bombs++;
+				else if (p.kind != OBJ_COIN) fruit++;
+				p.on = false;
+			}
+		}
+		const double perSec = fruit / seconds;
+		const double gain = perSec * 0.065 * kDifficulty[DIFF_NORMAL].feverGain;
+		const double drain = kFeverDrain * kDifficulty[DIFF_NORMAL].feverDrain * (0.4 + 50 * 0.012) * (1 + (c > 100 ? 100 : c) * 0.02);
+		fprintf(stderr, "COMBO chain=%d fruit/s=%.2f bombs/min=%.1f points/slice=%d points/s=%.1f meter gain/s=%.3f drain/s=%.3f keep up=%.0f%%\n", c, perSec, bombs / seconds * 60,
+		        comboRushPoints(c + 1), perSec * comboRushPoints(c + 1), gain, drain, drain / gain * 100);
 	}
 }
 #endif
@@ -2521,8 +2584,15 @@ void Game::labProbes(Blade& blade, void (*check)(bool, const char*, const char*)
 	check(!pinata.on && pieces(OBJ_COIN, false) == kPinataCoins, "A broken pinata drops three coins", "");
 
 	bool zenSpiky = false;
-	for (int i = 0; i < 500; i++) zenSpiky |= pickTrick(MODE_ZEN, gSpawn) == kSpiky;
+	for (int i = 0; i < 500; i++) zenSpiky |= pickTrick(MODE_ZEN, gSpawn, true) == kSpiky;
 	check(!zenSpiky, "Zen never throws a spiky fruit", "");
+	// Before a pinata is allowed, the other trick fruit share its turn evenly instead of it all going to one.
+	int stand[kFruitKinds] = {}, spare = 0;
+	for (int i = 0; i < 7000; i++) stand[pickTrick(MODE_CLASSIC, gSpawn, false)]++;
+	for (int f = kSpiky; f < kPinata; f++)
+		if (f != kGrape && (stand[f] < 800 || stand[f] > 1200)) spare++;  // a single grape only ever breaks off a bunch
+	snprintf(d, sizeof d, "bunch %d, pinata %d", stand[kBunch], stand[kPinata]);
+	check(stand[kPinata] == 0 && spare == 0, "No pinata too early, and the rest share its turn", d);
 	check(progress::fruitName(kPinata)[0] != 0, "Every new fruit has a Journal name", "");
 
 	setup(MODE_ZEN);  // leave nothing live for the screens that follow
