@@ -487,6 +487,31 @@ static void labFinish(Input& in) {
 				saveWrite();
 			}
 #endif
+#if !PORT_3DS
+			{
+				// In menus the right trigger turns the stick into a blade point; without it the stick moves the selector.
+				const Screen wasScreen = sScreen;
+				sScreen = SCREEN_TITLE;
+				sMenuPointShow = 0;
+				Input pad{};
+				pad.stickX = 1;
+				pad.held = pad.down = KEY_RIGHT;
+				stickBlade(pad);
+				labCheck(!pad.touching && (pad.down & KEY_RIGHT), "in menus the stick alone still moves the selector");
+				float x0 = 0;
+				for (int i = 0; i < 10; i++) {
+					Input held{};
+					held.stickX = 1;
+					held.stickSlice = true;
+					held.held = held.down = KEY_RIGHT;
+					stickBlade(held);
+					if (i == 0) x0 = (float)held.tx;
+					if (i == 9) labCheck(held.touching && held.tx > x0 + 20 && !(held.down & KEY_RIGHT), "with the trigger held the stick is a blade point that slices menus");
+				}
+				sMenuPointShow = 0;
+				sScreen = wasScreen;
+			}
+#endif
 #if PORT_3DS
 			// The 3DSX update's file swap, on stand-in files beside the save.
 			static const char* const kLabOld = "sdmc:/3ds/FruitSlicer/lab_swap.bin";

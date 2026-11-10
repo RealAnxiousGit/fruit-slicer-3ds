@@ -4210,6 +4210,9 @@ static void pauseGame() {
 	sBlade.reset();
 }
 
+static float sMenuPointX = 160, sMenuPointY = 140, sMenuPointShow;  // the menu blade point (stickBlade, below)
+static void stickBlade(Input& in);
+
 #ifdef AUTOTEST
 #include "autotest.inc"
 #endif
@@ -4676,6 +4679,7 @@ static void updateFrame(const Input& in, bool wasTouching) {
 }
 
 static void drawStickPoint();
+[[maybe_unused]] static void drawMenuStickPoint();
 #if PORT_TWO_SCREENS
 static void drawFrame() {
 	float e = sSlideT * sSlideT * (3 - 2 * sSlideT);  // eases in and out
@@ -4760,7 +4764,10 @@ static void drawFrame() {
 		} else {
 			content(sScreen);
 		}
-		if (pass == 1 && menuBladeShown()) sMenuBlade.draw();
+		if (pass == 1 && menuBladeShown()) {
+			sMenuBlade.draw();
+			if (!sSliding) drawMenuStickPoint();
+		}
 	}
 	// The Quit Game bomb sits in the window's own corner, outside both sides, and fades with a slide.
 	{
@@ -4887,9 +4894,61 @@ bool app::inFieldView() { return sScreen == SCREEN_GAME; }
 // During a game a stick moves a glowing point around the field. It slices while the slice button is
 // held, or, with Flick chosen in Controls, whenever it moves fast. Touch and the mouse always win.
 
+// In menus (Windows, Linux and Android), holding the right trigger turns the stick into a blade point that
+// works like a finger: a swipe across a sign cuts it, and a pull and release on one picks it. Let go and the
+// stick moves the selector again. The 3DS keeps its buttons for the menus and has the touch screen for this.
+// (sMenuPointX, sMenuPointY and sMenuPointShow are declared above the Lab, which checks them.)
+static void menuStickBlade(Input& in) {
+#if !PORT_3DS
+	if (!menuBladeShown() || in.touching) {
+		if (in.touching || !menuBladeShown()) sMenuPointShow = 0;
+		return;
+	}
+	if (!in.stickSlice) {
+		if (sMenuPointShow > 0) sMenuPointShow -= kDt;
+		return;
+	}
+	if (sMenuPointShow <= 0) {  // a fresh pull starts in the middle of the signs
+		sMenuPointX = 160;
+		sMenuPointY = 140;
+	}
+	sMenuPointShow = 1.5f;
+	const float dead = 0.2f, sx = in.stickX, sy = in.stickY, mag = sqrtf(sx * sx + sy * sy);
+	if (mag > dead) {
+		const float k = clampf((mag - dead) / (1 - dead), 0, 1);
+		const float speed = (80 + 560 * k * k) * (0.5f + gSave.stickSpeed / 100.0f);
+		sMenuPointX = clampf(sMenuPointX + sx / mag * speed * kDt, 2, 318);
+		sMenuPointY = clampf(sMenuPointY + sy / mag * speed * kDt, 2, 238);
+	}
+	// While it's a blade, the stick and D-pad don't move the selector as well.
+	const u32 dirs = KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT;
+	in.down &= ~dirs;
+	in.held &= ~dirs;
+	in.repeat &= ~dirs;
+	in.touching = true;
+	in.tx = (int)sMenuPointX;
+	in.ty = (int)sMenuPointY;
+#else
+	(void)in;
+#endif
+}
+
+[[maybe_unused]] static void drawMenuStickPoint() {
+	if (sMenuPointShow <= 0 || !menuBladeShown()) return;
+	const float a = clampf(sMenuPointShow, 0, 1);
+	// Bigger than the game's point: the menus are busier, and it has to be found among the signs.
+	gfx::sprite(SHEET_SPRITES, sprites_glow_idx, sMenuPointX, sMenuPointY, 1.0f, 1.0f, 0, withAlpha(COL_ACCENT, a));
+	gfx::sprite(SHEET_SPRITES, sprites_ring_idx, sMenuPointX, sMenuPointY, 0.32f, 0.32f, 0, withAlpha(COL_CREAM, 0.9f * a));
+	gfx::rect(sMenuPointX - 2.5f, sMenuPointY - 2.5f, 5, 5, withAlpha(COL_CREAM, a));
+}
+
 static void stickBlade(Input& in) {
-	if (sScreen != SCREEN_GAME || in.touching) {
-		if (in.touching) sPointShow = 0;
+	if (sScreen != SCREEN_GAME) {
+		menuStickBlade(in);
+		return;
+	}
+	if (in.touching) {
+		sPointShow = 0;
 		return;
 	}
 	const float dead = 0.2f;

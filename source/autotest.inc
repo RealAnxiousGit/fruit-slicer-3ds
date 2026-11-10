@@ -184,6 +184,15 @@ static void botMenuWalk() {
 		case 49: goTo(SCREEN_TITLE, -1); return;
 		case 50: botMenuPicture("i3_ultra_title"); return;
 #endif
+#if !PORT_3DS
+		case 51: goTo(SCREEN_TITLE, -1); return;
+		case 52:  // the controller's menu blade point, resting on Options
+			sMenuPointShow = 1.5f;
+			sMenuPointX = kTitleButtons[1].x + kTitleButtons[1].w * 0.5f + 14;
+			sMenuPointY = kTitleButtons[1].y + 12;
+			botMenuPicture("j1_menu_point");
+			return;
+#endif
 		default: return;
 	}
 }
