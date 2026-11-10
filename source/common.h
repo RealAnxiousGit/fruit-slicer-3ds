@@ -140,7 +140,8 @@ struct Settings {
 	u8 seasonalOff;   // 1 keeps seasonal boards away from the free boards
 	u8 skin;          // Shop fruit skin, 0 none
 	u8 mixer[MIX_COUNT];  // 1 turns a Mixer rule on
-	u8 reserved[28];  // sized so the port block starts on a 4-byte boundary
+	u8 beatLatency;   // Beat Timing, in 2 ms steps around 100 (100 = 0 ms, above = you slice late)
+	u8 reserved[27];  // sized so the port block starts on a 4-byte boundary
 	// The port's own settings, in a fixed-size block so shared fields never move.
 	union {
 		struct { u8 portRev; PORT_SETTINGS_FIELDS };
@@ -151,6 +152,12 @@ struct Settings {
 };
 static_assert(MODE_COUNT + 1 <= kMaxModes, "more modes than the save holds");
 extern Settings gSave;
+// Beat Timing in seconds: how far after the beat this player's slices land (Latency Test sets it).
+inline float beatLatencySec() { return ((int)gSave.beatLatency - 100) * 0.002f; }
+inline u8 beatLatencyStore(float sec) {
+	const int v = 100 + (int)(sec * 500 + (sec < 0 ? -0.5f : 0.5f));
+	return (u8)(v < 0 ? 0 : (v > 200 ? 200 : v));
+}
 enum SaveSection { SEC_ALL = -1, SEC_AUDIO, SEC_VISUALS, SEC_GAMEPLAY, SEC_CONTROLS, SEC_ACCESS, SEC_DISPLAY };
 void saveDefaults(bool keepScores, int section);  // section: SaveSection; coins and Shop items are never reset
 void saveResetScores();

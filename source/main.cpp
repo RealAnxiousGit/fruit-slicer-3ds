@@ -39,7 +39,7 @@ static constexpr float kSlideTop = 900, kSlideBottom = 900;
 enum Screen {
 	SCREEN_LOADING, SCREEN_TITLE, SCREEN_MODES, SCREEN_OPTIONS, SCREEN_SECTION, SCREEN_CREDITS, SCREEN_HOWTO, SCREEN_SHOP,
 	SCREEN_JOURNAL, SCREEN_STATS, SCREEN_BEAT, SCREEN_BEATTOOL, SCREEN_UPDATE,
-	SCREEN_GAME, SCREEN_PAUSE, SCREEN_RESULT, SCREEN_BENCH, SCREEN_PASS_TURN, SCREEN_PASS_BOARD, SCREEN_COUNT
+	SCREEN_GAME, SCREEN_PAUSE, SCREEN_RESULT, SCREEN_BENCH, SCREEN_PASS_TURN, SCREEN_PASS_BOARD, SCREEN_LATENCY, SCREEN_COUNT
 };
 
 static Screen sScreen = SCREEN_LOADING;
@@ -420,7 +420,7 @@ static int fruitFor(const char* label) {
 	} kMap[] = {
 		{"Play", MF_MELON}, {"Options", MF_ORANGE}, {"Credits", MF_PLUM}, {"How to Play", MF_LEMON}, {"Shop", MF_GOLD},
 		{"Journal", MF_KIWI}, {"Stats", MF_PEACH}, {"Practice", MF_APPLE}, {"Let's Play", MF_MELON},
-		{"Resume", MF_APPLE}, {"Main Menu", MF_PEAR}, {"Again", MF_PEACH}, {"Modes", MF_KIWI},
+		{"Resume", MF_APPLE}, {"Main Menu", MF_PEAR}, {"Again", MF_PEACH}, {"Modes", MF_KIWI}, {"Keep", MF_LEMON}, {"Try Again", MF_PEACH},
 		{"Audio", MF_APPLE}, {"Visuals", MF_PEACH}, {"Visuals and Display", MF_PEACH}, {"Gameplay and Controls", MF_PINEAPPLE}, {"Accessibility", MF_PEAR}, {"Scores and Data", MF_PLUM},
 	};
 	if (!label) return MF_BERRY;
@@ -459,7 +459,7 @@ static bool isCut(const Button& b) {
 }
 static Blade sMenuBlade;                  // the trail a swipe leaves across the menus
 static bool menuBladeShown() {
-	return sScreen == SCREEN_TITLE || sScreen == SCREEN_MODES || sScreen == SCREEN_OPTIONS || sScreen == SCREEN_CREDITS || sScreen == SCREEN_HOWTO || sScreen == SCREEN_JOURNAL || sScreen == SCREEN_STATS || sScreen == SCREEN_BEAT || sScreen == SCREEN_BEATTOOL || sScreen == SCREEN_UPDATE || sScreen == SCREEN_PAUSE || sScreen == SCREEN_RESULT || sScreen == SCREEN_PASS_TURN || sScreen == SCREEN_PASS_BOARD;
+	return sScreen == SCREEN_TITLE || sScreen == SCREEN_MODES || sScreen == SCREEN_OPTIONS || sScreen == SCREEN_CREDITS || sScreen == SCREEN_HOWTO || sScreen == SCREEN_JOURNAL || sScreen == SCREEN_STATS || sScreen == SCREEN_BEAT || sScreen == SCREEN_BEATTOOL || sScreen == SCREEN_UPDATE || sScreen == SCREEN_PAUSE || sScreen == SCREEN_RESULT || sScreen == SCREEN_PASS_TURN || sScreen == SCREEN_PASS_BOARD || sScreen == SCREEN_LATENCY;
 }
 
 static bool fruit3D() { return gSave.artStyle == ART_3D && m3d::ready(); }
@@ -963,7 +963,7 @@ static void drawCut(Screen screen) {
 // ---------------------------------------------------------------- settings rows
 enum RowKind { ROW_SLIDER, ROW_CHOICE, ROW_ACTION, ROW_PAGE };  // a page row opens the section numbered by its lo
 enum SectionId { SID_AUDIO, SID_VISUALS, SID_VISUALS_MORE, SID_GAMEPLAY, SID_GAMEPLAY_MORE, SID_ACCESS, SID_ACCESS_MORE, SID_DATA, SID_DEV, SID_MIXER, SID_PASS };
-enum RowAction { ACT_NONE, ACT_RESET_AUDIO, ACT_RESET_VISUALS, ACT_RESET_GAMEPLAY, ACT_RESET_SCORES, ACT_RESET_ALL, ACT_SPEED_TEST, ACT_APPLY_DISPLAY, ACT_RESET_DISPLAY, ACT_RESET_ACCESS, ACT_RESET_CONTROLS, ACT_DEV_ADD_COINS, ACT_DEV_CLEAR_COINS, ACT_DEV_NEXT_DAY, ACT_CHECK_UPDATES, ACT_PASS_NAME, ACT_PASS_START };
+enum RowAction { ACT_NONE, ACT_RESET_AUDIO, ACT_RESET_VISUALS, ACT_RESET_GAMEPLAY, ACT_RESET_SCORES, ACT_RESET_ALL, ACT_SPEED_TEST, ACT_APPLY_DISPLAY, ACT_RESET_DISPLAY, ACT_RESET_ACCESS, ACT_RESET_CONTROLS, ACT_DEV_ADD_COINS, ACT_DEV_CLEAR_COINS, ACT_DEV_NEXT_DAY, ACT_CHECK_UPDATES, ACT_PASS_NAME, ACT_PASS_START, ACT_LATENCY };
 
 struct Row {
 	RowKind kind;
@@ -1088,6 +1088,8 @@ static const Row kAudioRows[] = {
 	{ROW_SLIDER, "Menu Sounds", &gSave.menuSfx, 0, 100, nullptr, 0, 100, ACT_NONE, "The tap when you press a sign.", ""},
 	{ROW_CHOICE, "Menu Music", &gSave.menuTrack, 0, kTrackCount, kTrackRowNames, 0, 0, ACT_NONE, "What plays in the menus. Auto", "shuffles every track you own."},
 	{ROW_CHOICE, "Game Music", &gSave.gameTrack, 0, kTrackCount, kTrackRowNames, 0, 0, ACT_NONE, "What plays during a game. Auto", "shuffles them; Zen keeps it calm."},
+	{ROW_ACTION, "Latency Test", nullptr, 0, 0, nullptr, 0, 0, ACT_LATENCY, "Slice in time with a metronome", "to set Beat Timing for you."},
+	{ROW_SLIDER, "Beat Timing", &gSave.beatLatency, 0, 200, nullptr, 0, 0, ACT_NONE, "Moves the Beat Slice beat. Raise it", "if your slices land late."},
 	{ROW_ACTION, "Reset Audio", nullptr, 0, 0, nullptr, 0, 0, ACT_RESET_AUDIO, "Puts these back to their defaults.", ""},
 };
 #if PORT_HAS_DISPLAY
@@ -1373,6 +1375,9 @@ static void rowValueText(const Row& r, char* buf, size_t size) {
 			snprintf(buf, size, "-");
 		} else if (r.value == &gSave.misses) {
 			snprintf(buf, size, "%d", *r.value);
+		} else if (r.value == &gSave.beatLatency) {
+			const int ms = (*r.value - 100) * 2;
+			snprintf(buf, size, ms > 0 ? "+%d ms" : "%d ms", ms);
 		} else {
 			float t = (*r.value - r.lo) / (float)(r.hi - r.lo);
 			snprintf(buf, size, "%d%%", (int)(lerpf(r.showLo, r.showHi, t) + 0.5f));
@@ -1449,6 +1454,7 @@ static void adjustRow(const Row& r, int dir) {
 #if PORT_3DS
 static void startSpeedTest();
 #endif
+static void startLatencyTest();
 
 static void rowAction(int index, const Row& r) {
 	if (rowDisabled(r)) return;
@@ -1462,6 +1468,13 @@ static void rowAction(int index, const Row& r) {
 	if (r.action == ACT_PASS_START) {
 		audio::click();
 		passBegin();
+		return;
+	}
+	if (r.action == ACT_LATENCY) {
+		audio::click();
+		if (sDirty) saveWrite();
+		sDirty = false;
+		fadeThen(startLatencyTest);
 		return;
 	}
 #if PORT_3DS
@@ -3185,6 +3198,198 @@ static void skipPractice() {
 	toModes();
 }
 
+// ---------------------------------------------------------------- Latency Test
+// The music stops and a metronome ticks at 120 BPM. One fruit sits in the middle and never breaks: each
+// swipe across it (or each press of A) is one slice, timed against the tick nearest to it. The first few
+// are for settling in; the middle value of the next 16 becomes Beat Timing, which moves Beat Slice's beat.
+
+static constexpr float kLatBeat = 0.5f;   // seconds between ticks
+static constexpr float kLatLeadIn = 1.0f; // quiet before the first tick
+static constexpr int kLatSettle = 4;      // slices that don't count
+static constexpr int kLatTake = 16;       // slices that do
+static constexpr int kLatMarks = 8;       // recent slices shown on the ruler
+static constexpr float kLatX = 160, kLatY = 112, kLatSize = 70, kLatReach = 44;
+static const Button kLatButtons[] = {kBack, {20, 170, 134, 52, "Keep"}, {166, 170, 134, 52, "Try Again"}};
+
+static float sLatT, sLatNext, sLatPlayed;  // the test's clock, the next tick, when the last one played
+static int sLatTicks, sLatSlices;          // ticks played, slices made (settling in included)
+static float sLatTaken[kLatTake];
+static float sLatMarks[kLatMarks];         // newest first
+static int sLatMarkCount;
+static float sLatBump;                     // the fruit's jolt from the last slice
+static u32 sLatStroke;
+static bool sLatDone;
+static float sLatResult;                   // seconds, once done
+
+// The middle of the slices taken, which ignores a stray early or late one. Sorts v in place.
+static float latencyMedian(float* v, int n) {
+	for (int i = 1; i < n; i++)
+		for (int j = i; j > 0 && v[j] < v[j - 1]; j--) {
+			const float t = v[j];
+			v[j] = v[j - 1];
+			v[j - 1] = t;
+		}
+	return n % 2 ? v[n / 2] : (v[n / 2 - 1] + v[n / 2]) * 0.5f;
+}
+
+static void latencyReset() {
+	sLatT = 0;
+	sLatNext = kLatLeadIn;
+	sLatPlayed = -1;
+	sLatTicks = sLatSlices = sLatMarkCount = 0;
+	sLatBump = 0;
+	sLatStroke = sMenuBlade.strokeId;
+	sLatDone = false;
+	sLatResult = 0;
+}
+
+static void startLatencyTest() {
+	latencyReset();
+	audio::music(MUSIC_NONE);
+	audio::fuse(false);
+	sScreen = SCREEN_LATENCY;
+	sFocus[SCREEN_LATENCY] = 1;
+	sPressed = -1;
+}
+
+static void leaveLatencyTest() {
+	audio::music(MUSIC_MENU);
+	sScreen = SCREEN_SECTION;
+	sPressed = -1;
+}
+
+// One slice at the test's current time: how far from the nearest tick, negative when early.
+static void latencySlice() {
+	if (sLatPlayed < 0 || sLatDone) return;
+	const float before = sLatT - sLatPlayed, after = sLatT - (sLatPlayed + kLatBeat);
+	const float off = fabsf(before) <= fabsf(after) ? before : after;
+	for (int i = kLatMarks - 1; i > 0; i--) sLatMarks[i] = sLatMarks[i - 1];
+	sLatMarks[0] = off;
+	if (sLatMarkCount < kLatMarks) sLatMarkCount++;
+	if (sLatSlices >= kLatSettle) sLatTaken[sLatSlices - kLatSettle] = off;
+	sLatSlices++;
+	sLatBump = 1;
+	audio::play(SFX_CRISP0, 0.45f);
+	if (sLatSlices >= kLatSettle + kLatTake) {
+		float v[kLatTake];
+		memcpy(v, sLatTaken, sizeof v);
+		sLatResult = latencyMedian(v, kLatTake);
+		sLatDone = true;
+		sFocus[SCREEN_LATENCY] = 1;
+	}
+}
+
+static float segmentReach(float ax, float ay, float bx, float by, float px, float py) {
+	const float dx = bx - ax, dy = by - ay, len = dx * dx + dy * dy;
+	const float t = len > 0 ? clampf(((px - ax) * dx + (py - ay) * dy) / len, 0, 1) : 0;
+	const float cx = ax + dx * t - px, cy = ay + dy * t - py;
+	return sqrtf(cx * cx + cy * cy);
+}
+
+static void updateLatency(const Input& in, bool wasTouching, bool blocked) {
+	sLatBump = fmaxf(0, sLatBump - kDt * 5);
+	if (!sLatDone) {
+		sLatT += kDt;
+		if (sLatT >= sLatNext) {
+			audio::play(SFX_KNOCK, 1.0f, 0, sLatTicks % 4 ? 1.5f : 1.85f);  // tick, with a higher one on each bar
+			sLatPlayed = sLatT;
+			sLatNext += kLatBeat;
+			sLatTicks++;
+		}
+	}
+	if (blocked) return;
+	if (sLatDone) {
+		const int t = menuInput(kLatButtons, 3, SCREEN_LATENCY, in, wasTouching);
+		if (t == 0 || (t < 0 && (in.down & KEY_B))) {
+			if (t < 0) audio::click();
+			fadeThen(leaveLatencyTest);
+		} else if (t == 1) {
+			gSave.beatLatency = beatLatencyStore(sLatResult);
+			sDirty = true;
+			fadeThen(leaveLatencyTest);
+		} else if (t == 2) {
+			latencyReset();
+		}
+		return;
+	}
+	// While the test runs, A is a slice, so only B and the back arrow leave.
+	if ((in.down & KEY_B) || (in.touching && !wasTouching && hit(kBack, in.tx, in.ty))) {
+		audio::click();
+		fadeThen(leaveLatencyTest);
+		return;
+	}
+	if (in.down & KEY_A) latencySlice();
+	const Blade& b = sMenuBlade;
+	if (b.active && b.strokeId != sLatStroke && segmentReach(b.px, b.py, b.x, b.y, kLatX, kLatY) < kLatReach) {
+		sLatStroke = b.strokeId;  // one slice per swipe
+		latencySlice();
+	}
+}
+
+static int latencyMs(float sec) { return (int)(sec * 1000 + (sec < 0 ? -0.5f : 0.5f)); }
+
+static void drawLatencyTop() {
+	char buf[48];
+	topPanel(30, 96, 340, 134);
+	gfx::setDepth(1.0f);
+	gfx::sprite(SHEET_LOGO, logo_logo_idx, 200, 50, 0.62f, 0.62f);
+	gfx::setDepth(0.7f);
+	gfx::text("Latency Test", 200, 104, 0.6f, COL_ACCENT, ALIGN_CENTER);
+	if (sLatDone) {
+		gfx::text("Keep it to use it in Beat Slice,", 200, 134, 0.38f, COL_CREAM, ALIGN_CENTER);
+		gfx::text("or try again for a steadier one.", 200, 152, 0.38f, COL_CREAM, ALIGN_CENTER);
+		const int now = (gSave.beatLatency - 100) * 2;
+		snprintf(buf, sizeof buf, now > 0 ? "NOW +%d MS" : "NOW %d MS", now);
+		gfx::text(buf, 200, 186, 0.44f, COL_DIM, ALIGN_CENTER);
+		return;
+	}
+	gfx::text("Slice the fruit on every tick:", 200, 134, 0.38f, COL_CREAM, ALIGN_CENTER);
+	gfx::text("swipe across it, or press A.", 200, 152, 0.38f, COL_CREAM, ALIGN_CENTER);
+	if (sLatSlices < kLatSettle) snprintf(buf, sizeof buf, "SETTLING IN: %d MORE", kLatSettle - sLatSlices);
+	else snprintf(buf, sizeof buf, "SLICE %d OF %d", sLatSlices - kLatSettle + 1, kLatTake);
+	gfx::text(buf, 200, 182, 0.5f, COL_CREAM, ALIGN_CENTER);
+	if (gSave.sfx < 20) gfx::text("Turn Sound Effects up to hear the ticks.", 200, 206, 0.34f, COL_ACCENT, ALIGN_CENTER);
+	else gfx::text("Go by the sound. The music is off.", 200, 206, 0.34f, COL_DIM, ALIGN_CENTER);
+}
+
+static void drawLatencyBottom() {
+	char buf[48];
+	drawMenuBack();
+	const int f = sFocus[SCREEN_LATENCY];
+	drawHeader("Latency Test");
+	drawBackArrow(f == 0 && sLatDone, sPressed == 0);
+	if (sLatDone) {
+		const int ms = latencyMs(sLatResult);
+		gfx::sign(sprites_plank_idx, 20, 52, 280, 100, COL_PLANK);
+		gfx::text("Your slices land", 160, 62, 0.4f, COL_CREAM, ALIGN_CENTER);
+		snprintf(buf, sizeof buf, ms > 0 ? "+%d ms" : "%d ms", ms);
+		gfx::text(buf, 160, 84, 0.8f, COL_ACCENT, ALIGN_CENTER);
+		gfx::text(ms > 4 ? "after the beat" : (ms < -4 ? "before the beat" : "right on the beat"), 160, 122, 0.4f, COL_CREAM, ALIGN_CENTER);
+		for (int i = 1; i < 3; i++) drawSign(kLatButtons[i], kLatButtons[i].label, f == i, sPressed == i, 0.56f, -1, fruitFor(kLatButtons[i].label));
+		return;
+	}
+	const float jolt = sLatBump * sLatBump;
+	drawMenuFruit(MF_ORANGE, kLatX, kLatY + jolt * 3, kLatSize * (1 + 0.1f * jolt), sTime * 0.8f, jolt * 0.3f);
+	// The ruler: early on the left, late on the right, the newest slice brightest.
+	const float rx = 160, ry = 184, half = 110, perSec = half / 0.2f;
+	gfx::rect(rx - half, ry, half * 2, 2, withAlpha(COL_CREAM, 0.5f));
+	gfx::rect(rx - 1, ry - 7, 3, 16, COL_CREAM);
+	gfx::text("EARLY", rx - half, ry + 8, 0.3f, COL_DIM);
+	gfx::text("LATE", rx + half, ry + 8, 0.3f, COL_DIM, ALIGN_RIGHT);
+	for (int i = sLatMarkCount - 1; i >= 0; i--) {
+		const float x = rx + clampf(sLatMarks[i] * perSec, -half, half);
+		const float a = 1 - i / (float)kLatMarks;
+		gfx::rect(x - 2, ry - 5, 4, 12, withAlpha(i == 0 ? COL_ACCENT : COL_CREAM, a));
+	}
+	if (sLatMarkCount > 0) {
+		const int ms = latencyMs(sLatMarks[0]);
+		if (ms > 4) snprintf(buf, sizeof buf, "%d ms late", ms);
+		else if (ms < -4) snprintf(buf, sizeof buf, "%d ms early", -ms);
+		else snprintf(buf, sizeof buf, "on the beat");
+		gfx::text(buf, 160, 208, 0.42f, COL_CREAM, ALIGN_CENTER);
+	}
+}
+
 static void drawTopContent(Screen screen) {
 	char buf[48];
 	gfx::clearPanels();
@@ -3394,6 +3599,9 @@ static void drawTopContent(Screen screen) {
 			gfx::text(kModes[sStartMode].line2, 200, 152, 0.38f, COL_CREAM, ALIGN_CENTER);
 			snprintf(buf, sizeof buf, "TURN %d OF %d", sPassTurn + 1, passCount());
 			gfx::text(buf, 200, 184, 0.6f, COL_CREAM, ALIGN_CENTER);
+			break;
+		case SCREEN_LATENCY:
+			drawLatencyTop();
 			break;
 		case SCREEN_PASS_BOARD: {
 			const int winner = passWinner();
@@ -3849,6 +4057,9 @@ static void drawBottomContent(Screen screen) {
 			drawSign(kPassTurnButtons[1], kPassTurnButtons[1].label, f == 1, sPressed == 1, 0.56f, -1, fruitFor(kPassTurnButtons[1].label));
 			break;
 		}
+		case SCREEN_LATENCY:
+			drawLatencyBottom();
+			break;
 		case SCREEN_PASS_BOARD: {
 			drawMenuBack();
 			const int f = sFocus[SCREEN_PASS_BOARD];
@@ -4362,6 +4573,9 @@ static void updateFrame(const Input& in, bool wasTouching) {
 			else if (t == 1) fadeThen(startPassRun);
 			break;
 		}
+		case SCREEN_LATENCY:
+			updateLatency(in, wasTouching, blocked);
+			break;
 		case SCREEN_PASS_BOARD: {
 			if (blocked) break;
 			int t = menuInput(kResultButtons, 3, SCREEN_PASS_BOARD, in, wasTouching);

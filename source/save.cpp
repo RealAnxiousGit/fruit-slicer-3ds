@@ -66,6 +66,7 @@ void saveDefaults(bool keepScores, int section) {
 		gSave.music = 75;
 		gSave.menuSfx = 80;
 		gSave.menuTrack = gSave.gameTrack = 0;
+		gSave.beatLatency = 100;
 	}
 	if (section == SEC_ALL || section == SEC_VISUALS) {
 		// A New 3DS gets the full look. An Old 3DS starts on the settings it can hold 60 with.
@@ -179,11 +180,17 @@ static bool readSave(const char* path) {
 
 // 1.1 changed how Zen and Combo Rush score, so bests set under the old rules can't be compared with
 // new ones. They are cleared once; every other score stays.
+// Later 1.1 fields that start from a byte older saves left at 0 are set up here too, once.
 void saveRetireOldBests() {
-	if (gSave.scoreRules >= 1) return;
-	gSave.best[MODE_ZEN] = gSave.bestAssisted[MODE_ZEN] = 0;
-	gSave.best[MODE_COMBO] = gSave.bestAssisted[MODE_COMBO] = 0;
-	gSave.scoreRules = 1;
+	if (gSave.scoreRules < 1) {
+		gSave.best[MODE_ZEN] = gSave.bestAssisted[MODE_ZEN] = 0;
+		gSave.best[MODE_COMBO] = gSave.bestAssisted[MODE_COMBO] = 0;
+		gSave.scoreRules = 1;
+	}
+	if (gSave.scoreRules < 2) {
+		gSave.beatLatency = 100;  // Beat Timing starts at 0 ms
+		gSave.scoreRules = 2;
+	}
 }
 
 void saveLoad() {
@@ -202,6 +209,7 @@ void saveLoad() {
 		}
 	}
 	saveRetireOldBests();
+	if (gSave.beatLatency > 200) gSave.beatLatency = 100;
 	gSave.board %= kBoardCount;
 	gSave.scene %= kSceneCount;
 	gSave.blade %= kBladeCount;

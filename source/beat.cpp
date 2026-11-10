@@ -33,13 +33,18 @@ void Game::beatStart() {
 	audio::musicBeat(beatSong);
 }
 
+// The song clock as this player's slices meet it: Beat Timing (from the Latency Test) moves every beat
+// later for someone whose sound or hands run late, so the glow, the lights and the scoring all agree.
+float Game::beatClock() const { return songT - beatLatencySec(); }
+
 float Game::beatOffset() const {
+	const float now = beatClock();
 	if (beatPerLoop <= 0) {
-		const float t = songT - beatFirst;
+		const float t = now - beatFirst;
 		return t - roundf(t / beatStepLen) * beatStepLen;
 	}
 	// The nearest beat in this play of the song, or the last of the one before, or the first of the next.
-	const float q = songT - floorf(songT / beatLoop) * beatLoop;
+	const float q = now - floorf(now / beatLoop) * beatLoop;
 	int j = (int)roundf((q - beatFirst) / beatStepLen);
 	if (j < 0) j = 0;
 	if (j >= beatPerLoop) j = beatPerLoop - 1;
@@ -96,7 +101,8 @@ void Game::drawBeatPulse() const {
 	if (beatLen <= 0 || phase != PHASE_PLAY || audio::musicTime() < 0) return;
 	const float near = 1 - fabsf(beatOffset()) / kWindow;
 	if (near <= 0) return;
-	const float q = beatPerLoop > 0 ? songT - floorf(songT / beatLoop) * beatLoop : songT;
+	const float now = beatClock();
+	const float q = beatPerLoop > 0 ? now - floorf(now / beatLoop) * beatLoop : now;
 	const float b = (q - beatFirst) / beatLen, r = roundf(b);
 	const bool down = fabsf(b - r) * beatLen <= kWindow && ((int)r % 4 + 4) % 4 == 0;  // not a half beat between
 	const u32 c = withAlpha(down ? COL_ACCENT : COL_CREAM, near * near * (gSave.calmFx ? 0.2f : 0.45f));
@@ -109,7 +115,8 @@ void Game::drawBeatPulse() const {
 // Four lights, one for each beat of the bar. The one playing now is lit and swells as it lands.
 void Game::drawBeat(float x, float y, float s) const {
 	if (beatLen <= 0) return;
-	const float q = beatPerLoop > 0 ? songT - floorf(songT / beatLoop) * beatLoop : songT;
+	const float clock = beatClock();
+	const float q = beatPerLoop > 0 ? clock - floorf(clock / beatLoop) * beatLoop : clock;
 	const float beats = (q - beatFirst) / beatLen;
 	const int now = ((int)floorf(beats) % 4 + 4) % 4;
 	const float fresh = 1 - (beats - floorf(beats));

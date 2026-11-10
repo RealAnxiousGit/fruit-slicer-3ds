@@ -217,6 +217,7 @@ struct Game {
 	void drawPractice() const;
 	void drawSwipeReplay() const;
 	void drawBeat(float x, float y, float s) const;  // Beat Slice: four lights for the beats of the bar
+	float beatClock() const;   // songT moved by Beat Timing
 	float beatOffset() const;  // seconds from the nearest throw slot, negative when early
 	void drawBeatPulse() const;  // Beat Slice: the field's edges glow while a slice would count
 

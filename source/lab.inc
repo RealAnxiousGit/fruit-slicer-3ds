@@ -422,6 +422,44 @@ static void labFinish(Input& in) {
 			labCheck(!sGame.mixed && sGame.best == 50, "with every rule off, a run uses the normal best");
 			gSave.best[MODE_CLASSIC] = savedBest;
 			gSave.bestMixer[MODE_CLASSIC] = savedMixed;
+			// Latency Test: the middle slice wins, Beat Timing is stored and used, and older saves start at 0 ms.
+			float latSet[] = {0.05f, 0.04f, 0.3f, 0.06f, -0.25f, 0.045f};
+			labCheck(fabsf(latencyMedian(latSet, 6) - 0.0475f) < 0.0001f, "the Latency Test takes the middle slice, not a stray one");
+			labCheck(beatLatencyStore(0.038f) == 119 && beatLatencyStore(-1) == 0 && beatLatencyStore(1) == 200, "Beat Timing stores in 2 ms steps and stays in range");
+			const u8 latBefore = gSave.beatLatency, rulesBefore = gSave.scoreRules;
+			const u32 zenBefore = gSave.best[MODE_ZEN];
+			gSave.beatLatency = 0;
+			gSave.scoreRules = 1;
+			saveRetireOldBests();
+			labCheck(gSave.beatLatency == 100 && gSave.scoreRules == 2 && gSave.best[MODE_ZEN] == zenBefore, "a save from before the Latency Test starts at 0 ms and keeps its bests");
+			gSave.scoreRules = rulesBefore > 2 ? rulesBefore : 2;
+			sGame.start(MODE_CLASSIC);
+			sGame.beatPerLoop = 0;
+			sGame.beatFirst = 0;
+			sGame.beatStepLen = 0.5f;
+			sGame.songT = 1.0f;
+			gSave.beatLatency = beatLatencyStore(0.04f);
+			labCheck(fabsf(sGame.beatOffset() + 0.04f) < 0.003f, "Beat Timing moves when Beat Slice hears the beat");
+			{
+				// A whole test, pressing A three frames after every tick.
+				const Screen wasScreen = sScreen;
+				startLatencyTest();
+				int seen = 0, wait = -1;
+				for (int i = 0; i < 60 * 40 && !sLatDone; i++) {
+					Input k{};
+					if (wait == 0) k.down = KEY_A;
+					if (wait >= 0) wait--;
+					updateLatency(k, false, false);
+					if (sLatTicks != seen) {
+						seen = sLatTicks;
+						wait = 2;
+					}
+				}
+				labCheck(sLatDone && fabsf(sLatResult - 3 * kDt) < 0.002f, "the Latency Test measures slices three frames late");
+				sScreen = wasScreen;
+				audio::music(MUSIC_MENU);
+			}
+			gSave.beatLatency = latBefore;
 #if PORT_3DS
 			// The 3DSX update's file swap, on stand-in files beside the save.
 			static const char* const kLabOld = "sdmc:/3ds/FruitSlicer/lab_swap.bin";

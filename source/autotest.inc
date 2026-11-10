@@ -147,6 +147,17 @@ static void botMenuWalk() {
 			botMenuPicture("f3_pass_board");
 			return;
 		}
+		case 40: {
+			startLatencyTest();
+			static const float kMarks[] = {0.034f, -0.018f, 0.052f, 0.012f, 0.041f};
+			memcpy(sLatMarks, kMarks, sizeof kMarks);
+			sLatMarkCount = 5;
+			sLatSlices = 9;
+			botMenuPicture("g1_latency");
+			return;
+		}
+		case 41: sLatDone = true; sLatResult = 0.036f; botMenuPicture("g2_latency_done"); return;
+		case 42: leaveLatencyTest(); return;
 		default: return;
 	}
 }
