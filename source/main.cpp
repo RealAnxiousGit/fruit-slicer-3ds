@@ -28,7 +28,7 @@
 #include "custom_music.h"
 #endif
 
-#define VERSION_STRING "1.0.0"
+#define VERSION_STRING "1.1.0"
 
 #if PORT_TWO_SCREENS
 static constexpr float kSlideTop = 400, kSlideBottom = 320;
@@ -1035,7 +1035,7 @@ static u32 passColor(int player) {
 	static const u8 k[kPassMax][3] = {{255, 128, 116}, {132, 196, 255}, {136, 228, 136}, {255, 216, 104}};
 	return rgba(k[player][0], k[player][1], k[player][2]);
 }
-static void passDefaultName(int player) { snprintf(sPassNames[player], sizeof sPassNames[player], "Player %d", player + 1); }
+static void passDefaultName(int player) { snprintf(sPassNames[player], sizeof sPassNames[player], "Player %d", player % kPassMax + 1); }
 // A typed name keeps only what the font can draw. With nothing left, the player goes back to their number.
 static void passSetName(int player, const char* typed) {
 	char clean[kPassNameLen + 1];

@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.1.0
+
+Saves from 1.0 carry over: scores, coins, unlocks and settings are kept. Zen and Combo Rush play by new rules, so their old best scores are cleared once, the first time 1.1 opens your save, and start fresh.
+
+### New
+
+- **The 3DSX version updates itself:** it downloads the new version from GitHub, goes back to the Homebrew Launcher, and the next start is the new version. This works from 1.1 on, so copy 1.1's 3DSX over by hand once. The CIA version installs updates as before.
+- **Mixer:** a sign on Pick a Game with rules that combine on any mode: Low Gravity, Giant Fruit, Tiny Fruit, Mirror, Double Bombs and Sides Only. Runs with any rule on keep their own best scores. Daily Fruit and Beat Slice always play without them.
+- **Pass and Play:** 2 to 4 players take one run each on the same console, in Classic, Arcade, Frenzy, Sudden Death, Minefield or Combo Rush. Each player has a colour and a name typed on the system keyboard, and a results board shows who won. These runs don't change your bests.
+- **New trick fruit:** a banana bunch that breaks into bananas you can slice again, a pomegranate whose seeds add to the combo when caught in the same swipe, and a rare piñata that takes several hits, pays candy points and then drops coins. Dragon fruit now splits into three pieces. Each has a Fruit Journal page.
+- **3D coins** that flip as they fly, in the 3D art style.
+- **Latency Test** in Audio settings: a metronome ticks and you slice a fruit in time with it, with the stylus or A. It sets **Beat Timing**, which moves Beat Slice's beat to match your timing. Beat Timing can also be set by hand.
+- **Seasonal boards:** late October, December and spring bring pumpkins, snow or blossom in place of a free board, never one you bought. Seasonal Boards in Advanced Visuals turns them off.
+- **Shop:** three boards (Pumpkin Patch, Spring Blossom, Bamboo Mat), three trails (Sunset, Candy Cane, Aurora), a Splats tab with six juice colours, a Skins tab with Solid Gold and Clear Glass fruit, and seven songs by NickBin and friends. Each song's description names its artists and genre, and every song plays in Beat Slice.
+
+### Changed
+
+- **Zen is endless:** no timer and no game over. Finish Run in the pause menu ends it and saves your score.
+- **Combo Rush is reworked:** only combos score, and a bigger combo is worth more per fruit. Fruit comes faster as your combo grows. One bomb or an empty combo meter ends the run, and there is no clock.
+- **Arcade** throws more trick fruit and power-ups, starting earlier in the run.
+- **Pick a Game** is split into pages of six signs, with arrows on each side. Left and right turn the page too, and the last page wraps back to the first.
+- **Options** has five signs: Audio, Visuals, Gameplay and Controls, Accessibility, and Scores and Data. Fine tuning and resets moved to an Advanced page at the bottom of each one.
+- **Scrolling:** the Shop, the Fruit Journal, the update notes and the Beat Slice track list scroll by dragging with the stylus. A drag never counts as picking something.
+- The Shop shows six items at a time, and only the items scroll.
+
+### Fixed
+
+- Fruit no longer shows on top of the pause menu's options.
+
 ## 1.0.0
 
 The first full release. Saves from 0.4 carry over: your scores and settings are kept, and coins start at 0. 0.4 can't update itself, so install 1.0 by hand; from 1.0 on the CIA version can update itself.

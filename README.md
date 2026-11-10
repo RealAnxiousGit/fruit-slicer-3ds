@@ -2,7 +2,7 @@
 
 A free, fan-made fruit-slicing arcade game for the Nintendo 3DS. Swipe the touch screen to cut fruit out of the air, chain combos and stay away from the bombs.
 
-**Version 1.0.0.** Tested on a real New 2DS XL and in the Azahar emulator. Old 3DS hardware and the look of stereoscopic 3D are still unconfirmed, so reports are welcome.
+**Version 1.1.0.** Tested on a real New 2DS XL and in the Azahar emulator. Old 3DS hardware and the look of stereoscopic 3D are still unconfirmed, so reports are welcome.
 
 <p>
   <img src="docs/screenshots/title.png" width="150" alt="Title screen with the logo on top and a menu of fruit to slice below">
@@ -19,14 +19,20 @@ A free, fan-made fruit-slicing arcade game for the Nintendo 3DS. Swipe the touch
 | Mode | Rules |
 | --- | --- |
 | Classic | Three missed fruit and you're out. A bomb ends the run. |
-| Arcade | 60 seconds. Bombs cost 10 points, your combo and half the Frenzy meter. Slice power-ups: Frost slows time, X2 doubles points, Fruit Storm throws fruit in from the sides. Ends on the Sunburst Fruit. |
-| Zen | 90 calm seconds with no bombs and no misses. |
+| Arcade | 60 seconds. Bombs cost 10 points, your combo and half the Frenzy meter. Slice power-ups: Frost slows time, X2 doubles points, Fruit Storm throws fruit in from the sides. More trick fruit than any other mode. Ends on the Sunburst Fruit. |
+| Zen | Calm and endless, with no bombs, no misses and no clock. Finish Run in the pause menu ends it and keeps your score. |
 | Frenzy | 30 seconds of nonstop fruit. Bombs take 5 seconds off the clock, and a Fruit Frenzy throws fruit even faster. A bomb in the last 5 seconds brings the Sunburst Fruit straight away. |
 | Sudden Death | One miss or one bomb ends the run. Fruit is worth double. |
 | Minefield | Bombs take over as the run goes on. Missed fruit is free, and one bomb ends the run. |
-| Combo Rush | 45 seconds of big fruit patterns. Swipe bonuses are doubled and bombs cost 10 points, your combo and half the Frenzy meter. Ends on the Sunburst Fruit. |
+| Combo Rush | Only combos score: a fruit on its own is worth nothing, and each one in a long combo is worth more, up to 12. The bigger your combo, the faster fruit comes. Swipe bonuses are doubled. One bomb or an empty combo meter ends the run, and there is no clock. |
 | Daily Fruit | 60 seconds, the same run for everyone that day, on every platform. A calendar keeps your daily scores and streak, and each day's first run pays a coin bonus. |
 | Beat Slice | 60 seconds to music. Fruit is thrown as usual, but only slices on the beat score, and a streak of them scores more. The board's edges glow when a slice will count. Pick any track you own from the track list. |
+
+Pick a Game shows six signs a page. The arrows beside the signs, or left and right, turn the page.
+
+**Mixer:** rules that change any mode, in any mix: Low Gravity, Giant Fruit, Tiny Fruit, Mirror, Double Bombs (Zen stays bomb-free) and Sides Only. Runs with a rule on keep their own best scores. Daily Fruit and Beat Slice always play without them.
+
+**Pass and Play:** 2 to 4 players take one run each on the same console, in Classic, Arcade, Frenzy, Sudden Death, Minefield or Combo Rush. Each player has a colour and a name typed on the system keyboard, and a results board shows who won. These runs don't change your bests.
 
 **Practice:** the first Play starts a short, skippable lesson run. How to Play replays it.
 
@@ -40,6 +46,10 @@ A free, fan-made fruit-slicing arcade game for the Nintendo 3DS. Swipe the touch
 
 **Coconuts** take two hits. The first one cracks the shell and knocks it back up.
 
+**Trick fruit** turn up after the first half minute (from early on in Arcade): spiky fruit stun the blade, grapes burst, honey drags, jelly bounces, chili brings a rush of double points, a banana bunch breaks into bananas you can slice again, a pomegranate sprays seeds that add to the combo when caught in the same swipe, and a rare piñata takes several hits, pays candy points and then drops coins. Dragon fruit splits into three pieces.
+
+**Latency Test:** in Audio settings, a metronome ticks and you slice a fruit in time with it, with the stylus or A. It sets Beat Timing, which moves Beat Slice's beat to match your timing. Beat Timing can also be set by hand.
+
 **Fruit patterns:** rows, fountains, crossfire and staircases are thrown only when no bomb is in play. Normal throws try several paths and keep the one that stays furthest from any bomb, so fruit is much less likely to sit on top of one. If you cut a fruit that is close to a bomb, the bomb only counts on a much closer pass.
 
 **Difficulty:** speed, gravity, wave size and bomb frequency all rise with time and score, at a different pace in each mode.
@@ -48,7 +58,9 @@ A free, fan-made fruit-slicing arcade game for the Nintendo 3DS. Swipe the touch
 
 **Coins** spin through the air now and then. Slicing one is worth 5 points and 5 coins, and every 100 points of a run pays 1 more. A coin is never a strike, and a missed one costs nothing.
 
-**Shop:** spend coins on board themes, blade trails and six recorded music tracks. Items are tried on while selected.
+**Shop:** spend coins on board themes, blade trails, splat colours, fruit skins (Solid Gold and Clear Glass) and thirteen recorded songs. Each tab shows six items; drag with the stylus for the rest. Items are tried on while selected.
+
+**Seasonal boards:** late October, December and spring bring pumpkins, snow or blossom in place of a free board, never one you bought. Seasonal Boards in Advanced Visuals turns them off.
 
 **Fruit Journal:** a sticker book with a page for every fruit. Milestones of 10, 50, 250 and 1000 slices pay coins. **Stats** shows fruit sliced, coins earned, time played, favourite mode, longest combo and your Daily streak.
 
@@ -56,16 +68,17 @@ The menus are fruit: swipe across one with the stylus to pick it, or move the se
 
 ## Options
 
+Each sign shows the main settings. Fine tuning and resets are on the Advanced page at the bottom of it.
+
 | Section | Settings |
 | --- | --- |
-| Audio | Sound Effects, Music and Menu Sounds sliders. Menu Music and Game Music each choose Auto or a track: Orchard Morning, Picnic Stroll, Sleepy Meadow, Lantern Walk, Still Water, Moss Garden, Bamboo Breeze, Drifting Clouds. |
-| Visuals | Art Style (3D Models or 2D Stickers), Board, Scenery, Blade, Trail, Effects (None, Low, Medium, Full), 3D Depth, and speed savers: Background, 3D Detail, Slice Style and Transitions. |
-| Gameplay | Stylus Sensitivity, Difficulty (Easy, Normal, Hard, Insane), Fruit Speed, Bomb Amount, Slice Forgiveness, Frenzy Drain, Misses Allowed. |
-| Accessibility | UI Scale, Larger Text, High Contrast, Colour-blind Mode, Calm Effects, Screen Shake, Slice Assist, Game Speed and Sound Captions. |
-| Controls | Stick Slicing (Hold or Flick), Point Speed and Snap Assist for the Circle Pad. |
-| Scores and Data | Check for Updates, Check Now, reset scores or everything, and the Speed Test. |
+| Audio | Sound Effects, Music and Menu Sounds sliders. Menu Music and Game Music each choose Auto or a track: Orchard Morning, Picnic Stroll, Sleepy Meadow, Lantern Walk, Still Water, Moss Garden, Bamboo Breeze, Drifting Clouds, or a Shop song you own. Latency Test and Beat Timing. |
+| Visuals | Art Style (3D Models or 2D Stickers), Board, Scenery, Blade, Trail and 3D Depth. **Advanced Visuals:** Effects (None, Low, Medium, Full) and the speed savers Background, 3D Detail, Slice Style and Transitions, plus Seasonal Boards. |
+| Gameplay and Controls | Stylus Sensitivity, Difficulty (Easy, Normal, Hard, Insane), Misses Allowed, and Stick Slicing (Hold or Flick) and Point Speed for the Circle Pad. **Advanced Gameplay:** Fruit Speed, Bomb Amount, Slice Forgiveness, Frenzy Drain and Snap Assist. |
+| Accessibility | UI Scale, Larger Text, High Contrast, Colour-blind Mode, Slice Assist and Sound Captions. **Advanced Accessibility:** Calm Effects, Screen Shake and Game Speed. |
+| Scores and Data | The Speed Test, Check for Updates, Check Now, and reset scores or everything. |
 
-A New 3DS starts with 3D models and full effects. An Old 3DS starts with 2D stickers and lighter settings, and can still choose 3D. Every section has its own reset. Saves from 0.4 carry over to 1.0: scores and settings are kept, and coins start at 0. Saves from before 0.4 are not carried over.
+A New 3DS starts with 3D models and full effects. An Old 3DS starts with 2D stickers and lighter settings, and can still choose 3D. Every section has its own reset. Saves from 0.4 carry over to 1.0: scores and settings are kept, and coins start at 0. Saves from 1.0 carry over to 1.1 whole, except that Zen and Combo Rush bests start fresh because those modes have new rules. Saves from before 0.4 are not carried over.
 
 **Speed Test:** Options > Scores and Data runs six load profiles, including Old 3DS speed on a New 3DS. It shows the results and writes them to `sdmc:/3ds/FruitSlicer/bench.txt`. Its timings only mean something on a real console, because Azahar's emulated clock doesn't show how hard the game is working.
 
@@ -95,7 +108,7 @@ Download the files from the [Releases](https://github.com/RealAnxiousGit/fruit-s
 
 Scores and settings are saved to `sdmc:/3ds/FruitSlicer/save.bin`.
 
-**Updates:** from 1.0 on, the game can check GitHub for a newer release over Wi-Fi, once a day and only if you say yes on the first start (Options > Scores and Data changes it, and has Check Now). Nothing about you is sent. The CIA version downloads the new CIA and installs it while it downloads; close the game to the HOME Menu and open it again. The 3DSX version only tells you a new version is out. 0.4 has no update check, so install 1.0 by hand.
+**Updates:** from 1.0 on, the game can check GitHub for a newer release over Wi-Fi, once a day and only if you say yes on the first start (Options > Scores and Data changes it, and has Check Now). Nothing about you is sent. The CIA version downloads the new CIA and installs it while it downloads; close the game to the HOME Menu and open it again. From 1.1, the 3DSX version downloads the new 3DSX, replaces itself and goes back to the Homebrew Launcher; start it again for the new version. 1.0's 3DSX only tells you a new version is out, so install 1.1's 3DSX by hand once. 0.4 has no update check, so install 1.0 by hand.
 
 ## Test in Azahar (Windows)
 
@@ -157,7 +170,7 @@ make cia    # FruitSlicer3DS.cia
 
 ## Assets
 
-Everything is generated by [`tools/gen_assets.py`](tools/gen_assets.py), [`gen_backgrounds.py`](tools/gen_backgrounds.py), [`gen_models.py`](tools/gen_models.py), [`gen_meta.py`](tools/gen_meta.py) and [`gen_audio.py`](tools/gen_audio.py) (Pillow and numpy): sprites, backgrounds, 3D models, the banner and icon, logo, font, sound effects and the rest of the music. Larger copies of the icon and banner for listings are in [`docs/store`](docs/store). The six Shop music tracks are recorded music by another artist (see Credits). Apart from those, the project uses no third-party art, fonts, samples or game files. The generated files are committed, so building only needs devkitPro.
+Everything is generated by [`tools/gen_assets.py`](tools/gen_assets.py), [`gen_backgrounds.py`](tools/gen_backgrounds.py), [`gen_models.py`](tools/gen_models.py), [`gen_meta.py`](tools/gen_meta.py) and [`gen_audio.py`](tools/gen_audio.py) (Pillow and numpy): sprites, backgrounds, 3D models, the banner and icon, logo, font, sound effects and the rest of the music. Larger copies of the icon and banner for listings are in [`docs/store`](docs/store). The thirteen Shop songs are recorded music (see Credits), converted by [`tools/convert_shop_music.py`](tools/convert_shop_music.py) in the [Fruit Slicer](https://github.com/RealAnxiousGit/fruit-slicer) repo. Apart from those, the project uses no third-party art, fonts, samples or game files. The generated files are committed, so building only needs devkitPro.
 
 **AI disclosure:** this game was made with an LLM. Claude wrote the code and the generator scripts that produce the art, sound and most of the music, directed and playtested by the project owner.
 
@@ -166,6 +179,20 @@ Everything is generated by [`tools/gen_assets.py`](tools/gen_assets.py), [`gen_b
 Programming by NickBin, with the Claude Code toolkit.
 
 **Music:** the six Shop tracks (Summer House, 8-Bit Hero Quest, Friendly Trap, Unruly Beat, Vengeance Electro and Eternal Explorer) are by [Of Far Different Nature](https://fardifferent.carrd.co/), from "Loop Box #1" and "Loop Box #4" on [OpenGameArt.org](https://opengameart.org), licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). They were converted (to 16 kHz mono) and turned down to match the game's loudness.
+
+The seven songs added in 1.1 are by NickBin and friends:
+
+| Song | Artists | Genre |
+| --- | --- | --- |
+| Ahead of the Curve | NickBin, King Bakuyo Pro | Drum & Bass |
+| SPARE FOR ME | NickBin ft. Mq_ | Hyperpop |
+| My Own Fright | NickBin ft. Cabex Music | Pop |
+| WORTHLESS ENEMY | NickBin ft. Aneolent | Metal |
+| Lies | NickBin | EDM |
+| Lies (VIP Remix) | NickBin | EDM |
+| JUST STAY WITH ME | NickBin | Dariacore |
+
+They were cut to whole bars so they loop cleanly, matched to the game's loudness, and packed to 16 kHz mono to fit the 3DS's memory.
 
 **Libraries and build tools:**
 
@@ -186,6 +213,6 @@ See [CHANGELOG.md](CHANGELOG.md) for what changed, and [docs/qa](docs/qa) for ho
 
 ## License
 
-Code and assets are licensed under [CC BY-NC 4.0](LICENSE): free to share and adapt with credit, not for commercial use. The Shop music tracks keep their own CC BY 4.0 license from their author. libcurl, Mbed TLS and zlib are linked in under their own licenses (curl, Apache 2.0 and zlib).
+Code and assets are licensed under [CC BY-NC 4.0](LICENSE): free to share and adapt with credit, not for commercial use. The six Of Far Different Nature tracks keep their own CC BY 4.0 license from their author. libcurl, Mbed TLS and zlib are linked in under their own licenses (curl, Apache 2.0 and zlib).
 
 This is an independent fan project, not affiliated with or endorsed by Nintendo or any game publisher. Nintendo 3DS is a trademark of Nintendo.
