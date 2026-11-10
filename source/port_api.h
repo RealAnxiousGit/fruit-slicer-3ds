@@ -34,6 +34,12 @@ int netPoll(float* progress);  // 0 still working, 1 done, -1 failed
 char* netText();               // a finished text fetch, kept until the next start
 void updateRestart();          // once the game has closed, start the new version (3DS: back to HOME)
 
+// Typing a short name. On the 3DS, textStart shows the system keyboard and the answer is ready when it returns.
+// Elsewhere the letters arrive from the keyboard or on-screen keyboard while the game keeps running.
+void textStart(const char* current, int maxLen);
+int textPoll(char* out, size_t size);  // the text so far: 0 still typing, 1 finished, -1 cancelled
+void textStop();
+
 // Opens a web page in the system browser (Windows, Linux and Android only: the main menu's link icons).
 void openLink(const char* url);
 }  // namespace port

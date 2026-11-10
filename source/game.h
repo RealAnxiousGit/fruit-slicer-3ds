@@ -102,6 +102,7 @@ struct Game {
 	bool assisted;  // Slice Assist or a slower Game Speed was on: the score counts toward the assisted bests
 	bool mix[MIX_COUNT];  // the Mixer rules this run plays by
 	bool mixed;           // any of them is on: the score counts toward the Mixer bests instead
+	const char* passName; // Pass and Play: whose turn this is. These runs leave the bests and coins alone
 	float feverGrace;   // fruit thrown by a Frenzy is still landing: misses stay free
 	int chain;          // the running combo: fruit in a row while the meter stays alive
 	int comboCount;

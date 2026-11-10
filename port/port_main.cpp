@@ -140,6 +140,22 @@ void ensureDataDir() {
 #endif
 }
 bool running() { return aptMainLoop(); }
+
+static char sTyped[64];  // the keyboard hands back UTF-8, which is longer than the letters it holds
+static int sTypeResult;
+void textStart(const char* current, int maxLen) {
+	SwkbdState kb;
+	swkbdInit(&kb, SWKBD_TYPE_QWERTY, 2, maxLen);
+	swkbdSetInitialText(&kb, current);
+	swkbdSetHintText(&kb, "Player name");
+	sTyped[0] = 0;
+	sTypeResult = swkbdInputText(&kb, sTyped, sizeof sTyped) == SWKBD_BUTTON_CONFIRM ? 1 : -1;
+}
+int textPoll(char* out, size_t size) {
+	snprintf(out, size, "%s", sTyped);
+	return sTypeResult;
+}
+void textStop() {}
 }  // namespace port
 
 static aptHookCookie sAptCookie;

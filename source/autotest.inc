@@ -124,6 +124,29 @@ static void botMenuWalk() {
 		case 34: gSave.skin = 2; sGame.labShowcase(); sScreen = PORT_3DS ? SCREEN_PAUSE : SCREEN_GAME; botMenuPicture("e4_glass"); return;
 		case 35: gSave.skin = 0; gSave.mixer[MIX_GIANT] = 1; sGame.labShowcase(); sScreen = PORT_3DS ? SCREEN_PAUSE : SCREEN_GAME; botMenuPicture("e7_giant"); return;
 		case 36: gSave.mixer[MIX_GIANT] = 0; gSave.mixer[MIX_TINY] = 1; sGame.labShowcase(); sScreen = PORT_3DS ? SCREEN_PAUSE : SCREEN_GAME; botMenuPicture("e8_tiny"); return;
+		case 37: {
+			gSave.mixer[MIX_TINY] = 0;
+			sPassPlayers = 2;
+			sPassTurn = 1;
+			sStartMode = MODE_CLASSIC;
+			for (int i = 0; i < kPassMax; i++) passDefaultName(i);
+			passSetName(1, "Sam");
+			sSection = sectionIndex(SID_PASS);
+			sFocus[SCREEN_SECTION] = 2;
+			sScroll = 0;
+			sScreen = SCREEN_SECTION;
+			botMenuPicture("f1_pass_setup");
+			return;
+		}
+		case 38: passScreen(SCREEN_PASS_TURN); botMenuPicture("f2_pass_turn"); return;
+		case 39: {
+			sPassScores[0] = 340;
+			sPassScores[1] = 512;
+			sPassScores[2] = 95;
+			passScreen(SCREEN_PASS_BOARD);
+			botMenuPicture("f3_pass_board");
+			return;
+		}
 		default: return;
 	}
 }

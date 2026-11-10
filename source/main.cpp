@@ -39,7 +39,7 @@ static constexpr float kSlideTop = 900, kSlideBottom = 900;
 enum Screen {
 	SCREEN_LOADING, SCREEN_TITLE, SCREEN_MODES, SCREEN_OPTIONS, SCREEN_SECTION, SCREEN_CREDITS, SCREEN_HOWTO, SCREEN_SHOP,
 	SCREEN_JOURNAL, SCREEN_STATS, SCREEN_BEAT, SCREEN_BEATTOOL, SCREEN_UPDATE,
-	SCREEN_GAME, SCREEN_PAUSE, SCREEN_RESULT, SCREEN_BENCH, SCREEN_COUNT
+	SCREEN_GAME, SCREEN_PAUSE, SCREEN_RESULT, SCREEN_BENCH, SCREEN_PASS_TURN, SCREEN_PASS_BOARD, SCREEN_COUNT
 };
 
 static Screen sScreen = SCREEN_LOADING;
@@ -301,9 +301,9 @@ static void drawLinkIcon(const Button& b, int which, bool focused) {
 #endif
 // Index 0 of every list below is its back arrow, so D-pad and touch treat it like any other sign.
 // Pick a Game runs in pages of up to six, the main modes first. A new mode only needs a place in this list.
-enum { SIGN_MIXER = MODE_COUNT + 1 };  // a sign on Pick a Game that opens a page, past the modes and Practice
-static const u8 kModeOrder[] = {MODE_CLASSIC, MODE_ARCADE, MODE_FRENZY, MODE_ZEN, MODE_SUDDEN, MODE_DAILY, MODE_MINEFIELD, MODE_COMBO, MODE_BEAT, SIGN_MIXER};
-static_assert(sizeof kModeOrder == MODE_COUNT + 1, "a sign for every mode");
+enum { SIGN_MIXER = MODE_COUNT + 1, SIGN_PASS };  // signs on Pick a Game that open a page, past the modes and Practice
+static const u8 kModeOrder[] = {MODE_CLASSIC, MODE_ARCADE, MODE_FRENZY, MODE_ZEN, MODE_SUDDEN, MODE_DAILY, MODE_MINEFIELD, MODE_COMBO, MODE_BEAT, SIGN_MIXER, SIGN_PASS};
+static_assert(sizeof kModeOrder == MODE_COUNT + 2, "a sign for every mode");
 static constexpr int kModesPerPage = 6;
 static constexpr int kModePages = ((int)sizeof kModeOrder + kModesPerPage - 1) / kModesPerPage;
 static constexpr float kModeTop = 46, kModeStep = 58, kModeSignW = 124, kModeSignH = 52;
@@ -321,6 +321,7 @@ static int mixerRulesOn() {
 }
 
 static const char* modeSignName(int id) {
+	if (id == SIGN_PASS) return "Pass and Play";
 	if (id != SIGN_MIXER) return kModes[id].name;
 	if (!mixerRulesOn()) return "Mixer";
 	static char label[16];
@@ -458,7 +459,7 @@ static bool isCut(const Button& b) {
 }
 static Blade sMenuBlade;                  // the trail a swipe leaves across the menus
 static bool menuBladeShown() {
-	return sScreen == SCREEN_TITLE || sScreen == SCREEN_MODES || sScreen == SCREEN_OPTIONS || sScreen == SCREEN_CREDITS || sScreen == SCREEN_HOWTO || sScreen == SCREEN_JOURNAL || sScreen == SCREEN_STATS || sScreen == SCREEN_BEAT || sScreen == SCREEN_BEATTOOL || sScreen == SCREEN_UPDATE || sScreen == SCREEN_PAUSE || sScreen == SCREEN_RESULT;
+	return sScreen == SCREEN_TITLE || sScreen == SCREEN_MODES || sScreen == SCREEN_OPTIONS || sScreen == SCREEN_CREDITS || sScreen == SCREEN_HOWTO || sScreen == SCREEN_JOURNAL || sScreen == SCREEN_STATS || sScreen == SCREEN_BEAT || sScreen == SCREEN_BEATTOOL || sScreen == SCREEN_UPDATE || sScreen == SCREEN_PAUSE || sScreen == SCREEN_RESULT || sScreen == SCREEN_PASS_TURN || sScreen == SCREEN_PASS_BOARD;
 }
 
 static bool fruit3D() { return gSave.artStyle == ART_3D && m3d::ready(); }
@@ -580,7 +581,7 @@ static void drawModeTile(const Button& b, int icon, bool focused, bool pressed) 
 	float scale = 0.44f;
 	const float w = gfx::textWidth(b.label, scale);
 	if (w > b.w - 14) scale *= (b.w - 14) / w;
-	gfx::sprite(SHEET_SPRITES, icon, cx, b.y + 16 + dy, iconScale, iconScale);
+	gfx::sprite(SHEET_SPRITES, icon, cx, b.y + 16 + dy, iconScale, iconScale, icon == sprites_arrow_idx ? 3.14159265f : 0);  // the arrow points on to the next player
 	gfx::text(b.label, cx, b.y + 28 + dy, scale, COL_CREAM, ALIGN_CENTER);
 }
 
@@ -961,8 +962,8 @@ static void drawCut(Screen screen) {
 
 // ---------------------------------------------------------------- settings rows
 enum RowKind { ROW_SLIDER, ROW_CHOICE, ROW_ACTION, ROW_PAGE };  // a page row opens the section numbered by its lo
-enum SectionId { SID_AUDIO, SID_VISUALS, SID_VISUALS_MORE, SID_GAMEPLAY, SID_GAMEPLAY_MORE, SID_ACCESS, SID_ACCESS_MORE, SID_DATA, SID_DEV, SID_MIXER };
-enum RowAction { ACT_NONE, ACT_RESET_AUDIO, ACT_RESET_VISUALS, ACT_RESET_GAMEPLAY, ACT_RESET_SCORES, ACT_RESET_ALL, ACT_SPEED_TEST, ACT_APPLY_DISPLAY, ACT_RESET_DISPLAY, ACT_RESET_ACCESS, ACT_RESET_CONTROLS, ACT_DEV_ADD_COINS, ACT_DEV_CLEAR_COINS, ACT_DEV_NEXT_DAY, ACT_CHECK_UPDATES };
+enum SectionId { SID_AUDIO, SID_VISUALS, SID_VISUALS_MORE, SID_GAMEPLAY, SID_GAMEPLAY_MORE, SID_ACCESS, SID_ACCESS_MORE, SID_DATA, SID_DEV, SID_MIXER, SID_PASS };
+enum RowAction { ACT_NONE, ACT_RESET_AUDIO, ACT_RESET_VISUALS, ACT_RESET_GAMEPLAY, ACT_RESET_SCORES, ACT_RESET_ALL, ACT_SPEED_TEST, ACT_APPLY_DISPLAY, ACT_RESET_DISPLAY, ACT_RESET_ACCESS, ACT_RESET_CONTROLS, ACT_DEV_ADD_COINS, ACT_DEV_CLEAR_COINS, ACT_DEV_NEXT_DAY, ACT_CHECK_UPDATES, ACT_PASS_NAME, ACT_PASS_START };
 
 struct Row {
 	RowKind kind;
@@ -1007,6 +1008,71 @@ static const char* const kTrackRowNames[kTrackCount + 1] = {
 #define SHOP_TRACK(name, ...) name,
 #include "shop_items.inc"
 };
+
+// Pass and Play: 2 to 4 people take one run each on the same device, and the highest score wins.
+static constexpr int kPassMax = 4, kPassNameLen = 10;
+static const u8 kPassModes[] = {MODE_CLASSIC, MODE_ARCADE, MODE_FRENZY, MODE_SUDDEN, MODE_MINEFIELD, MODE_COMBO};
+static const char* const kPassModeNames[] = {"Classic", "Arcade", "Frenzy", "Sudden Death", "Minefield", "Combo Rush"};
+static const char* const kPassCounts[] = {"2", "3", "4"};
+static u8 sPassPlayers = 0, sPassModeRow = 0;  // row values: players is 0 for two people
+static char sPassNames[kPassMax][kPassNameLen + 1];
+static u32 sPassScores[kPassMax];
+static int sPassTurn = -1;    // whose run it is, or -1 when nobody is playing Pass and Play
+static int sPassTyping = -1;  // the player whose name is being typed
+static int sNameFocus = 0;
+static Mode sStartMode = MODE_CLASSIC;  // the mode the next game starts in
+static const Button kPassTurnButtons[] = {kBack, {90, 146, 140, 52, "Ready"}};
+static Button kPassResultButtons[] = {kBack, {90, 170, 140, 52, "Next Player"}};
+static void passBegin();
+
+static int passCount() { return sPassPlayers + 2; }
+static u32 passColor(int player) {
+	static const u8 k[kPassMax][3] = {{255, 128, 116}, {132, 196, 255}, {136, 228, 136}, {255, 216, 104}};
+	return rgba(k[player][0], k[player][1], k[player][2]);
+}
+static void passDefaultName(int player) { snprintf(sPassNames[player], sizeof sPassNames[player], "Player %d", player + 1); }
+// A typed name keeps only what the font can draw. With nothing left, the player goes back to their number.
+static void passSetName(int player, const char* typed) {
+	char clean[kPassNameLen + 1];
+	int n = 0;
+	for (const char* c = typed; *c && n < kPassNameLen; c++) {
+		const bool letter = (*c >= 'a' && *c <= 'z') || (*c >= 'A' && *c <= 'Z') || (*c >= '0' && *c <= '9');
+		if (letter || (*c == ' ' && n > 0)) clean[n++] = *c;
+	}
+	while (n > 0 && clean[n - 1] == ' ') n--;
+	clean[n] = 0;
+	if (n) snprintf(sPassNames[player], sizeof sPassNames[player], "%s", clean);
+	else passDefaultName(player);
+}
+// The winner, or -1 on a tie at the top.
+static int passWinner() {
+	int best = 0;
+	bool tied = false;
+	for (int i = 1; i < passCount(); i++) {
+		if (sPassScores[i] > sPassScores[best]) {
+			best = i;
+			tied = false;
+		} else if (sPassScores[i] == sPassScores[best]) {
+			tied = true;
+		}
+	}
+	return tied ? -1 : best;
+}
+
+static const Row kPassRows[] = {
+	{ROW_CHOICE, "Players", &sPassPlayers, 0, 2, kPassCounts, 0, 0, ACT_NONE, "Everyone takes one turn", "on this device."},
+	{ROW_CHOICE, "Game", &sPassModeRow, 0, 5, kPassModeNames, 0, 0, ACT_NONE, "Everyone plays this mode.", "Scores here don't change your bests."},
+	{ROW_ACTION, sPassNames[0], nullptr, 0, 0, nullptr, 0, 0, ACT_PASS_NAME, "Choose it to type a name.", ""},
+	{ROW_ACTION, sPassNames[1], nullptr, 0, 0, nullptr, 0, 0, ACT_PASS_NAME, "Choose it to type a name.", ""},
+	{ROW_ACTION, sPassNames[2], nullptr, 0, 0, nullptr, 0, 0, ACT_PASS_NAME, "Choose it to type a name.", ""},
+	{ROW_ACTION, sPassNames[3], nullptr, 0, 0, nullptr, 0, 0, ACT_PASS_NAME, "Choose it to type a name.", ""},
+	{ROW_ACTION, "Start", nullptr, 0, 0, nullptr, 0, 0, ACT_PASS_START, "Player 1 goes first.", ""},
+};
+static int passRowPlayer(const Row& r) {
+	for (int i = 0; i < kPassMax; i++)
+		if (r.label == sPassNames[i]) return i;
+	return -1;
+}
 
 static const Row kMixerRows[] = {
 	{ROW_CHOICE, "Low Gravity", &gSave.mixer[MIX_LOW_GRAVITY], 0, 1, kOffOn, 0, 0, ACT_NONE, "Fruit floats and hangs in the air.", "Not used in Daily Fruit or Beat Slice."},
@@ -1184,6 +1250,7 @@ static const Section kSections[] = {
 	{"Developer", SECTION_ROWS(kDevRows), SID_DEV, -1, false, "Testing tools. Not in", "release builds."},
 #endif
 	{"Mixer", SECTION_ROWS(kMixerRows), SID_MIXER, kFromModes, false, "", ""},
+	{"Pass and Play", SECTION_ROWS(kPassRows), SID_PASS, kFromModes, false, "", ""},
 };
 #undef SECTION_ROWS
 constexpr int kSectionCount = sizeof kSections / sizeof kSections[0];
@@ -1290,6 +1357,7 @@ static void refreshResolutions() {
 #endif
 
 static bool rowDisabled(const Row& r) {
+	if (passRowPlayer(r) >= passCount()) return true;  // this name's player isn't in the game
 #if PORT_HAS_DISPLAY
 	if (r.value == &port::gResChoice) return gSave.windowMode == 1;  // borderless always matches the desktop
 #endif
@@ -1383,6 +1451,19 @@ static void startSpeedTest();
 #endif
 
 static void rowAction(int index, const Row& r) {
+	if (rowDisabled(r)) return;
+	if (r.action == ACT_PASS_NAME) {
+		audio::click();
+		sPassTyping = passRowPlayer(r);
+		sNameFocus = 0;
+		port::textStart(sPassNames[sPassTyping], kPassNameLen);
+		return;
+	}
+	if (r.action == ACT_PASS_START) {
+		audio::click();
+		passBegin();
+		return;
+	}
 #if PORT_3DS
 	if (r.action == ACT_SPEED_TEST) {
 		audio::click();
@@ -1913,7 +1994,31 @@ static bool updateModePages(Input& keys, bool wasTouching) {
 	return false;
 }
 
+static const Button kNameButtons[] = {{40, 150, 110, 44, "OK"}, {170, 150, 110, 44, "Cancel"}};
+
+// Typing a Pass and Play name, over the setup list.
+static void updateNameEntry(const Input& in, bool wasTouching) {
+	char typed[32];
+	int result = port::textPoll(typed, sizeof typed);
+	if (result == 0) {
+		int t = touchButtons(kNameButtons, 2, in, wasTouching, sNameFocus);
+		if (in.repeat & (KEY_LEFT | KEY_RIGHT)) sNameFocus ^= 1;
+		if (in.down & KEY_A) t = sNameFocus;
+		if (in.down & KEY_B) t = 1;
+		if (t < 0) return;
+		audio::click();
+		result = t == 0 ? 1 : -1;
+	}
+	if (result > 0) passSetName(sPassTyping, typed);
+	port::textStop();
+	sPassTyping = -1;
+}
+
 static void updateSection(const Input& in, bool wasTouching) {
+	if (sPassTyping >= 0) {
+		updateNameEntry(in, wasTouching);
+		return;
+	}
 	const Section& sec = kSections[sSection];
 	int& focus = sFocus[SCREEN_SECTION];  // -1 is the back arrow
 
@@ -3115,6 +3220,10 @@ static void drawTopContent(Screen screen) {
 			gfx::setDepth(0.7f);
 			if (mode == MODE_DAILY) {
 				drawDailyTop();
+			} else if (mode == SIGN_PASS) {
+				gfx::text("Pass and Play", 200, 104, 0.6f, COL_ACCENT, ALIGN_CENTER);
+				gfx::text("2 to 4 players take turns on one", 200, 134, 0.38f, COL_CREAM, ALIGN_CENTER);
+				gfx::text("device. The highest score wins.", 200, 152, 0.38f, COL_CREAM, ALIGN_CENTER);
 			} else if (mode == SIGN_MIXER) {
 				gfx::text("Mixer", 200, 104, 0.6f, COL_ACCENT, ALIGN_CENTER);
 				gfx::text("Rules that change how any mode", 200, 134, 0.38f, COL_CREAM, ALIGN_CENTER);
@@ -3275,6 +3384,33 @@ static void drawTopContent(Screen screen) {
 				}
 			}
 			break;
+		case SCREEN_PASS_TURN:
+			topPanel(30, 96, 340, 134);
+			gfx::setDepth(1.0f);
+			gfx::sprite(SHEET_LOGO, logo_logo_idx, 200, 50, 0.62f, 0.62f);
+			gfx::setDepth(0.7f);
+			gfx::text(modeName(sStartMode), 200, 104, 0.6f, COL_ACCENT, ALIGN_CENTER);
+			gfx::text(kModes[sStartMode].line1, 200, 134, 0.38f, COL_CREAM, ALIGN_CENTER);
+			gfx::text(kModes[sStartMode].line2, 200, 152, 0.38f, COL_CREAM, ALIGN_CENTER);
+			snprintf(buf, sizeof buf, "TURN %d OF %d", sPassTurn + 1, passCount());
+			gfx::text(buf, 200, 184, 0.6f, COL_CREAM, ALIGN_CENTER);
+			break;
+		case SCREEN_PASS_BOARD: {
+			const int winner = passWinner();
+			topPanel(30, 96, 340, 134);
+			gfx::setDepth(1.0f);
+			gfx::sprite(SHEET_LOGO, logo_logo_idx, 200, 50, 0.62f, 0.62f);
+			gfx::setDepth(0.7f);
+			gfx::text(modeName(sStartMode), 200, 104, 0.5f, COL_CREAM, ALIGN_CENTER);
+			if (winner >= 0) snprintf(buf, sizeof buf, "%s WINS!", sPassNames[winner]);
+			else snprintf(buf, sizeof buf, "IT'S A TIE!");
+			gfx::text(buf, 200, 136, 0.8f, winner >= 0 ? passColor(winner) : COL_ACCENT, ALIGN_CENTER);
+			if (winner >= 0) {
+				snprintf(buf, sizeof buf, "%lu", (unsigned long)sPassScores[winner]);
+				gfx::text(buf, 200, 178, 0.7f, COL_CREAM, ALIGN_CENTER);
+			}
+			break;
+		}
 		case SCREEN_RESULT: {
 			float in = clampf(sGame.phaseT * 4, 0, 1);
 			gfx::setDepth(0.5f);
@@ -3295,7 +3431,9 @@ static void drawTopContent(Screen screen) {
 			snprintf(buf, sizeof buf, "%lu", (unsigned long)sGame.score);
 			gfx::text(buf, 200, 50, 1.7f, COL_ACCENT, ALIGN_CENTER);
 			gfx::setDepth(1.0f);
-			if (sGame.newBest) {
+			if (sPassTurn >= 0) {
+				gfx::text(sPassNames[sPassTurn], 200, 116, 0.6f, passColor(sPassTurn), ALIGN_CENTER);
+			} else if (sGame.newBest) {
 				gfx::text("NEW BEST!", 200, 116, 0.7f + sinf(sTime * 6) * 0.04f, COL_CREAM, ALIGN_CENTER);
 			} else {
 				snprintf(buf, sizeof buf, sGame.mixed ? "MIXER BEST %lu" : (sGame.assisted ? "ASSISTED BEST %lu" : "BEST %lu"), (unsigned long)sGame.best);
@@ -3304,7 +3442,7 @@ static void drawTopContent(Screen screen) {
 			if (sGame.mode == MODE_BEAT) snprintf(buf, sizeof buf, "SLICED %d   ON THE BEAT %d", sGame.sliced, sGame.beatHits);
 			else snprintf(buf, sizeof buf, "SLICED %d   BEST COMBO %d", sGame.sliced, sGame.bestCombo);
 			gfx::text(buf, 200, 152, 0.42f, COL_CREAM, ALIGN_CENTER);
-			if (sGame.scoreCommitted) {
+			if (sGame.scoreCommitted && sPassTurn < 0) {
 				snprintf(buf, sizeof buf, "+%lu COINS", (unsigned long)sGame.coinsEarned);
 				float cw = gfx::textWidth(buf, 0.5f);
 				gfx::sprite(SHEET_SPRITES, sprites_coin_idx, 200 - cw / 2 - 12, 189, 0.5f, 0.5f);
@@ -3494,7 +3632,9 @@ static void drawRows() {
 		u32 labelColor = rowDisabled(r) ? COL_DIM : COL_CREAM;
 		if (r.kind == ROW_ACTION) {
 			const char* label = sArmed == i ? PORT_CONFIRM_TEXT : r.label;
-			gfx::text(label, 160, ty - 1, 0.42f, sArmed == i ? COL_ACCENT : COL_CREAM, ALIGN_CENTER);
+			const int player = passRowPlayer(r);
+			const u32 color = rowDisabled(r) ? COL_DIM : (player >= 0 ? passColor(player) : (sArmed == i ? COL_ACCENT : COL_CREAM));
+			gfx::text(label, 160, ty - 1, 0.42f, color, ALIGN_CENTER);
 			continue;
 		}
 		float ls = 0.36f;
@@ -3557,7 +3697,7 @@ static void drawBottomContent(Screen screen) {
 					Button b = signs[i];
 					b.x += dx;
 					const int id = modeOnSign(page, i);
-					drawModeTile(b, id == SIGN_MIXER ? sprites_knob_idx : kIcons[id], live && f == i, live && sPressed == i);
+					drawModeTile(b, id == SIGN_MIXER ? sprites_knob_idx : (id == SIGN_PASS ? sprites_arrow_idx : kIcons[id]), live && f == i, live && sPressed == i);
 				}
 			};
 			if (sModeSlide != 0) drawPage(sModeOldPage, sModeSlide - (sModeSlide > 0 ? 320 : -320), false);
@@ -3583,6 +3723,16 @@ static void drawBottomContent(Screen screen) {
 			gfx::rect(0, 0, 320, 44, gfx::themeBar());
 			drawHeader(kSections[sSection].title);
 			drawBackArrow(sFocus[SCREEN_SECTION] < 0, sPressed == 0);
+			if (sPassTyping >= 0 && screen == sScreen) {
+				char typed[36];
+				port::textPoll(typed, sizeof typed - 1);
+				strcat(typed, "_");
+				gfx::rect(0, 0, 320, 240, rgba(30, 18, 10, 170));
+				gfx::sign(sprites_plank_idx, 20, 60, 280, 146, COL_PLANK);
+				gfx::text("Type a name", 160, 72, 0.5f, COL_ACCENT, ALIGN_CENTER);
+				gfx::text(typed, 160, 108, 0.6f, passColor(sPassTyping), ALIGN_CENTER);
+				for (int i = 0; i < 2; i++) drawSign(kNameButtons[i], kNameButtons[i].label, sNameFocus == i, sPressed == i, 0.5f);
+			}
 #if PORT_HAS_DISPLAY
 			if (sRevertT > 0 && screen == sScreen) {
 				gfx::rect(0, 0, 320, 240, rgba(30, 18, 10, 170));
@@ -3688,13 +3838,50 @@ static void drawBottomContent(Screen screen) {
 			}
 			break;
 		}
+		case SCREEN_PASS_TURN: {
+			drawMenuBack();
+			const int f = sFocus[SCREEN_PASS_TURN];
+			drawHeader("Pass and Play");
+			drawBackArrow(f == 0, sPressed == 0);
+			gfx::sign(sprites_plank_idx, 20, 52, 280, 78, COL_PLANK);
+			gfx::text("Pass it to", 160, 62, 0.4f, COL_CREAM, ALIGN_CENTER);
+			gfx::text(sPassNames[sPassTurn], 160, 84, 0.7f, passColor(sPassTurn), ALIGN_CENTER);
+			drawSign(kPassTurnButtons[1], kPassTurnButtons[1].label, f == 1, sPressed == 1, 0.56f, -1, fruitFor(kPassTurnButtons[1].label));
+			break;
+		}
+		case SCREEN_PASS_BOARD: {
+			drawMenuBack();
+			const int f = sFocus[SCREEN_PASS_BOARD];
+			drawHeader("Results");
+			drawBackArrow(f == 0, sPressed == 0);
+			int order[kPassMax] = {0, 1, 2, 3};
+			for (int i = 1; i < passCount(); i++)  // highest first; ties keep turn order
+				for (int j = i; j > 0 && sPassScores[order[j]] > sPassScores[order[j - 1]]; j--) {
+					const int swap = order[j];
+					order[j] = order[j - 1];
+					order[j - 1] = swap;
+				}
+			char score[16];
+			for (int i = 0; i < passCount(); i++) {
+				const float y = 46 + i * 30.0f;
+				drawPlank(20, y, 280, 27, false, false);
+				gfx::text(sPassNames[order[i]], 34, y + 5, 0.42f, passColor(order[i]));
+				snprintf(score, sizeof score, "%lu", (unsigned long)sPassScores[order[i]]);
+				gfx::text(score, 286, y + 5, 0.42f, COL_CREAM, ALIGN_RIGHT);
+			}
+			for (int i = 1; i < 3; i++) drawSign(kResultButtons[i], kResultButtons[i].label, f == i, sPressed == i, 0.56f, -1, fruitFor(kResultButtons[i].label));
+			break;
+		}
 		case SCREEN_RESULT: {
 #if PORT_TWO_SCREENS
 			sGame.drawField(sBlade);
 #endif
 			int f = sFocus[SCREEN_RESULT];
 			drawBackArrow(f == 0, sPressed == 0);
-			if (sGame.mode == MODE_PRACTICE) drawSign(kPracticeEndButtons[1], kPracticeEndButtons[1].label, f == 1, sPressed == 1, 0.56f, -1, fruitFor(kPracticeEndButtons[1].label));
+			if (sPassTurn >= 0) {
+				kPassResultButtons[1].label = sPassTurn + 1 < passCount() ? "Next Player" : "See Results";
+				drawSign(kPassResultButtons[1], kPassResultButtons[1].label, f == 1, sPressed == 1, 0.56f, -1, fruitFor(kPassResultButtons[1].label));
+			} else if (sGame.mode == MODE_PRACTICE) drawSign(kPracticeEndButtons[1], kPracticeEndButtons[1].label, f == 1, sPressed == 1, 0.56f, -1, fruitFor(kPracticeEndButtons[1].label));
 			else
 				for (int i = 1; i < 3; i++) drawSign(kResultButtons[i], kResultButtons[i].label, f == i, sPressed == i, 0.56f, -1, fruitFor(kResultButtons[i].label));
 			break;
@@ -3721,7 +3908,6 @@ static void drawBottomContent(Screen screen) {
 }
 
 // ---------------------------------------------------------------- flow
-static Mode sStartMode = MODE_CLASSIC;
 
 static void startGame() {
 	sGame.start(sStartMode);
@@ -3734,6 +3920,7 @@ static void startGame() {
 static bool sLeaving = false;
 
 static void toModes() {
+	sPassTurn = -1;
 	sScreen = SCREEN_MODES;
 	sPressed = -1;
 	gfx::setShake(0, 0);
@@ -3741,7 +3928,41 @@ static void toModes() {
 	audio::music(MUSIC_MENU);
 }
 
+static void passScreen(Screen s) {
+	sScreen = s;
+	sFocus[s] = 1;
+	sPressed = -1;
+	gfx::setShake(0, 0);
+	audio::fuse(false);
+	audio::music(MUSIC_MENU);
+}
+static void toPassTurn() { passScreen(SCREEN_PASS_TURN); }
+static void toPassBoard() { passScreen(SCREEN_PASS_BOARD); }
+
+static void passBegin() {
+	if (sDirty) saveWrite();
+	sDirty = false;
+	sArmed = -1;
+	sTouchMode = TOUCH_NONE;
+	memset(sPassScores, 0, sizeof sPassScores);
+	sPassTurn = 0;
+	sStartMode = (Mode)kPassModes[sPassModeRow];
+	fadeThen(toPassTurn);
+}
+
+static void startPassRun() {
+	startGame();
+	sGame.passName = sPassNames[sPassTurn];
+}
+
+static void passNext() {
+	sPassScores[sPassTurn] = sGame.score;
+	sPassTurn++;
+	fadeThen(sPassTurn < passCount() ? toPassTurn : toPassBoard);
+}
+
 static void toTitle() {
+	sPassTurn = -1;
 	sOptionsFromPause = false;
 	toModes();
 	sScreen = SCREEN_TITLE;
@@ -3867,8 +4088,10 @@ static void updateFrame(const Input& in, bool wasTouching) {
 			}
 			const int mode = t > 0 ? modeOnSign(sModePage, t) : -1;
 			if (t == 0) goTo(SCREEN_TITLE, -1);
-			else if (mode == SIGN_MIXER) {
-				sSection = sectionIndex(SID_MIXER);
+			else if (mode == SIGN_MIXER || mode == SIGN_PASS) {
+				for (int i = 0; i < kPassMax; i++)
+					if (!sPassNames[i][0]) passDefaultName(i);
+				sSection = sectionIndex(mode == SIGN_MIXER ? SID_MIXER : SID_PASS);
 				sScroll = 0;
 				sArmed = -1;
 				sFocus[SCREEN_SECTION] = 0;
@@ -4128,6 +4351,33 @@ static void updateFrame(const Input& in, bool wasTouching) {
 			}
 			break;
 		}
+		case SCREEN_PASS_TURN: {
+			if (blocked) break;
+			int t = menuInput(kPassTurnButtons, 2, SCREEN_PASS_TURN, in, wasTouching);
+			if (in.down & KEY_B) {
+				audio::click();
+				t = 0;
+			}
+			if (t == 0) fadeThen(toModes);
+			else if (t == 1) fadeThen(startPassRun);
+			break;
+		}
+		case SCREEN_PASS_BOARD: {
+			if (blocked) break;
+			int t = menuInput(kResultButtons, 3, SCREEN_PASS_BOARD, in, wasTouching);
+			if (in.down & KEY_B) {
+				audio::click();
+				t = 0;
+			}
+			if (t == 1) {
+				memset(sPassScores, 0, sizeof sPassScores);
+				sPassTurn = 0;
+				fadeThen(toPassTurn);
+			} else if (t == 0 || t == 2) {
+				fadeThen(toModes);
+			}
+			break;
+		}
 		case SCREEN_RESULT: {
 			sGame.update(sBlade);  // keeps debris falling behind the buttons
 			sGame.kickParticles();
@@ -4143,6 +4393,16 @@ static void updateFrame(const Input& in, bool wasTouching) {
 				}
 				if (t == 0) fadeThen(toTitle);
 				else if (t == 1) fadeThen(toModes);
+				break;
+			}
+			if (sPassTurn >= 0) {
+				int t = menuInput(kPassResultButtons, 2, SCREEN_RESULT, in, wasTouching);
+				if (in.down & KEY_B) {
+					audio::click();
+					t = 0;
+				}
+				if (t == 0) fadeThen(toModes);
+				else if (t == 1) passNext();
 				break;
 			}
 			int t = menuInput(kResultButtons, 3, SCREEN_RESULT, in, wasTouching);

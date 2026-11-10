@@ -850,7 +850,7 @@ void Game::finishCombo() {
 // waits for commitScore, or a run that carries on would count twice.
 bool Game::keepBestSoFar() {
 	u32* bests = bestTable();
-	if (mode >= MODE_COUNT || scoreCommitted || score <= bests[mode]) return false;
+	if (mode >= MODE_COUNT || passName || scoreCommitted || score <= bests[mode]) return false;
 	bests[mode] = score;
 	return true;
 }
@@ -860,12 +860,12 @@ void Game::commitScore() {
 	scoreCommitted = true;
 	journalCoins = progress::journalPay(journalStart, gSave.fruitSliced);
 	gSave.playSeconds += (u32)elapsed;
-	if (mode == MODE_PRACTICE) {
+	if (mode == MODE_PRACTICE || passName) {
 		// No score to keep. Journal milestones still pay, and the lessons are marked done.
 		coinsEarned = journalCoins;
 		gSave.coins += journalCoins;
 		gSave.coinsLifetime += journalCoins;
-		gSave.practiceDone = 1;
+		if (mode == MODE_PRACTICE) gSave.practiceDone = 1;
 		saveWrite();
 		return;
 	}
@@ -2120,7 +2120,8 @@ void Game::drawHud() const {
 
 	gfx::setDepth(0.9f);
 	gfx::text(modeName(mode), 380, 10, 0.5f, COL_CREAM, ALIGN_RIGHT);
-	snprintf(buf, sizeof buf, mixed ? "MIXER BEST %lu" : (assisted ? "ASSISTED BEST %lu" : "BEST %lu"), (unsigned long)(score > best ? score : best));
+	if (passName) snprintf(buf, sizeof buf, "%s", passName);
+	else snprintf(buf, sizeof buf, mixed ? "MIXER BEST %lu" : (assisted ? "ASSISTED BEST %lu" : "BEST %lu"), (unsigned long)(score > best ? score : best));
 	gfx::text(buf, 380, 28, 0.42f, COL_DIM, ALIGN_RIGHT);
 
 	if (maxStrikes > 0) {
@@ -2255,7 +2256,8 @@ void Game::drawHud() const {
 		drawBeat(rx - 50 * u, 14 * u, u);
 		rx -= 60 * u;
 	}
-	snprintf(buf, sizeof buf, mixed ? "MIXER BEST %lu" : (assisted ? "ASSISTED BEST %lu" : "BEST %lu"), (unsigned long)(score > best ? score : best));
+	if (passName) snprintf(buf, sizeof buf, "%s", passName);
+	else snprintf(buf, sizeof buf, mixed ? "MIXER BEST %lu" : (assisted ? "ASSISTED BEST %lu" : "BEST %lu"), (unsigned long)(score > best ? score : best));
 	gfx::text(buf, rx, 9 * u, 0.3f * u, COL_DIM, ALIGN_RIGHT);
 
 	const float bx = 12, by = 28 * u, bw = kFieldW - 24;

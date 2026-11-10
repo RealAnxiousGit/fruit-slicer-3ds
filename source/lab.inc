@@ -366,6 +366,25 @@ static void labFinish(Input& in) {
 			labCheck(allBeat, "every Shop song can be played in Beat Slice");
 		}
 		{
+			// Pass and Play: names are cleaned, the winner is right, and the bests stay untouched.
+			passSetName(0, " J@ne 2");
+			labCheck(strcmp(sPassNames[0], "Jne 2") == 0, "a typed name keeps only letters, numbers and spaces");
+			passSetName(0, "@@@");
+			labCheck(strcmp(sPassNames[0], "Player 1") == 0, "an empty name goes back to the player's number");
+			sPassPlayers = 1;
+			sPassScores[0] = 5;
+			sPassScores[1] = 9;
+			sPassScores[2] = 3;
+			labCheck(passWinner() == 1, "Pass and Play finds the winner");
+			sPassScores[2] = 9;
+			labCheck(passWinner() == -1, "a tie at the top has no winner");
+			const u32 bestBefore = gSave.best[MODE_CLASSIC];
+			sGame.start(MODE_CLASSIC);
+			sGame.passName = sPassNames[0];
+			sGame.score = bestBefore + 500;
+			sGame.commitScore();
+			labCheck(gSave.best[MODE_CLASSIC] == bestBefore && !sGame.newBest, "a Pass and Play run leaves the bests alone");
+			sPassPlayers = 0;
 			// The Mixer: its rules reach the run, its score stays apart, and the fixed-sequence modes ignore it.
 			const u32 savedBest = gSave.best[MODE_CLASSIC], savedMixed = gSave.bestMixer[MODE_CLASSIC];
 			gSave.best[MODE_CLASSIC] = 50;
