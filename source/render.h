@@ -72,6 +72,8 @@ int fontImageCount();
 void drawBackdrop(u32 tint);
 void beginField();
 void fadeAll(float alpha);
+// The field's size, in game units, for a window this wide over its height (see gFieldW in port.h).
+void fieldFor(float aspect, float* w, float* h);
 #endif
 
 // Test hook: draws both eyes as if the 3D slider were all the way up, even on a 2DS.

@@ -4211,6 +4211,7 @@ static void quitTick() {
 // Holding the bomb down (mouse or finger), Escape, or Enter or A while the bomb is selected lights its fuse.
 // The fuse ticks faster and faster; let go before kQuitHold and nothing happens. True when it goes off.
 static bool holdQuit(const Input& in, int focus) {
+	if (!PORT_QUIT_BOMB) return false;
 	const Button b = quitButton();
 	// A key counts only if it went down on the title, so the Escape that backed out of Options can't light it.
 	static bool keyArmed = false;
@@ -4328,7 +4329,7 @@ static void startQuit() {}
 static bool holdQuit(const Input&, int) { return false; }
 static void quitTick() {}
 #endif
-static constexpr int kTitleAll = PORT_3DS ? kTitleCount : kTitleCount + 1;  // with the Quit Game bomb
+static constexpr int kTitleAll = PORT_QUIT_BOMB ? kTitleCount + 1 : kTitleCount;  // with the Quit Game bomb
 
 // ---------------------------------------------------------------- screens: bottom
 static void drawRows() {
@@ -5253,7 +5254,7 @@ static void drawFrame() {
 			gfx::rect(kPauseSign.x + 20, kPauseSign.y + 10, 4, 16, withAlpha(COL_CREAM, 0.55f));
 		}
 #endif
-		if (sScreen == SCREEN_PAUSE) gfx::rect(kFillX, 0, kFillW, 240, rgba(30, 18, 10, 150));
+		if (sScreen == SCREEN_PAUSE) gfx::rect(kFillX, kFillX, kFillW, kFillW, rgba(30, 18, 10, 150));
 	}
 	for (int pass = 0; pass < 2; pass++) {
 		if (pass == 0) gfx::beginTop(0);
@@ -5291,7 +5292,7 @@ static void drawFrame() {
 	// The Quit Game bomb sits in the window's own corner, outside both sides, and fades with a slide.
 	{
 		const float quitIn = sScreen == SCREEN_TITLE ? (sSliding ? e : 1) : (sSliding && sSlideFrom == SCREEN_TITLE ? 1 - e : 0);
-		if (quitIn > 0 || sQuitT >= 0) {
+		if (PORT_QUIT_BOMB && (quitIn > 0 || sQuitT >= 0)) {
 			gfx::beginCorner();
 			drawQuitBomb(sFocus[SCREEN_TITLE] == kTitleQuit, sQuitT >= 0 ? 1 : quitIn);
 		}
@@ -5497,7 +5498,7 @@ static void stickBlade(Input& in) {
 		}
 	}
 	sPointX = clampf(sPointX + vx * kDt, 4, kFieldW - 4);
-	sPointY = clampf(sPointY + vy * kDt, kFieldTop + 4, 236);
+	sPointY = clampf(sPointY + vy * kDt, kFieldTop + 4, kFieldH - 4);
 	in.touching = in.stickSlice || (gSave.stickStyle == 1 && speed > 320);
 	in.tx = (int)sPointX;
 	in.ty = (int)sPointY;

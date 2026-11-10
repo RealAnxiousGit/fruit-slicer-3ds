@@ -22,7 +22,7 @@ void Game::practiceStart() {
 }
 
 // Launch speed for a throw from below the field that peaks at height `apexY`.
-static float launchFor(float gravity, float apexY) { return -sqrtf(2.0f * gravity * (Game::kThrowY - apexY)); }
+static float launchFor(float gravity, float apexY) { return -sqrtf(2.0f * gravity * (Game::throwY() - apexY)); }
 
 // Where a lesson's throw peaks. `high` is how far below the top of the field it would peak on two screens,
 // where the lesson sits above the field. On one screen the lesson plank hangs in the field, so throws
@@ -118,8 +118,9 @@ void Game::practiceUpdate() {
 			// A bomb in the middle and a fruit either side: slice around it.
 			const float vy = launchFor(gravity, lessonApex(uiScale(), 70));
 			queue(0, mid, 0, vy, OBJ_BOMB, 0);
-			queue(0.15f, mid - 120, 10, launchFor(gravity, lessonApex(uiScale(), 90)), OBJ_FRUIT, kApple);
-			queue(0.15f, mid + 120, -10, launchFor(gravity, lessonApex(uiScale(), 90)), OBJ_FRUIT, kOrange);
+			const float side = fminf(120, mid - 34);  // a narrow upright field keeps both fruit inside it
+			queue(0.15f, mid - side, 10, launchFor(gravity, lessonApex(uiScale(), 90)), OBJ_FRUIT, kApple);
+			queue(0.15f, mid + side, -10,launchFor(gravity, lessonApex(uiScale(), 90)), OBJ_FRUIT, kOrange);
 			break;
 		}
 		case PS_COIN:

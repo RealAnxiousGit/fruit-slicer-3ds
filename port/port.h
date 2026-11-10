@@ -7,6 +7,7 @@
 #define PORT_3DS 1
 #define PORT_TWO_SCREENS 1
 #define PORT_CUSTOM_MUSIC 0  // Custom Music is for Windows, Linux and Android only
+#define PORT_QUIT_BOMB 0     // no Quit Game bomb: HOME closes the game here
 #define PORT_HAS_SENSITIVITY 1
 #define PORT_PAUSE_BUTTON 0
 #define PORT_MOUSE 0
@@ -56,6 +57,7 @@ inline bool gpuHasRoom() {
 // The field fruit flies over, in game units.
 constexpr int kFieldW = 320;
 constexpr int kFieldH = 240;
+constexpr float kFieldK = 1;       // the field never changes shape here, so throws keep their speeds
 constexpr float kFieldTop = 0;     // nothing covers the field here: the score has its own screen
 constexpr float kFillX = 0;        // full-field washes cover this much
 constexpr float kFillW = 320;

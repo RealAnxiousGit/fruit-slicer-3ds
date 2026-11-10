@@ -101,8 +101,12 @@ static int normalFruit(Rng& rng) {
 }
 static const FruitDef kGold = {fruit_gold_idx, fruit_gold_l_idx, fruit_gold_r_idx, 0xFF40D8FFu, CUT_JUICY, m3d::MESH_GOLD};
 
-static constexpr float kSpawnY = Game::kThrowY;
-static constexpr float kKillY = 276.0f;
+// Both follow the field's height (taller on an upright screen); 262 and 276 on a 16:9 one.
+#define kSpawnY (Game::throwY())
+#define kKillY (Game::killY())
+// Sideways speeds set by hand shrink with a narrower field (an upright screen), so a throw from one edge
+// still lands where it would on a wide one. Always 1 on the 3DS, whose field never changes.
+static float acrossK() { return PORT_3DS ? 1.0f : kFieldW / 427.0f; }
 // Bomb and fruit radii are 19 and 23, so paths this far apart never visually touch.
 static constexpr float kWantClearance = 62.0f;
 // Combo Rush: only the running combo scores, and each fruit is worth more the longer it runs.
@@ -260,7 +264,7 @@ void Game::start(Mode m) {
 		}
 	}
 	best = bestTable()[m];
-	gravity = 300 * (mix[MIX_LOW_GRAVITY] ? kMixerGravity : 1.0f);
+	gravity = 300 * kFieldK * (mix[MIX_LOW_GRAVITY] ? kMixerGravity : 1.0f);
 	waveTimer = 0.2f;
 	switch (m) {
 		case MODE_CLASSIC: maxStrikes = gSave.misses; break;
@@ -405,7 +409,7 @@ void Game::pickThrow(bool bomb, float delay, float& x, float& vx, float& vy) {
 	for (int i = 0; i < kTries; i++) {
 		// About half the throws leave the top of the board and carry on up the top screen in full view,
 		// peaking below the score sign, before falling back down onto the board.
-		float apexY = gRng.range(kFieldTop + 20, kFieldTop + 90);
+		float apexY = kFieldTop + gRng.range(20, 90) * kFieldK;
 		if (PORT_TWO_SCREENS && gRng.unit() < 0.5f) apexY = gRng.range(-170, -60);
 		float cvy = -sqrtf(2.0f * gravity * (kSpawnY - apexY));
 		float cx = gRng.range(36, kFieldW - 36);
@@ -438,7 +442,7 @@ bool Game::bombAround() const {
 // Choreographed waves built for big combos. They always stay bomb-free.
 bool Game::spawnPattern(float d) {
 	if (bombAround()) return false;
-	const float rise = 200;
+	const float rise = 200 * kFieldK;
 	const float vy = -sqrtf(2.0f * gravity * rise);
 	switch (mix[MIX_SIDES] ? 2 : gSpawn.below(4)) {  // Crossfire is the one pattern that comes from the sides
 		case 0: {  // Row: rises level, so one straight swipe can take them all.
@@ -452,7 +456,7 @@ bool Game::spawnPattern(float d) {
 			int n = 5 + (int)(d * 3);
 			for (int i = 0; i < n; i++) {
 				float t = n > 1 ? (float)i / (n - 1) : 0.5f;
-				queue(0.07f * i, kFieldW * 0.5f + (t - 0.5f) * 40, lerpf(-85, 85, t), vy * gRng.range(0.92f, 1.0f), OBJ_FRUIT, normalFruit(gSpawn));
+				queue(0.07f * i, kFieldW * 0.5f + (t - 0.5f) * 40, lerpf(-85, 85, t) * acrossK(), vy * gRng.range(0.92f, 1.0f), OBJ_FRUIT, normalFruit(gSpawn));
 			}
 			break;
 		}
@@ -460,7 +464,7 @@ bool Game::spawnPattern(float d) {
 			int n = 6 + (int)(d * 2);
 			for (int i = 0; i < n; i++) {
 				bool left = i % 2 == 0;
-				queue(0.13f * i, left ? -14.0f : kFieldW + 14.0f, (left ? 1 : -1) * gRng.range(95, 130), vy * gRng.range(0.86f, 0.98f), OBJ_FRUIT, normalFruit(gSpawn));
+				queue(0.13f * i, left ? -14.0f : kFieldW + 14.0f, (left ? 1 : -1) * gRng.range(95, 130) * acrossK(), vy * gRng.range(0.86f, 0.98f), OBJ_FRUIT, normalFruit(gSpawn));
 			}
 			break;
 		}
@@ -485,7 +489,8 @@ void Game::spawnWave() {
 #endif
 	// Low gravity gives long, floaty arcs with plenty of hang time near the top.
 	const DifficultyInfo& level = kDifficulty[diffIndex()];
-	gravity = lerpf(300, 430, d) * (mode == MODE_ZEN ? 0.9f : 1.0f) * level.gravity * (mix[MIX_LOW_GRAVITY] ? kMixerGravity : 1.0f);
+	// A taller field (an upright screen) scales gravity and throws alike, so arcs keep their timing.
+	gravity = lerpf(300, 430, d) * kFieldK * (mode == MODE_ZEN ? 0.9f : 1.0f) * level.gravity * (mix[MIX_LOW_GRAVITY] ? kMixerGravity : 1.0f);
 
 	float patternChance = lerpf(0.10f, 0.28f, d);
 	if (mode == MODE_COMBO) patternChance = 0.22f;
@@ -782,12 +787,13 @@ void Game::addPopup(const char* s, float x, float y, u32 color, float scale) {
 	p.on = false;  // the slot being reused must not block its own replacement
 	snprintf(p.text, sizeof p.text, "%s", s);
 	p.x = clampf(x, 26, kFieldW - 26);
-	p.y = clampf(y, kFieldTop + 24, 220);
+	const float lowest = kFieldH - 20;
+	p.y = clampf(y, kFieldTop + 24, lowest);
 	// Step clear of text already showing: down a line, or up once the bottom is reached.
 	float hw = gfx::textWidth(p.text, scale) * 0.5f, hh = 9 * scale, step = 20 * scale;
 	for (int tries = 0; tries < 6 && popupBlocked(p.x, p.y, hw, hh); tries++) {
-		if (p.y + step > 220) step = -fabsf(step);
-		p.y = clampf(p.y + step, kFieldTop + 24, 220);
+		if (p.y + step > lowest) step = -fabsf(step);
+		p.y = clampf(p.y + step, kFieldTop + 24, lowest);
 	}
 	p.life = 0.9f;
 	p.color = color;
@@ -842,7 +848,7 @@ void Game::addFever(float amount) {
 #endif
 		setCallout("FRUIT FRENZY! X2", hueColor(0.1f), 0.86f);
 		audio::play(SFX_FEVER, 1.0f);
-		addRing(kFieldW * 0.5f, 120, rgba(255, 220, 90), 5, 0.7f);
+		addRing(kFieldW * 0.5f, kFieldH * 0.5f, rgba(255, 220, 90), 5, 0.7f);
 		if (gSave.effects != FX_NONE) {
 			flash = 0.45f;
 			flashColor = rgba(255, 210, 90);
@@ -956,7 +962,7 @@ void Game::addStrike(float x) {
 	strikePulse = 1;
 	audio::play(SFX_STRIKE, 0.9f, fieldPan(x));
 	PORT_VIBRATE(0.45f, 110);
-	addPopup("MISS", x, 214, rgba(255, 90, 90), 0.62f);
+	addPopup("MISS", x, kFieldH - 26, rgba(255, 90, 90), 0.62f);
 	if (strikes >= maxStrikes) endGame();
 }
 
@@ -1338,7 +1344,7 @@ void Game::trickEffect(const Obj& o, float dx, float dy) {
 				Obj* b = spawnPiece(o, OBJ_FRUIT, kBanana, 21);
 				if (!b) break;
 				b->vx = (i - 1) * gRng.range(90, 130) + dy * 40;
-				b->vy = gRng.range(-290, -210) - dx * 20;
+				b->vy = (gRng.range(-290, -210) - dx * 20) * kFieldK;
 			}
 			addPopup("BUNCH!", o.x, o.y - 20, rgba(255, 230, 120), 0.6f);
 			break;
@@ -1361,7 +1367,7 @@ void Game::trickEffect(const Obj& o, float dx, float dy) {
 				Obj* c = spawnPiece(o, OBJ_COIN, 0, 18);
 				if (!c) break;
 				c->vx = (i - 1) * gRng.range(70, 120);
-				c->vy = gRng.range(-300, -230);
+				c->vy = gRng.range(-300, -230) * kFieldK;
 				c->rotv = (c->vx >= 0 ? 1.0f : -1.0f) * gRng.range(6.5f, 8.5f);
 				c->loose = false;
 			}
@@ -1387,7 +1393,7 @@ void Game::trickEffect(const Obj& o, float dx, float dy) {
 				g->loose = false;
 				const float side = n % 2 ? 1.0f : -1.0f;
 				g->vx = side * gRng.range(50, 150) + dy * 40;
-				g->vy = gRng.range(-280, -180) - dx * 20;
+				g->vy = (gRng.range(-280, -180) - dx * 20) * kFieldK;
 			}
 			addPopup("BURST!", o.x, o.y - 20, rgba(200, 150, 255), 0.6f);
 			break;
@@ -1827,8 +1833,8 @@ void Game::update(Blade& blade) {
 					frenzyTimer = 0.16f;
 					bool left = gRng.below(2);
 					float x = left ? -18.0f : kFieldW + 18.0f;
-					float vy = -gRng.range(270, 350);
-					float vx = (left ? 1 : -1) * gRng.range(90, 150);
+					float vy = -gRng.range(270, 350) * kFieldK;
+					float vx = (left ? 1 : -1) * gRng.range(90, 150) * acrossK();
 					// Try the other edge if this arc would cross a bomb.
 					if (clearance(x, vx, vy, 0, false) < kWantClearance) {
 						x = kFieldW - x;
@@ -1862,16 +1868,16 @@ void Game::update(Blade& blade) {
 		// The fuse sizzles whenever a bomb is in the air, panned towards it.
 		const Obj* bomb = nullptr;
 		for (const auto& o : objs)
-			if (o.on && o.kind == OBJ_BOMB && o.y < 250) bomb = &o;
+			if (o.on && o.kind == OBJ_BOMB && o.y < kFieldH + 10) bomb = &o;
 		audio::fuse(bomb != nullptr && phase == PHASE_PLAY, bomb ? fieldPan(bomb->x) : 0);
 
 #ifdef AUTOTEST
 		bool anyBomb = false, overlap = false;
 		for (const auto& b : objs) {
-			if (!b.on || b.kind != OBJ_BOMB || b.y > 240) continue;
+			if (!b.on || b.kind != OBJ_BOMB || b.y > kFieldH) continue;
 			anyBomb = true;
 			for (const auto& f : objs) {
-				if (!f.on || f.kind == OBJ_BOMB || f.y > 240) continue;
+				if (!f.on || f.kind == OBJ_BOMB || f.y > kFieldH) continue;
 				float dx = f.x - b.x, dy = f.y - b.y, r = f.radius + b.radius;
 				if (dx * dx + dy * dy < r * r) overlap = true;
 			}
@@ -1930,7 +1936,7 @@ int Game::activeParticles() const {
 const Obj* Game::botTarget(bool wantBomb) const {
 	const Obj* bestO = nullptr;
 	for (const auto& o : objs) {
-		if (!o.on || o.y > 225 || o.y < 15 || o.x < 15 || o.x > kFieldW - 15) continue;
+		if (!o.on || o.y > kFieldH - 15 || o.y < 15 || o.x < 15 || o.x > kFieldW - 15) continue;
 		if (o.hitCooldown > 0) continue;
 		bool isBomb = o.kind == OBJ_BOMB;
 		if (isBomb != wantBomb) continue;
@@ -1943,7 +1949,7 @@ const Obj* Game::botTarget(bool wantBomb) const {
 static inline bool onThisScreen(float y, float r, bool top, float oy) {
 	float sy = y + oy;
 	if (top) return sy + r > 0 && sy - r < 240;
-	return sy + r > 0 && sy - r < 300;  // screen shake and tall windows can show a little past the field
+	return sy + r > 0 && sy - r < kFieldH + 60;  // screen shake and tall windows can show a little past the field
 }
 
 static constexpr float kFruitZ = 8.0f;
@@ -2055,8 +2061,9 @@ void Game::drawField(const Blade& blade) const {
 	if (gSave.highContrast) gfx::rect(-6, -6, 332, 252, rgba(16, 16, 20));
 	else gfx::image(SHEET_BOARD, 0, -6, -6, 332, 252);
 #endif
-	if (freezeT > 0) gfx::rect(kFillX, 0, kFillW, 240, rgba(120, 200, 255, 46));
-	if (feverT > 0) gfx::rect(kFillX, 0, kFillW, 240, gSave.calmFx ? withAlpha(COL_ACCENT, 0.08f) : withAlpha(hueColor(elapsed * 0.25f), 0.13f + sinf(elapsed * 7) * 0.03f));
+	// Washes are a square as wide as kFillW, so they cover a tall field and any bars around it too.
+	if (freezeT > 0) gfx::rect(kFillX, kFillX, kFillW, kFillW, rgba(120, 200, 255, 46));
+	if (feverT > 0) gfx::rect(kFillX, kFillX, kFillW, kFillW,gSave.calmFx ? withAlpha(COL_ACCENT, 0.08f) : withAlpha(hueColor(elapsed * 0.25f), 0.13f + sinf(elapsed * 7) * 0.03f));
 
 	for (const auto& s : splats) {
 		if (!s.on) continue;
@@ -2147,8 +2154,8 @@ void Game::drawField(const Blade& blade) const {
 #if PORT_TWO_SCREENS
 	if (mode == MODE_PRACTICE) drawPractice();  // one screen: drawn over the score sign instead, in drawHud
 #endif
-	if (flash > 0) gfx::rect(kFillX, 0, kFillW, 240, withAlpha(flashColor, clampf(flash, 0, 1) * (gSave.calmFx ? 0.25f : 1.0f)));
-	drawCaptions(240 - 4, kFieldW * 0.5f);
+	if (flash > 0) gfx::rect(kFillX, kFillX, kFillW, kFillW, withAlpha(flashColor, clampf(flash, 0, 1) * (gSave.calmFx ? 0.25f : 1.0f)));
+	drawCaptions(kFieldH - 4, kFieldW * 0.5f);
 }
 
 #if PORT_TWO_SCREENS
@@ -2371,7 +2378,7 @@ void Game::drawHud() const {
 	// The lesson goes over everything else, with the big words below it so the two never meet.
 	const bool lesson = mode == MODE_PRACTICE && (phase == PHASE_PLAY || phase == PHASE_READY) && !gHudPaused;
 	if (lesson) drawPractice();
-	const float midY = lesson ? 30 * u + 28 + 64 * fminf(u, (kFieldW - 24) / 300.0f) + 26 : 96;
+	const float midY = lesson ? 30 * u + 28 + 64 * fminf(u, (kFieldW - 24) / 300.0f) + 26 : kFieldH * 0.4f;
 	const float cx = kFieldW * 0.5f;
 	if (phase == PHASE_FINALE && finaleHits > 0) {
 		snprintf(buf, sizeof buf, "%d", finaleHits);
@@ -2387,7 +2394,7 @@ void Game::drawHud() const {
 		float s = calloutSize + (1 - in) * 0.5f;
 		float w = gfx::textWidth(callout, s);
 		if (w > kFieldW - 20) s *= (kFieldW - 20) / w;
-		gfx::text(callout, cx, phase == PHASE_FINALE ? 192 : midY, s, withAlpha(calloutColor, clampf(calloutT * 2.5f, 0, 1)), ALIGN_CENTER);
+		gfx::text(callout, cx, phase == PHASE_FINALE ? kFieldH * 0.8f : midY, s, withAlpha(calloutColor, clampf(calloutT * 2.5f, 0, 1)), ALIGN_CENTER);
 	}
 }
 #endif

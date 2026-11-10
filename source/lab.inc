@@ -129,6 +129,31 @@ static void labShopScroll() {
 	labCheck(sShopList.pos == shopHiddenRows(SHOP_MUSIC) * kShopStep, "Shop list stops at its last row");
 }
 
+// The field follows the window's shape: 427 x 240 when wide, taller when square, narrower and taller
+// still when upright. Throws start below its bottom edge and gravity grows with its height.
+static void labField() {
+#if !PORT_TWO_SCREENS
+	float w, h;
+	gfx::fieldFor(16.0f / 9, &w, &h);
+	bool wide = w == 427 && h == 240;
+	gfx::fieldFor(21.0f / 9, &w, &h);
+	wide &= w == 427 && h == 240;
+	labCheck(wide, "a wide window keeps the 427 x 240 field");
+	gfx::fieldFor(4.0f / 3, &w, &h);
+	labCheck(w == 427 && fabsf(h - 320) < 0.5f, "a 4:3 window gets a taller field");
+	gfx::fieldFor(9.0f / 16, &w, &h);
+	const bool upright = fabsf(w - 240) < 0.5f && h > 420;
+	gfx::fieldFor(9.0f / 20, &w, &h);
+	labCheck(upright && fabsf(w - 240) < 0.5f && h > 530, "an upright window gets a narrow, tall field");
+	const float wasW = gFieldW, wasH = gFieldH;
+	gfx::fieldFor(9.0f / 16, &gFieldW, &gFieldH);
+	const bool follows = fabsf(Game::throwY() - (gFieldH + 22)) < 0.01f && kFieldK > 1.7f;
+	gFieldW = wasW;
+	gFieldH = wasH;
+	labCheck(follows, "an upright field throws from its own bottom edge with stronger gravity");
+#endif
+}
+
 // A song tried on plays for 8 to 10 seconds, then the music in use comes back; Use makes a song both
 // the Menu and the Game Music. Driven through updateShop, a frame at a time, on the last song on sale.
 static void labShopPreview() {
@@ -173,6 +198,7 @@ static void labMenus() {
 		case 0:
 			labExpect(SCREEN_TITLE, "boots to the title");
 			labDaily();
+			labField();
 			labCheck(audio::musicTime() >= 0 || audio::musicPending(), "menu music plays");
 			botTap(kTitleButtons[4]);
 			return;

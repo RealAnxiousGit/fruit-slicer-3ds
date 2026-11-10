@@ -107,9 +107,9 @@ void Game::drawBeatPulse() const {
 	const bool down = fabsf(b - r) * beatLen <= kWindow && ((int)r % 4 + 4) % 4 == 0;  // not a half beat between
 	const u32 c = withAlpha(down ? COL_ACCENT : COL_CREAM, near * near * (gSave.calmFx ? 0.2f : 0.45f));
 	const float w = 5 + 3 * near, top = kFieldTop;
-	gfx::rect(0, top, w, 240 - top, c);
-	gfx::rect(kFieldW - w, top, w, 240 - top, c);
-	gfx::rect(w, 240 - w, kFieldW - 2 * w, w, c);
+	gfx::rect(0, top, w, kFieldH - top, c);
+	gfx::rect(kFieldW - w, top, w, kFieldH - top, c);
+	gfx::rect(w, kFieldH - w, kFieldW - 2 * w, w, c);
 }
 
 // Four lights, one for each beat of the bar. The one playing now is lit and swells as it lands.

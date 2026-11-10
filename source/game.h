@@ -70,7 +70,8 @@ struct Game {
 	static constexpr int kMaxPopups = 14;
 	static constexpr int kMaxRings = 8;
 	static constexpr int kMaxPending = 28;
-	static constexpr float kThrowY = 262.0f;  // where thrown things start, below the field
+	static float throwY() { return kFieldH + 22.0f; }  // where thrown things start, just below the field
+	static float killY() { return kFieldH + 36.0f; }   // a falling thing this far down has left for good
 
 	Obj objs[kMaxObjs];
 	Half halves[kMaxHalves];
