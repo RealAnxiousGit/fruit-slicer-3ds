@@ -180,7 +180,7 @@ Programming by NickBin, with the Claude Code toolkit.
 
 **Music:** the six Shop tracks (Summer House, 8-Bit Hero Quest, Friendly Trap, Unruly Beat, Vengeance Electro and Eternal Explorer) are by [Of Far Different Nature](https://fardifferent.carrd.co/), from "Loop Box #1" and "Loop Box #4" on [OpenGameArt.org](https://opengameart.org), licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). They were converted (to 16 kHz mono) and turned down to match the game's loudness.
 
-The seven songs added in 1.1 are by NickBin and friends:
+The seven songs added in 1.1 are by NickBin and friends, all rights reserved and used with permission:
 
 | Song | Artists | Genre |
 | --- | --- | --- |
@@ -213,6 +213,6 @@ See [CHANGELOG.md](CHANGELOG.md) for what changed, and [docs/qa](docs/qa) for ho
 
 ## License
 
-Code and assets are licensed under [CC BY-NC 4.0](LICENSE): free to share and adapt with credit, not for commercial use. The six Of Far Different Nature tracks keep their own CC BY 4.0 license from their author. libcurl, Mbed TLS and zlib are linked in under their own licenses (curl, Apache 2.0 and zlib).
+Code and assets are licensed under [CC BY-NC 4.0](LICENSE): free to share and adapt with credit, not for commercial use. The six Of Far Different Nature tracks keep their own CC BY 4.0 license from their author. The seven songs by NickBin and friends are all rights reserved and used in this game with permission, so the CC BY-NC license doesn't cover them. They aren't registered with YouTube's Content ID, so videos and streams of the game won't be claimed. libcurl, Mbed TLS and zlib are linked in under their own licenses (curl, Apache 2.0 and zlib).
 
 This is an independent fan project, not affiliated with or endorsed by Nintendo or any game publisher. Nintendo 3DS is a trademark of Nintendo.
