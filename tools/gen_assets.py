@@ -1137,6 +1137,409 @@ def spr_icon(kind):
     return shrink(img)
 
 
+# ---------------------------------------------------------------- Orchard Blast icons (1.2)
+# The new modes' sign marks, in the same hand as spr_icon's.
+def spr_mode_icon(kind):
+    img = canvas(32)
+    d = ImageDraw.Draw(img)
+    cream = (255, 240, 210, 255)
+    if kind == "tree":
+        # Orchard Blast: a fruit tree.
+        d.line([16 * SS, 28 * SS, 16 * SS, 17 * SS], fill=(150, 104, 70, 255), width=4 * SS)
+        el(d, 16, 12, 11, 9, (110, 186, 96, 255))
+        for x, y in ((11, 11), (20, 9), (17, 15)):
+            el(d, x, y, 2.4, 2.4, (240, 90, 80, 255))
+    elif kind == "crown":
+        # Boss Rush.
+        gold = (255, 206, 80, 255)
+        poly(d, [(5, 24), (5, 11), (11, 17), (16, 7), (21, 17), (27, 11), (27, 24)], gold)
+        d.rectangle([5 * SS, 24 * SS, 27 * SS, 27 * SS], fill=(214, 150, 40, 255))
+    elif kind == "cup":
+        # Recipe: a smoothie cup with a straw.
+        d.line([19 * SS, 12 * SS, 24 * SS, 3 * SS], fill=cream, width=2 * SS)
+        poly(d, [(7, 11), (25, 11), (22, 28), (10, 28)], cream)
+        poly(d, [(8.5, 15), (23.5, 15), (21.6, 26), (10.4, 26)], (236, 110, 150, 255))
+    elif kind == "target":
+        # Sharpshooter.
+        for r, c in ((12, (240, 90, 80, 255)), (8.5, cream), (5, (240, 90, 80, 255)), (2, cream)):
+            el(d, 16, 16, r, r, c)
+    elif kind == "juggle":
+        # Juggle: three fruit in the air on an arc.
+        d.arc([5 * SS, 6 * SS, 27 * SS, 34 * SS], 200, 340, fill=cream, width=2 * SS)
+        for x, y, c in ((7, 16, (240, 90, 80, 255)), (16, 7, (255, 200, 70, 255)), (25, 16, (130, 200, 90, 255))):
+            el(d, x, y, 4, 4, c)
+    return shrink(img)
+
+
+CARD_ICONS = [
+    "ring", "health", "armor", "blade", "regrowth", "longedge", "steady", "lucky", "parry",
+    "juice", "magnet", "bombsquad", "secondwind", "battery", "goldtouch", "seedpouch", "sharprind",
+    "echo", "sweep", "luckyleaf", "overflow", "rhythm", "thickpeel", "glass",
+    "blender", "freezepop", "defuser", "smoothie", "cleaver", "fruitrain", "pull", "slowmo",
+    "goldapple", "fruitbomb", "rindwall", "ripeseed", "skippeel", "bossbane", "luckypit", "coinjar",
+    "laststand", "flood",
+]
+# Badge colours by kind: upgrades amber, passive charms green, reusable charms blue, single use pink.
+CARD_KIND = [0] * 9 + [1] * 15 + [2] * 8 + [3] * 10
+KIND_COLOURS = [((236, 168, 58, 255), (150, 96, 26, 255)), ((104, 178, 98, 255), (50, 108, 48, 255)),
+                ((84, 150, 224, 255), (36, 82, 150, 255)), ((226, 104, 146, 255), (140, 48, 86, 255))]
+
+
+def spr_card_icon(index):
+    """One small round badge per Orchard Blast card: its kind's colour, and a white mark for what it does."""
+    key = CARD_ICONS[index]
+    img = canvas(32)
+    d = ImageDraw.Draw(img)
+    fill, edge = KIND_COLOURS[CARD_KIND[index]]
+    el(d, 16, 16, 15, 15, edge)
+    el(d, 16, 16, 13, 13, fill)
+    w = (255, 250, 240, 255)
+    dark = (40, 30, 50, 255)
+
+    def ln(pts, width=2.5, c=w):
+        d.line([(x * SS, y * SS) for x, y in pts], fill=c, width=int(width * SS), joint="curve")
+
+    def ring(cx, cy, r, width=2.5, c=w):
+        d.ellipse([(cx - r) * SS, (cy - r) * SS, (cx + r) * SS, (cy + r) * SS], outline=c, width=int(width * SS))
+
+    def heart(cx, cy, s, c=w):
+        el(d, cx - s * 0.5, cy - s * 0.3, s * 0.55, s * 0.55, c)
+        el(d, cx + s * 0.5, cy - s * 0.3, s * 0.55, s * 0.55, c)
+        poly(d, [(cx - s * 1.02, cy - s * 0.1), (cx + s * 1.02, cy - s * 0.1), (cx, cy + s * 1.05)], c)
+
+    def bomb(cx, cy, r, c=dark):
+        el(d, cx, cy, r, r, c)
+        ln([(cx + r * 0.5, cy - r * 0.8), (cx + r * 0.9, cy - r * 1.35)], 2, (150, 110, 80, 255))
+
+    if key == "ring":
+        ring(16, 18, 7, 3)
+        poly(d, [(16, 6), (20, 10), (16, 13), (12, 10)], (170, 230, 255, 255))
+    elif key == "health":
+        heart(16, 16, 7)
+        ln([(23, 6), (23, 12)], 2)
+        ln([(20, 9), (26, 9)], 2)
+    elif key == "armor":
+        poly(d, [(16, 6), (25, 9), (24, 18), (16, 26), (8, 18), (7, 9)], w)
+        poly(d, [(16, 9), (21.5, 11), (21, 17), (16, 22)], fill)
+    elif key == "blade":
+        poly(d, [(8, 24), (22, 7), (25, 10), (11, 26)], w)
+        ln([(7, 21), (12, 26)], 3, (150, 110, 80, 255))
+    elif key == "regrowth":
+        leaf(d, 9, 24, -50, 15, w)
+        ln([(22, 7), (22, 15)], 2.5)
+        ln([(18, 11), (26, 11)], 2.5)
+    elif key == "longedge":
+        ln([(6, 16), (26, 16)], 3)
+        poly(d, [(5, 16), (10, 11), (10, 21)], w)
+        poly(d, [(27, 16), (22, 11), (22, 21)], w)
+    elif key == "steady":
+        # A feather: fruit fall more slowly.
+        poly(d, [(9, 25), (20, 7), (24, 10), (13, 25)], w)
+        ln([(8, 27), (13, 21)], 1.6, edge)
+    elif key == "lucky":
+        el(d, 16, 16, 8, 8, (255, 214, 90, 255))
+        ring(16, 16, 8, 1.6, (190, 140, 30, 255))
+        ln([(16, 12), (16, 20)], 2, (190, 140, 30, 255))
+    elif key == "parry":
+        ln([(8, 8), (24, 24)], 3)
+        ln([(24, 8), (8, 24)], 3)
+    elif key == "juice":
+        poly(d, [(16, 6), (22, 17), (10, 17)], w)
+        el(d, 16, 19, 6, 6, w)
+    elif key == "magnet":
+        d.arc([8 * SS, 6 * SS, 24 * SS, 22 * SS], 0, 180, fill=w, width=5 * SS)
+        d.rectangle([8 * SS, 10 * SS, 13 * SS, 15 * SS], fill=w)
+        d.rectangle([19 * SS, 10 * SS, 24 * SS, 15 * SS], fill=w)
+        d.rectangle([8 * SS, 8 * SS, 13 * SS, 11 * SS], fill=(240, 90, 80, 255))
+        d.rectangle([19 * SS, 8 * SS, 24 * SS, 11 * SS], fill=(240, 90, 80, 255))
+    elif key == "bombsquad":
+        bomb(15, 18, 7)
+        ring(16, 16, 11, 2.2)
+        ln([(8, 8), (24, 24)], 2.2)
+    elif key == "secondwind":
+        heart(15, 17, 6.5)
+        d.arc([5 * SS, 5 * SS, 27 * SS, 27 * SS], 200, 330, fill=w, width=2 * SS)
+        poly(d, [(25, 9), (27, 14), (21, 13)], w)
+    elif key == "battery":
+        d.rectangle([7 * SS, 11 * SS, 24 * SS, 21 * SS], outline=w, width=2 * SS)
+        d.rectangle([24 * SS, 14 * SS, 26 * SS, 18 * SS], fill=w)
+        d.rectangle([9.5 * SS, 13.5 * SS, 18 * SS, 18.5 * SS], fill=w)
+    elif key == "goldtouch":
+        el(d, 16, 17, 8, 8, (255, 210, 70, 255))
+        leaf(d, 16, 9, -60, 7, w)
+        ln([(22, 6), (25, 9)], 1.8)
+        ln([(25, 6), (22, 9)], 1.8)
+    elif key == "seedpouch":
+        el(d, 16, 19, 8, 7, w)
+        poly(d, [(12, 9), (20, 9), (18, 13), (14, 13)], w)
+        for x, y in ((13, 19), (18, 18), (16, 22)):
+            el(d, x, y, 1.4, 1.8, edge)
+    elif key == "sharprind":
+        for x in (8, 13, 18, 23):
+            poly(d, [(x - 3.5, 24), (x + 3.5, 24), (x, 9)], w)
+    elif key == "echo":
+        d.arc([6 * SS, 6 * SS, 30 * SS, 30 * SS], 190, 260, fill=w, width=3 * SS)
+        d.arc([2 * SS, 10 * SS, 26 * SS, 34 * SS], 190, 260, fill=(255, 250, 240, 140), width=3 * SS)
+    elif key == "sweep":
+        ln([(8, 16), (14, 22), (25, 9)], 3.5)
+    elif key == "luckyleaf":
+        for dx, dy in ((-4, -4), (4, -4), (-4, 4), (4, 4)):
+            el(d, 16 + dx, 15 + dy, 4.2, 4.2, w)
+        ln([(17, 20), (21, 27)], 2)
+    elif key == "overflow":
+        poly(d, [(9, 14), (23, 14), (21, 27), (11, 27)], w)
+        el(d, 11, 10, 2.5, 2.5, w)
+        el(d, 20, 8, 2.5, 2.5, w)
+        el(d, 16, 6, 2, 2, w)
+    elif key == "rhythm":
+        el(d, 12, 22, 4, 3.2, w)
+        ln([(15.5, 22), (15.5, 7), (23, 10)], 2.4)
+    elif key == "thickpeel":
+        ring(16, 16, 9, 4.5)
+        el(d, 16, 16, 3, 3, w)
+    elif key == "glass":
+        poly(d, [(16, 6), (25, 14), (16, 27), (7, 14)], (210, 240, 255, 255))
+        ln([(7, 14), (25, 14)], 1.4, edge)
+        ln([(12, 14), (16, 27), (20, 14)], 1.4, edge)
+    elif key == "blender":
+        poly(d, [(9, 7), (23, 7), (21, 20), (11, 20)], w)
+        d.rectangle([9 * SS, 21 * SS, 23 * SS, 26 * SS], fill=w)
+        poly(d, [(11, 12), (21, 12), (20.4, 18), (11.6, 18)], (236, 110, 150, 255))
+    elif key == "freezepop":
+        d.rounded_rectangle([10 * SS, 5 * SS, 22 * SS, 20 * SS], radius=5 * SS, fill=(170, 230, 255, 255))
+        d.rectangle([14.5 * SS, 20 * SS, 17.5 * SS, 27 * SS], fill=(230, 200, 150, 255))
+    elif key == "defuser":
+        bomb(14, 19, 7)
+        ln([(19, 9), (26, 5)], 2)
+        poly(d, [(22, 3), (27, 7), (24, 10)], w)
+    elif key == "smoothie":
+        ln([(19, 9), (23, 4)], 2)
+        poly(d, [(9, 10), (23, 10), (21, 27), (11, 27)], w)
+        poly(d, [(10.5, 14), (21.5, 14), (20, 25), (12, 25)], (150, 220, 120, 255))
+    elif key == "cleaver":
+        d.rectangle([8 * SS, 8 * SS, 22 * SS, 19 * SS], fill=w)
+        el(d, 11, 11, 1.5, 1.5, fill)
+        d.rectangle([20 * SS, 18 * SS, 24 * SS, 27 * SS], fill=(150, 110, 80, 255))
+    elif key == "fruitrain":
+        for x, y, c in ((9, 9, (240, 90, 80, 255)), (17, 14, (255, 200, 70, 255)), (24, 20, (130, 200, 90, 255)), (12, 22, w)):
+            el(d, x, y, 3.6, 3.6, c)
+    elif key == "pull":
+        d.arc([10 * SS, 6 * SS, 26 * SS, 22 * SS], 90, 270, fill=w, width=5 * SS)
+        for y in (10, 18):
+            ln([(5, y), (9, y)], 1.8)
+        d.rectangle([17 * SS, 6 * SS, 22 * SS, 11 * SS], fill=(240, 90, 80, 255))
+        d.rectangle([17 * SS, 17 * SS, 22 * SS, 22 * SS], fill=w)
+    elif key == "slowmo":
+        poly(d, [(9, 6), (23, 6), (16, 16)], w)
+        poly(d, [(9, 26), (23, 26), (16, 16)], w)
+        poly(d, [(12, 23), (20, 23), (16, 18)], fill)
+    elif key == "goldapple":
+        el(d, 13, 18, 6.5, 7.5, (255, 214, 80, 255))
+        el(d, 19, 18, 6.5, 7.5, (255, 214, 80, 255))
+        ln([(16, 11), (17, 6)], 2, (150, 110, 80, 255))
+        leaf(d, 17, 8, -20, 7, (130, 200, 90, 255))
+    elif key == "fruitbomb":
+        for i in range(8):
+            a = i * math.pi / 4
+            ln([(16 + math.cos(a) * 5, 16 + math.sin(a) * 5), (16 + math.cos(a) * 11, 16 + math.sin(a) * 11)], 2.2)
+        el(d, 16, 16, 4, 4, (255, 210, 90, 255))
+    elif key == "rindwall":
+        for row in range(3):
+            y = 9 + row * 5.5
+            off = 0 if row % 2 == 0 else 3.5
+            for col in range(3):
+                x = 7 + off + col * 7
+                if x + 6 <= 26:
+                    d.rectangle([x * SS, y * SS, (x + 6) * SS, (y + 4.5) * SS], fill=w)
+    elif key == "ripeseed":
+        poly(d, [(16, 26), (11, 17), (16, 8), (21, 17)], w)
+        ln([(24, 13), (24, 6)], 2)
+        poly(d, [(21, 8), (27, 8), (24, 4)], w)
+    elif key == "skippeel":
+        poly(d, [(6, 8), (15, 16), (6, 24)], w)
+        poly(d, [(16, 8), (25, 16), (16, 24)], w)
+    elif key == "bossbane":
+        poly(d, [(7, 16), (7, 9), (11, 13), (16, 6), (21, 13), (25, 9), (25, 16)], (255, 206, 80, 255))
+        ln([(8, 26), (24, 18)], 3)
+    elif key == "luckypit":
+        el(d, 16, 17, 6, 8, (200, 130, 90, 255))
+        for i in range(5):
+            a = -math.pi / 2 + i * 2 * math.pi / 5
+            el(d, 16 + math.cos(a) * 11, 17 + math.sin(a) * 10, 1.6, 1.6, w)
+    elif key == "coinjar":
+        d.rounded_rectangle([9 * SS, 10 * SS, 23 * SS, 27 * SS], radius=3 * SS, outline=w, width=2 * SS)
+        d.rectangle([11 * SS, 6 * SS, 21 * SS, 9 * SS], fill=w)
+        el(d, 16, 19, 4, 4, (255, 210, 80, 255))
+    elif key == "laststand":
+        ln([(10, 27), (10, 6)], 2.5)
+        poly(d, [(11, 6), (25, 10), (11, 15)], w)
+    elif key == "flood":
+        for y in (11, 17, 23):
+            pts = [(6 + i, y + math.sin(i * 0.6) * 2) for i in range(0, 21)]
+            ln(pts, 2.2)
+    return shrink(img)
+
+
+# ---------------------------------------------------------------- bosses
+# Each boss has four poses: guard (guard up), open (guard down, laughing), daze (confused after a slice) and wind
+# (winding up an attack). The 2D look is a whole sticker per pose; the 3D look draws the game's own 3D fruit and
+# lays a face-only overlay of the same pose on it. The crown and the fuse are drawn by the game, since they move.
+BOSS_CELL = 96
+BOSS_POSES = ("guard", "open", "daze", "wind")
+FACE_INK = (40, 22, 30, 255)
+
+
+def boss_face(d, cx, cy, r, pose, king, outline=False):
+    """Eyes, brows and mouth for a boss face centred on (cx, cy), sized to a body of radius r."""
+    ink = FACE_INK
+    w = max(1.0, r * 0.06)
+    white = (255, 252, 240, 255)
+    for side in (-1, 1):
+        ex, ey = cx + side * r * 0.34, cy - r * 0.12
+        if pose == "daze":
+            # Swirly eyes: a spiral of short strokes.
+            pts = []
+            for i in range(28):
+                a = i * 0.55 + (0 if side < 0 else math.pi)
+                rad = r * 0.02 + i * r * 0.0055
+                pts.append(((ex + math.cos(a) * rad) * SS, (ey + math.sin(a) * rad) * SS))
+            el(d, ex, ey, r * 0.17, r * 0.17, white)
+            d.line(pts, fill=ink, width=int(w * SS * 0.8), joint="curve")
+            continue
+        eh = {"guard": 0.16, "open": 0.07, "wind": 0.1}[pose]
+        if outline:
+            el(d, ex, ey, r * 0.15 + w, r * eh + w, ink)
+        el(d, ex, ey, r * 0.15, r * eh, white)
+        px = ex - side * r * 0.03 if pose != "open" else ex
+        el(d, px, ey + r * 0.02, r * 0.065, min(r * 0.065, r * eh * 0.9), ink)
+        # Brows: slanted in and down when angry, raised and cocky when the guard is down.
+        if pose == "open":
+            bx0, by0, bx1, by1 = ex - r * 0.16, ey - r * 0.2, ex + r * 0.16, ey - r * 0.24
+        else:
+            tilt = 0.12 if pose == "guard" else 0.18
+            bx0, by0 = ex + side * r * 0.2, ey - r * (0.2 + tilt)
+            bx1, by1 = ex - side * r * 0.14, ey - r * 0.14
+        d.line([bx0 * SS, by0 * SS, bx1 * SS, by1 * SS], fill=ink, width=int(w * 1.6 * SS))
+    my = cy + r * (0.42 if king else 0.32)
+    if pose == "open":
+        # A wide laugh, tongue and all.
+        el(d, cx, my, r * 0.26, r * 0.17, ink)
+        el(d, cx, my + r * 0.07, r * 0.15, r * 0.08, (232, 96, 110, 255))
+        d.rectangle([(cx - r * 0.2) * SS, (my - r * 0.17) * SS, (cx + r * 0.2) * SS, (my - r * 0.1) * SS], fill=white)
+        # A drop of sweat: it's tired, and it knows you can hit it now.
+        el(d, cx + r * 0.62, cy - r * 0.42, r * 0.06, r * 0.09, (150, 210, 255, 255))
+    elif pose == "wind":
+        # Gritted teeth.
+        d.rounded_rectangle([(cx - r * 0.24) * SS, (my - r * 0.08) * SS, (cx + r * 0.24) * SS, (my + r * 0.1) * SS],
+                            radius=r * 0.05 * SS, fill=white, outline=ink, width=int(w * SS))
+        for i in range(-2, 3):
+            x = cx + i * r * 0.09
+            d.line([x * SS, (my - r * 0.08) * SS, x * SS, (my + r * 0.1) * SS], fill=ink, width=int(w * 0.7 * SS))
+        d.line([(cx - r * 0.24) * SS, (my + r * 0.01) * SS, (cx + r * 0.24) * SS, (my + r * 0.01) * SS], fill=ink, width=int(w * 0.7 * SS))
+    elif pose == "daze":
+        pts = [((cx - r * 0.22 + i * r * 0.044) * SS, (my + math.sin(i * 1.3) * r * 0.04) * SS) for i in range(11)]
+        d.line(pts, fill=ink, width=int(w * 1.2 * SS), joint="curve")
+    else:
+        d.arc([(cx - r * 0.22) * SS, (my - r * 0.02) * SS, (cx + r * 0.22) * SS, (my + r * 0.26) * SS], 200, 340,
+              fill=ink, width=int(w * 1.4 * SS))
+    if king:
+        # The King's waxed moustache, over the mouth.
+        mc = (250, 214, 90, 255) if not outline else (250, 214, 90, 255)
+        for side in (-1, 1):
+            pts = []
+            for i in range(13):
+                t = i / 12
+                pts.append(((cx + side * r * (0.04 + t * 0.36)) * SS, (my - r * 0.17 - math.sin(t * math.pi) * r * 0.04 - (t ** 3) * r * 0.1) * SS))
+            d.line(pts, fill=ink, width=int(r * 0.1 * SS), joint="curve")
+            d.line(pts, fill=mc, width=int(r * 0.06 * SS), joint="curve")
+
+
+def boss_body(king, pose):
+    c = BOSS_CELL
+    img = canvas(c)
+    d = ImageDraw.Draw(img)
+    cx, cy, r = c / 2, c / 2 + 2, c * 0.42
+    if king:
+        for i in range(8):
+            a = i * math.pi / 4 + math.pi / 8
+            x, y = cx + math.cos(a) * r * 1.06, cy + math.sin(a) * r * 1.06
+            d.line([cx * SS, cy * SS, x * SS, y * SS], fill=(60, 54, 84, 255), width=int(r * 0.24 * SS))
+            el(d, x, y, r * 0.13, r * 0.13, (214, 62, 52, 255) if pose != "open" else (250, 202, 44, 255))
+        body = (46, 42, 70, 255) if pose != "wind" else (70, 40, 66, 255)
+        el(d, cx, cy, r * 0.88, r * 0.88, body)
+        img = shade(img, light=(180, 190, 255, 90), dark=(0, 0, 0, 80))
+        d = ImageDraw.Draw(img)
+        # A royal sash across the chest.
+        sash = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        sd = ImageDraw.Draw(sash)
+        sd.line([(cx - r) * SS, (cy + r * 0.3) * SS, (cx + r) * SS, (cy + r * 0.95) * SS], fill=(170, 40, 70, 255), width=int(r * 0.2 * SS))
+        disc = Image.new("L", img.size, 0)
+        el(ImageDraw.Draw(disc), cx, cy, r * 0.88, r * 0.88, 255)
+        sash.putalpha(ImageChops.multiply(mask_of(sash), disc))
+        img.alpha_composite(sash)
+        d = ImageDraw.Draw(img)
+        boss_face(d, cx, cy - r * 0.08, r * 0.88, pose, True)
+    else:
+        green = (58, 148, 78, 255) if pose != "wind" else (84, 150, 64, 255)
+        el(d, cx, cy, r, r * 0.94, green)
+        img = shade(img)
+        d = ImageDraw.Draw(img)
+        for i, x in enumerate((-0.66, -0.3, 0.06, 0.42, 0.74)):
+            pts = []
+            for t in range(-10, 11):
+                y = t * r * 0.094
+                xx = cx + x * r * math.sqrt(max(0, 1 - (y / (r * 0.94)) ** 2))
+                pts.append(((xx + math.sin(t * 1.4 + i) * r * 0.06) * SS, (cy + y) * SS))
+            d.line(pts, fill=(28, 96, 52, 255), width=int(r * 0.1 * SS), joint="curve")
+        # A little stalk and a leaf, worn at an angle like a hat.
+        stem(d, cx + r * 0.05, cy - r * 0.9, cx + r * 0.2, cy - r * 1.08, w=max(2, int(r * 0.08)))
+        leaf(d, cx + r * 0.15, cy - r * 1.0, -20, r * 0.42, (96, 186, 80, 255))
+        # A pale patch behind the face, so it reads on the dark stripes.
+        patch = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        el(ImageDraw.Draw(patch), cx, cy + r * 0.05, r * 0.6, r * 0.5, (150, 206, 120, 150))
+        img.alpha_composite(patch.filter(ImageFilter.GaussianBlur(SS * 3)))
+        d = ImageDraw.Draw(img)
+        boss_face(d, cx, cy, r, pose, False)
+    if pose == "daze":
+        # Little stars circling the head.
+        for i in range(3):
+            a = -math.pi / 2 + (i - 1) * 0.7
+            sx, sy = cx + math.cos(a) * r * 0.62, cy - r * 0.72 + math.sin(a) * r * 0.1
+            pts = []
+            for k in range(10):
+                rr = r * (0.11 if k % 2 == 0 else 0.045)
+                aa = -math.pi / 2 + k * math.pi / 5
+                pts.append((sx + math.cos(aa) * rr, sy + math.sin(aa) * rr))
+            poly(d, pts, (255, 226, 90, 255))
+    return shrink(sticker(img, 2.0))
+
+
+def boss_face_overlay(king, pose):
+    """The face alone, for laying on the 3D boss."""
+    c = BOSS_CELL
+    img = canvas(c)
+    d = ImageDraw.Draw(img)
+    cx, cy, r = c / 2, c / 2 + 2, c * 0.42
+    boss_face(d, cx, cy - (r * 0.08 if king else 0), r * (0.88 if king else 1.0), pose, king, outline=True)
+    return shrink(img)
+
+
+def boss_sprites():
+    out = []
+    for who, king in (("melon", False), ("king", True)):
+        out += [(f"boss_{who}_{p}", boss_body(king, p)) for p in BOSS_POSES]
+        out += [(f"bface_{who}_{p}", boss_face_overlay(king, p)) for p in BOSS_POSES]
+    return out
+
+
+def orchard_sprites():
+    """The 1.2 sprites, after every older one so that no older sprite number moves."""
+    out = [("ic_tree", spr_mode_icon("tree")), ("ic_crown", spr_mode_icon("crown")), ("ic_cup", spr_mode_icon("cup")),
+           ("ic_target", spr_mode_icon("target")), ("ic_juggle", spr_mode_icon("juggle"))]
+    out += [("cd_" + key, spr_card_icon(i)) for i, key in enumerate(CARD_ICONS)]
+    return out + boss_sprites()
+
+
 def spr_crack():
     img = canvas(CELL)
     d = ImageDraw.Draw(img)
@@ -1396,7 +1799,7 @@ def build_graphics():
         ("pw_shield", spr_power("shield")),
         ("pw_time", spr_power("time")),
         ("ic_note", spr_icon("note")),
-    ]
+    ] + orchard_sprites()
     write_sheet("sprites", sprites)
     write_sheet("logo", [("logo", spr_logo())])
     build_font()

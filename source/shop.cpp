@@ -76,6 +76,7 @@ bool shopCanTakeOff(int tab) { return kTabs[tab].canTakeOff; }
 
 BuyResult shopBuy(int tab, int i) {
 	if (shopOwned(tab, i)) return BUY_OWNED;
+	if (shopLocked(tab, i)) return BUY_SHORT;
 	u32 price = shopItem(tab, i).price;
 	if (gSave.coins < price) return BUY_SHORT;
 	gSave.coins -= price;
@@ -120,3 +121,48 @@ u32 shopSplatPreview(int item) {
 }
 
 u32 shopSplatColour(u32 juice) { return gSave.splat == 0 ? juice : shopSplatPreview(gSave.splat - 1); }
+
+static const s8 kTrackBossOf[] = {
+#define SHOP_TRACK(...) -1,
+#define BOSS_TRACK(name, price, line, file, bpm, boss) boss,
+#include "shop_items.inc"
+};
+static_assert(countOf(kTrackBossOf) == countOf(kTracks), "a boss (or -1) for every Shop song");
+
+int trackBoss(int track) {
+	const int i = track - kBaseTracks;
+	return i >= 0 && i < countOf(kTrackBossOf) ? kTrackBossOf[i] : -1;
+}
+
+bool shopLocked(int tab, int i) {
+	if (tab != SHOP_MUSIC) return false;
+	const int boss = trackBoss(kBaseTracks + i);
+	return boss >= 0 && !(gSave.bossesBeaten >> boss & 1);
+}
+
+int bossTrackCount(int boss) {
+	int n = 0;
+	for (int t = 0; t < kTrackCount; t++) n += trackBoss(t) == boss;
+	return n;
+}
+
+int bossTrackPick(int boss, u32 roll) {
+	if (boss < 0 || boss >= (int)sizeof gSave.bossTrackLast) return -1;
+	int pool[kTrackCount], n = 0;
+	const int last = gSave.bossTrackLast[boss] - 1;
+	for (int t = 0; t < kTrackCount; t++)
+		if (trackBoss(t) == boss && (t != last || bossTrackCount(boss) == 1)) pool[n++] = t;
+	if (n == 0) return -1;
+	const int t = pool[roll % n];
+	gSave.bossTrackLast[boss] = (u8)(t + 1);
+	return t;
+}
+
+bool shopHasNew() {
+	const u32 fresh = gSave.bossesBeaten & ~gSave.bossTracksSeen;
+	for (int b = 0; b < 32; b++)
+		if ((fresh >> b & 1) && bossTrackCount(b) > 0) return true;
+	return false;
+}
+
+void shopSeenNew() { gSave.bossTracksSeen |= gSave.bossesBeaten; }

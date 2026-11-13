@@ -39,3 +39,11 @@ const m3d::Skin& shopSkinLook(int item);
 u32 shopSkinTint(int item);
 const m3d::Skin* shopWornSkin();
 u32 shopWornSkinTint();
+
+// Boss tracks: Shop songs tied to a boss. Each stays locked, with no price and no preview, until its boss is beaten.
+int trackBoss(int track);              // the boss a 0-based track belongs to, or -1
+bool shopLocked(int tab, int i);       // a boss track whose boss hasn't been beaten yet
+int bossTrackCount(int boss);          // how many tracks that boss has
+int bossTrackPick(int boss, u32 roll); // one of the boss's tracks at random, never the one heard last time; -1 if it has none
+bool shopHasNew();                     // a beaten boss's tracks haven't been looked at in the Shop yet
+void shopSeenNew();                    // the Music tab was opened: they have been now

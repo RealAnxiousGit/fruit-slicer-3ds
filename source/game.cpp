@@ -12,6 +12,7 @@
 #include "shop.h"
 #include "sprites.h"
 #include "boom.h"
+#include "fruitids.h"
 
 Rng gRng;
 Rng gSpawn;
@@ -28,6 +29,11 @@ const ModeInfo kModes[MODE_COUNT] = {
 	{"Combo Rush", "Only combos score. Bigger is better.", "One bomb or an empty meter ends it."},
 	{"Daily Fruit", "60 seconds, the same run for everyone.", "A new one every day. Bombs cost 10."},
 	{"Beat Slice", "Slice to the music. 60 seconds.", "Only slices on the beat score!"},
+	{"Orchard Blast", "A roguelike run through 10 rooms.", "Level up, pick upgrades, beat bosses."},
+	{"Boss Rush", "Every boss, back to back.", "Pick a build. Fastest time wins."},
+	{"Recipe", "Slice what the smoothie needs.", "A wrong fruit spoils the cup."},
+	{"Sharpshooter", "Only the called colour scores.", "The call changes. Watch the shapes."},
+	{"Juggle", "Slices knock fruit back up.", "Three on the floor and you're out."},
 };
 const char* modeName(Mode m) { return m < MODE_COUNT ? kModes[m].name : "Practice"; }
 
@@ -71,12 +77,6 @@ static const FruitDef kFruit[] = {
 static constexpr int kFruitKinds = sizeof(kFruit) / sizeof(kFruit[0]);
 static_assert(kFruitKinds <= kMaxFruitKinds, "the Fruit Journal needs a count for every fruit");
 static_assert(kFruitKinds == progress::kNamedFruit, "every fruit needs a name in progress.cpp");
-static constexpr int kCoconut = 10;
-static constexpr int kFirstNew = 11, kNewNormal = 4;  // banana to dragon fruit
-static constexpr int kBanana = 11, kDragon = 14;
-enum { kSpiky = 15, kGrapes, kGrape, kHoney, kJelly, kChili, kBunch, kPomegranate, kPinata };
-static constexpr int kPinataHits = 5, kPinataMax = 2, kBunchPieces = 3, kPinataCoins = 3;
-static constexpr float kPinataFrom = 45.0f;  // seconds into a run before one can appear
 
 // Trick fruit start after the first half minute, about one fruit in twenty. Zen never throws the spiky one.
 // Arcade's power-ups, picked evenly.
@@ -141,6 +141,7 @@ int fruitSprite(int fruit) { return kFruit[fruit >= 0 && fruit < kFruitKinds ? f
 int everydayFruit(Rng& rng) { return normalFruit(rng); }
 float levelGravity(int diff) { return kDifficulty[diff % DIFF_COUNT].gravity; }
 float levelBombs(int diff) { return kDifficulty[diff % DIFF_COUNT].bombs; }
+float levelInterval(int diff) { return kDifficulty[diff % DIFF_COUNT].interval; }
 
 u32 hueColor(float t) {
 	t = t - floorf(t);
@@ -244,7 +245,7 @@ static int juiceCount(int base) {
 static inline bool use3D() { return gSave.artStyle == ART_3D && m3d::ready(); }
 
 static constexpr float kMixerGravity = 0.6f;
-static_assert(MODE_DAILY == 7 && MODE_DAILY < kMaxModes, "the Mixer plays the modes before Daily Fruit");
+static_assert(MODE_DAILY == 7 && MODE_COUNT < kMaxModes, "modes keep their places in the save");
 
 // ---------------------------------------------------------------- lifecycle
 void Game::start(Mode m) {
@@ -257,7 +258,7 @@ void Game::start(Mode m) {
 	sLightFrenzy = PORT_LIGHT_FRENZY && (m == MODE_FRENZY || m == MODE_COMBO);
 	phase = PHASE_READY;
 	assisted = assistedRun();
-	if (m < MODE_DAILY) {
+	if (mixerMode(m)) {
 		for (int i = 0; i < MIX_COUNT; i++) {
 			mix[i] = gSave.mixer[i] != 0;
 			mixed = mixed || mix[i];
@@ -273,6 +274,9 @@ void Game::start(Mode m) {
 		case MODE_SUDDEN: maxStrikes = 1; break;
 		case MODE_COMBO: feverMeter = kComboRushStart; break;
 		case MODE_DAILY: timeLeft = 60; break;
+		case MODE_RECIPE:
+		case MODE_SHARP: timeLeft = 60; break;
+		case MODE_JUGGLE: maxStrikes = kJuggleDrops; break;
 		default: break;
 	}
 	// Daily Fruit throws the day's sequence; every other run gets a fresh one.
@@ -284,6 +288,8 @@ void Game::start(Mode m) {
 	memcpy(journalStart, gSave.fruitSliced, sizeof journalStart);
 	if (m < MODE_COUNT && gSave.modePlays[m] < 0xFFFF) gSave.modePlays[m]++;
 	if (m == MODE_PRACTICE) practiceStart();
+	if (m == MODE_ORCHARD || m == MODE_BOSSRUSH) orcStart();
+	if (m >= MODE_BOSSRUSH && m <= MODE_JUGGLE) m12Start();
 #ifdef TEST_BALANCE
 	// Measures what each mode throws, so nothing ends a game early.
 	if (timeLeft <= 0 && m != MODE_PRACTICE) timeLeft = 120;
@@ -307,6 +313,11 @@ float Game::difficulty() const {
 		case MODE_MINEFIELD: rampTime = 90; rampScore = 200; break;
 		case MODE_COMBO: return clampf(chain / 60.0f, 0, 1);  // the combo sets the pace, nothing else
 		case MODE_DAILY: return clampf(dailyWave / 27.0f, 0, 1);  // by wave, so nothing the player does changes what is thrown
+		case MODE_ORCHARD:
+		case MODE_BOSSRUSH: return orcDifficulty();
+		case MODE_RECIPE:
+		case MODE_SHARP: rampTime = 90; rampScore = 500; break;
+		case MODE_JUGGLE: return clampf(elapsed / 120.0f, 0, 1);
 		default: break;
 	}
 	return clampf(elapsed / rampTime + score / rampScore, 0, 1);
@@ -333,7 +344,8 @@ void Game::launch(const Pending& p) {
 		o = {};
 		o.on = true;
 		o.kind = p.kind;
-		o.fruit = p.fruit;
+		o.fruit = p.kind == OBJ_FRUIT ? (u8)(p.fruit & 0x7F) : p.fruit;
+		if (p.kind == OBJ_FRUIT && (p.fruit & 0x80)) o.morph = gRng.range(1.1f, 1.7f);  // The Bomb King's decoy
 		o.x = p.x;
 		o.y = kSpawnY;
 		o.vx = p.vx;
@@ -351,6 +363,11 @@ void Game::launch(const Pending& p) {
 			audio::play(SFX_COIN, 0.75f, fieldPan(p.x), gRng.range(0.96f, 1.06f));
 		}
 		o.hits = p.kind != OBJ_FRUIT ? 1 : (p.fruit == kCoconut ? 2 : (p.fruit == kPinata ? kPinataHits : 1));
+		if (orchardLike() && orc.upgrade[CARD_BLADE] && o.kind == OBJ_FRUIT && o.hits > 1) o.hits = (u8)(o.fruit == kPinata ? (o.hits - orc.upgrade[CARD_BLADE] < 2 ? 2 : o.hits - orc.upgrade[CARD_BLADE]) : 1);
+		if (mode == MODE_SHARP && o.kind == OBJ_FRUIT && o.fruit < kSpiky) {
+			// Two in five wear the called colour, so there is always something to aim at.
+			o.tag = (u8)(1 + (gRng.unit() < 0.4f ? m12.call : gRng.below(kSharpColours)));
+		}
 		audio::play(SFX_THROW, 0.3f, fieldPan(p.x), gRng.range(0.9f, 1.15f));
 		if (p.kind == OBJ_BOMB) showCaption("Bomb!");
 #ifdef AUTOTEST
@@ -481,6 +498,8 @@ void Game::spawnWave() {
 	// Daily Fruit seeds every wave from the day and its number, so whatever happened in earlier waves
 	// (a pattern held back by a bomb, say), wave n throws the same for everyone.
 	if (mode == MODE_DAILY) gSpawn.s = progress::dailySeed(day + 0x10000u * ++dailyWave);
+	if (orchardLike() && orcWave()) return;
+	if (m12Wave()) return;
 	float d = difficulty();
 #ifdef AUTOTEST
 	statWaves++;
@@ -861,6 +880,7 @@ void Game::finishCombo() {
 	comboCount = 0;
 	comboTimer = 0;
 	if (mode == MODE_PRACTICE) practiceSwipe(n);
+	if (orchardLike()) orcCombo(n);
 	if (n < 3) return;
 	if (n > swipeBest && strokeLen > 1) {  // kept for the replay after a new best
 		swipeBest = n;
@@ -948,6 +968,17 @@ void Game::commitScore() {
 	gSave.totalFruit += sliced;
 	// Each coin caught is worth 5, and every 100 points adds one more.
 	if (mode == MODE_DAILY) dailyCoins = progress::dailyRecord(day, score);
+	if (orchardLike()) {
+		// Lucky Coin adds a quarter a level, and each boss beaten pays 10 more.
+		coinsBonus += (int)(runCoins() * 0.25f * orc.upgrade[CARD_LUCKY]) + 10 * orc.bossesBeaten;
+	}
+	if (mode == MODE_ORCHARD) {
+		if (gSave.orchardRuns < 0xFFFF) gSave.orchardRuns++;
+		if (orc.won && gSave.orchardWins < 0xFFFF) gSave.orchardWins++;
+		const int room = orc.won ? kOrchardRooms + 1 : orc.room;
+		if (room > gSave.orchardBestRoom) gSave.orchardBestRoom = (u16)room;
+		if (orc.level > gSave.orchardBestLevel) gSave.orchardBestLevel = (u16)orc.level;
+	}
 	coinsEarned = runCoins() + (u32)coinsBonus + journalCoins + dailyCoins;
 	u32 earned = coinsEarned;
 	gSave.coins = gSave.coins + earned < gSave.coins ? 0xFFFFFFFFu : gSave.coins + earned;
@@ -1088,6 +1119,7 @@ void Game::sliceFruit(Obj& o, const Blade& blade) {
 		return;
 	}
 
+	if (orchardLike()) orcSliced(o);
 	addHalves(o, def, blade, dx, dy);
 
 	if (gSave.effects != FX_NONE) {
@@ -1120,7 +1152,14 @@ void Game::sliceFruit(Obj& o, const Blade& blade) {
 			return;
 		}
 	}
+	if ((mode == MODE_RECIPE || mode == MODE_SHARP) && phase == PHASE_PLAY && !m12Sliced(o)) {
+		sliced++;  // the wrong fruit: cut, but it scores nothing and the combo ends
+		chain = 0;
+		o.on = false;
+		return;
+	}
 	int pts = o.kind == OBJ_GOLD ? 5 : (def.cut == CUT_SHELL ? 3 : (o.kind == OBJ_FRUIT && (o.fruit == kJelly || o.loose) ? 2 : 1));
+	if (mode == MODE_SHARP && o.tag) pts *= 2;  // a called fruit is worth double
 	if (mode == MODE_BEAT && phase == PHASE_PLAY && !beatSlice(o)) {
 		// Off the beat: the fruit is cut, but scores nothing and ends the combo.
 		sliced++;
@@ -1186,6 +1225,8 @@ void Game::hitBomb(Obj& o) {
 	switch (mode) {
 		case MODE_ARCADE:
 		case MODE_DAILY:
+		case MODE_RECIPE:
+		case MODE_SHARP:
 		case MODE_BEAT:
 			if (mode == MODE_BEAT) beatStreak = 0;
 			score = score > 10 ? score - 10 : 0;
@@ -1204,6 +1245,10 @@ void Game::hitBomb(Obj& o) {
 			break;
 		case MODE_PRACTICE:
 			practiceBomb();
+			break;
+		case MODE_ORCHARD:
+		case MODE_BOSSRUSH:
+			orcBomb(o);  // costs HP, not the run
 			break;
 		default:
 			setCallout("BOOM!", rgba(255, 110, 90));
@@ -1224,6 +1269,7 @@ void Game::sliceObj(Obj& o, const Blade& blade) {
 			// One coin and five points. It bursts into sparkles instead of splitting.
 			coinsCaught++;
 			coinPulse = 1;
+			if (orchardLike()) orcSliced(o);
 			if (mode == MODE_PRACTICE) practiceSliced(o);
 			if (mode != MODE_COMBO) {  // Combo Rush: combos are the whole score, though the coin still counts
 				award(5);
@@ -1238,6 +1284,7 @@ void Game::sliceObj(Obj& o, const Blade& blade) {
 			// Worth a point, and every seed caught in the swipe that cut the pomegranate adds to its combo.
 			const int pts = mode == MODE_COMBO ? comboRushPoints(chain + 1) : 1;
 			if (pts > 0) award(pts);
+			if (orchardLike()) orcSliced(o);
 			if (meterLive()) chain++;
 			if (chain > bestCombo) bestCombo = chain;
 			if (comboStroke != blade.strokeId && comboCount > 0) finishCombo();
@@ -1453,12 +1500,20 @@ void Game::testSlices(Blade& blade) {
 		blade.swishCooldown = 0.2f;
 	}
 	if (stunT > 0) return;  // a spiky fruit stunned the blade: nothing cuts, bombs included
+	if (mode == MODE_JUGGLE) {
+		juggleTest(blade);  // knocks, not cuts
+		return;
+	}
+	if (orchardLike()) {
+		bossTest(blade);
+		if (phase != PHASE_PLAY) return;
+	}
 	// Fruit is tested first. If this movement cut a fruit, a nearby bomb only counts on a much
 	// closer pass, so going for a fruit that's near a bomb is fair.
 	bool cutFruit = false;
 	for (auto& o : objs) {
 		if (!o.on || o.kind == OBJ_BOMB || o.hitCooldown > 0) continue;
-		if (hitTest(o, blade, o.radius * (0.7f + slider(gSave.forgiveness) * 0.006f) * kCutReach * (gSave.sliceAssist ? 1.3f : 1.0f) * (wideT > 0 ? 1.6f : 1.0f))) {
+		if (hitTest(o, blade, o.radius * (0.7f + slider(gSave.forgiveness) * 0.006f) * kCutReach * (gSave.sliceAssist ? 1.3f : 1.0f) * (wideT > 0 ? 1.6f : 1.0f) * (orchardLike() ? orcReach() : 1.0f))) {
 			if (o.kind == OBJ_FRUIT && o.fruit == kJelly && blade.speed < kJellySpeed) {
 				bounceJelly(o, blade);
 				continue;
@@ -1678,11 +1733,25 @@ void Game::updateObjects(float dt) {
 		o.ry += o.ryv * dt;
 		o.age += dt;
 		if (o.hitCooldown > 0) o.hitCooldown -= dt;
+		if (o.morph > 0 && o.kind == OBJ_FRUIT) {
+			// The Bomb King's decoy shows its true colours.
+			o.morph -= dt;
+			if (o.morph <= 0) {
+				o.morph = 0;
+				o.kind = OBJ_BOMB;
+				o.radius = 19;
+				o.hits = 1;
+				emitSparks(o.x, o.y, rgba(255, 190, 90), juiceCount(10), 120);
+				audio::play(SFX_KNOCK, 0.7f, fieldPan(o.x), 0.6f);
+				addPopup("TRICK!", o.x, o.y - 20, rgba(255, 140, 100), 0.55f);
+			}
+		}
 		if (o.vy > 0 && o.y > kKillY) {
 			o.on = false;
 			// A dropped spiky fruit, pinata or loose piece is never a miss.
 			bool counts = o.kind == OBJ_GOLD || (o.kind == OBJ_FRUIT && o.fruit != kSpiky && o.fruit != kGrape && o.fruit != kPinata && !o.loose);
 			if (counts && phase == PHASE_PLAY) addStrike(o.x);
+			if (counts && orchardLike()) orcDropped(o);
 		}
 	}
 }
@@ -1757,6 +1826,11 @@ void Game::update(Blade& blade) {
 	}
 
 	if (phase == PHASE_PLAY) {
+		if (orchardHeld()) {
+			// Orchard Blast: the cards are up, or the 3, 2, 1 after them. Everything holds still.
+			if (!orc.choosing && orc.resumeT > 0) orc.resumeT -= kDt;
+			return;
+		}
 		elapsed += kDt;
 		if (!assisted && assistedRun()) {  // turned on from the pause menu: this run is assisted now
 			assisted = true;
@@ -1764,6 +1838,7 @@ void Game::update(Blade& blade) {
 		}
 		float objDt = (freezeT > 0 ? kDt * 0.45f : kDt) * (0.7f + slider(gSave.fruitSpeed) * 0.006f) * gameSpeedScale();
 		if (chiliT > 0) objDt *= 1.3f;  // the chili rush
+		if (orchardLike()) objDt *= orcObjScale();  // Steady Hands, Slow-Mo, Freeze Pop
 		updateTricks(blade);
 		if (slowT > 0) {
 			objDt *= 0.3f;
@@ -1860,6 +1935,8 @@ void Game::update(Blade& blade) {
 			recordStroke(blade);
 			testSlices(blade);
 		}
+		if (orchardLike() && phase == PHASE_PLAY) orcUpdate(blade);
+		if (mode >= MODE_RECIPE && mode <= MODE_JUGGLE && phase == PHASE_PLAY) m12Update();
 		if (comboCount > 0) {
 			comboTimer -= kDt;
 			if (comboTimer <= 0 || !blade.active) finishCombo();
@@ -1900,6 +1977,7 @@ void Game::update(Blade& blade) {
 			phaseT = 0;
 			commitScore();
 			audio::play(newBest ? SFX_BEST : SFX_OVER);
+			audio::bossMusicEnd();  // a run lost to a boss: its track gives way to the game over sound
 		}
 		return;
 	}
@@ -2103,6 +2181,7 @@ void Game::drawField(const Blade& blade) const {
 		gfx::sprite(SHEET_SPRITES, sprites_glow_idx, finaleX, finaleY, g * 1.5f, g * 1.5f, 0, rgba(255, 190, 70, 170));
 	}
 
+	if (orchardLike()) drawOrchardField();  // the boss sits behind the fruit
 	drawMarks(false, 0, 0);
 	if (solid) drawObjects3D(false, 0, 0);
 	else drawObjects2D(false, 0, 0);
@@ -2124,6 +2203,7 @@ void Game::drawField(const Blade& blade) const {
 				break;
 		}
 	}
+	if (mode >= MODE_RECIPE && mode <= MODE_JUGGLE) drawModes12Field();
 	if (finaleOn && finaleT > kFinaleRise) {
 		// Time left, as a bar along the top of the field.
 		float left = 1 - (finaleT - kFinaleRise) / kFinaleWindow;
@@ -2150,6 +2230,7 @@ void Game::drawField(const Blade& blade) const {
 		if (!p.on) continue;
 		gfx::text(p.text, p.x, p.y - 12, p.scale * uiScale(), withAlpha(p.color, clampf(p.life * 2.5f, 0, 1)), ALIGN_CENTER);
 	}
+	if (orchardLike()) drawOrchardOverlay();
 	drawSwipeReplay();
 #if PORT_TWO_SCREENS
 	if (mode == MODE_PRACTICE) drawPractice();  // one screen: drawn over the score sign instead, in drawHud
@@ -2205,9 +2286,13 @@ void Game::drawHud() const {
 
 	gfx::setDepth(0.9f);
 	gfx::text(modeName(mode), 380, 10, 0.5f, COL_CREAM, ALIGN_RIGHT);
+	if (orchardLike()) {
+		drawOrchardHud(380, 28, 220, 1);
+	} else {
 	if (passName) snprintf(buf, sizeof buf, "%s", passName);
 	else snprintf(buf, sizeof buf, mixed ? "MIXER BEST %lu" : (assisted ? "ASSISTED BEST %lu" : "BEST %lu"), (unsigned long)(score > best ? score : best));
 	gfx::text(buf, 380, 28, 0.42f, COL_DIM, ALIGN_RIGHT);
+	}
 
 	if (maxStrikes > 0) {
 		for (int i = 0; i < maxStrikes; i++) {
@@ -2341,9 +2426,13 @@ void Game::drawHud() const {
 		drawBeat(rx - 50 * u, 14 * u, u);
 		rx -= 60 * u;
 	}
+	if (orchardLike()) {
+		drawOrchardHud(rx, 0, rx - 16 - gfx::textWidth("00000", 0.58f * u) - 20, u);
+	} else {
 	if (passName) snprintf(buf, sizeof buf, "%s", passName);
 	else snprintf(buf, sizeof buf, mixed ? "MIXER BEST %lu" : (assisted ? "ASSISTED BEST %lu" : "BEST %lu"), (unsigned long)(score > best ? score : best));
 	gfx::text(buf, rx, 9 * u, 0.3f * u, COL_DIM, ALIGN_RIGHT);
+	}
 
 	const float bx = 12, by = 28 * u, bw = kFieldW - 24;
 	if (meterLive()) gfx::rect(bx - 1, by - 1, bw + 2, 6, gfx::themeBar());
@@ -2602,7 +2691,18 @@ void Game::labProbes(Blade& blade, void (*check)(bool, const char*, const char*)
 	check(stand[kPinata] == 0 && spare == 0, "No pinata too early, and the rest share its turn", d);
 	check(progress::fruitName(kPinata)[0] != 0, "Every new fruit has a Journal name", "");
 
+	labOrchard(check);
+	labModes12(check);
+
 	setup(MODE_ZEN);  // leave nothing live for the screens that follow
 	phase = PHASE_OVER;
 }
 #endif
+
+// ---------------------------------------------------------------- helpers for the modes in their own files
+int normalFruitOf(Rng& rng) { return normalFruit(rng); }
+int trickFruitOf(Mode mode, Rng& rng, bool pinata) { return pickTrick(mode, rng, pinata); }
+int juiceAmount(int base) { return juiceCount(base); }
+bool drawing3D() { return use3D(); }
+int fruitMeshOf(int fruit) { return kFruit[fruit >= 0 && fruit < kFruitKinds ? fruit : 0].mesh; }
+float acrossScale() { return acrossK(); }

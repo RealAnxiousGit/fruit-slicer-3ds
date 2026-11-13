@@ -38,8 +38,16 @@ extern Rng gRng;
 // from the date, so everyone gets the same run whatever their screen layout or effects.
 extern Rng gSpawn;
 
-// Daily Fruit is the last mode on the list. The Practice run comes after the list: it keeps no score.
-enum Mode { MODE_CLASSIC, MODE_ARCADE, MODE_ZEN, MODE_FRENZY, MODE_SUDDEN, MODE_MINEFIELD, MODE_COMBO, MODE_DAILY, MODE_BEAT, MODE_COUNT, MODE_PRACTICE = MODE_COUNT };
+// New modes go at the end of the list, so saved scores keep their places. The Practice run comes after
+// the list: it keeps no score.
+enum Mode {
+	MODE_CLASSIC, MODE_ARCADE, MODE_ZEN, MODE_FRENZY, MODE_SUDDEN, MODE_MINEFIELD, MODE_COMBO, MODE_DAILY, MODE_BEAT,
+	MODE_ORCHARD, MODE_BOSSRUSH, MODE_RECIPE, MODE_SHARP, MODE_JUGGLE,  // 1.2
+	MODE_COUNT, MODE_PRACTICE = MODE_COUNT
+};
+// The Mixer's rules can change a run of this mode. Daily Fruit and Beat Slice throw a fixed sequence,
+// and Boss Rush hands out fixed builds, so those three keep to their own rules.
+inline bool mixerMode(int m) { return m < MODE_COUNT && m != MODE_DAILY && m != MODE_BEAT && m != MODE_BOSSRUSH; }
 
 struct ModeInfo {
 	const char* name;
@@ -78,16 +86,18 @@ constexpr int kMaxShopItems = 31;  // one bit each in the save, with bit 0 kept 
 // Save data (save.cpp). Sliders hold 0..100.
 // From 1.0 ("FLS5") the file records its own size, so this struct only ever grows:
 // new shared fields take bytes from `reserved`, and older saves load with the rest at defaults.
-constexpr int kMaxModes = 12;
+constexpr int kOldModes = 12;   // the score tables up to 1.1, kept where they were and read once by 1.2
+constexpr int kMaxModes = 24;   // the score tables from 1.2, after the port block
 constexpr int kMaxFruitKinds = 24;
 constexpr int kMaxTracks = 16;
 constexpr int kDailyDays = 32;
+constexpr int kMaxBosses = 32;  // one bit each in bossesBeaten
 struct Settings {
 	// Scores and progress
-	u32 best[kMaxModes];
+	u32 best11[kOldModes];  // 1.1's bests: copied into best[] once, then unused
 	u32 totalFruit;
 	u32 bestCombo;
-	u32 bestAssisted[kMaxModes];  // runs with Slice Assist on or Game Speed below 100%
+	u32 bestAssisted11[kOldModes];
 	u32 coins, coinsLifetime;
 	u32 playSeconds;
 	u32 fruitSliced[kMaxFruitKinds];  // Fruit Journal, by mesh kind
@@ -133,7 +143,7 @@ struct Settings {
 	u8 practiceDone;
 	u8 trail;        // Shop blade trail, 0 none
 	u8 beatTrack;     // Beat Slice: 0 picks Picnic Stroll, otherwise the track number + 1
-	u16 modePlays[kMaxModes];  // runs started, for the Stats page's favourite mode
+	u16 modePlays11[kOldModes];  // 1.1's counts: copied into modePlays[] once
 	u16 dailyFirstDay;  // the day (as dailyDay) the Daily Fruit calendar began, 0 = not yet
 	u8 splat;         // Shop splat colour, 0 keeps each fruit's own juice
 	u8 scoreRules;    // which rule changes this save's bests have been through (see saveRetireOldBests)
@@ -148,9 +158,24 @@ struct Settings {
 		u8 portBlock[32];
 	};
 	// Fields too big for `reserved` go here, after the port block, so nothing already saved moves.
-	u32 bestMixer[kMaxModes];  // runs with any Mixer rule on
+	u32 bestMixer11[kOldModes];  // 1.1's Mixer bests: copied into bestMixer[] once
+	// 1.2: the score tables, with room for 24 modes.
+	u32 best[kMaxModes];
+	u32 bestAssisted[kMaxModes];  // runs with Slice Assist on or Game Speed below 100%
+	u32 bestMixer[kMaxModes];     // runs with any Mixer rule on
+	u16 modePlays[kMaxModes];     // runs started, for the Stats page's favourite mode
+	// Orchard Blast and the bosses.
+	u32 bossesBeaten;       // bit n: boss n has been beaten (Fruit Journal, and its tracks in the Shop)
+	u32 bossTracksSeen;     // bit n: boss n's tracks have been shown as new in the Shop
+	u16 orchardBestRoom, orchardBestLevel;
+	u16 orchardRuns, orchardWins;
+	u8 bossMusic;           // 1 plays the boss tracks in a boss fight
+	u8 howToSeen;           // how-tos shown: bit 0 Orchard Blast, 1 its first boss, 2 Boss Rush, 3 Recipe, 4 Sharpshooter, 5 Juggle
+	u8 bossTrackLast[4];    // per boss, the track (+1) heard in its last fight, so the next one differs
+	u8 reserved12[30];      // later 1.2.x fields take bytes from here
 };
 static_assert(MODE_COUNT + 1 <= kMaxModes, "more modes than the save holds");
+static_assert(MODE_JUGGLE - MODE_ORCHARD + 2 <= 8, "howToSeen has a bit for each how-to");
 extern Settings gSave;
 // Beat Timing in seconds: how far after the beat this player's slices land (Latency Test sets it).
 inline float beatLatencySec() { return ((int)gSave.beatLatency - 100) * 0.002f; }

@@ -10,6 +10,8 @@ enum Sfx {
 	SFX_STRIKE, SFX_CLICK, SFX_POWER, SFX_FREEZE, SFX_FEVER, SFX_GO, SFX_OVER, SFX_BEST, SFX_GOLD,
 	SFX_FINALE_RISE, SFX_FINALE_HIT, SFX_FINALE_BURST,
 	SFX_COIN, SFX_PLINK, SFX_SHOPBELL,
+	SFX_CLANG, SFX_OPEN, SFX_ROAR, SFX_BOSSIN, SFX_VICTORY, SFX_POP,
+	SFX_LAUGH, SFX_CHUCKLE, SFX_WHOOSH, SFX_LAUNCH,
 	SFX_COUNT
 };
 enum Music { MUSIC_NONE = -1, MUSIC_MENU, MUSIC_PLAY, MUSIC_ZEN, MUSIC_COUNT };
@@ -24,6 +26,8 @@ void loadStep(int i);
 void update(float dt);  // once per frame, with the game time that passed: reads music in, and frees a replaced track when it's safe
 void shutdown();
 bool available();
+bool loaded(Sfx s);  // that sound effect's clip is in memory (the Lab checks every one)
+bool trackFileThere(int track);  // that track's file is in the game's files, with a good header
 // pan is -1 (left) to +1 (right). pitch multiplies the playback rate, so one clip can vary.
 void play(Sfx s, float volume = 1.0f, float pan = 0.0f, float pitch = 1.0f);
 void click(float volume = 1.0f);  // menu sound, on its own volume slider
@@ -35,6 +39,11 @@ void previewFade(float level);  // 0..1 on top of the Music slider: the Shop fad
 // The sizzle that plays while a bomb is in the air.
 void fuse(bool on, float pan = 0.0f);
 void musicSpeed(float factor);  // the chili pepper plays the music a little faster for a while
+// Boss fights: the room's music fades out and this track loops in its place (it needn't be owned). At the end
+// the room's music fades back in where it was. A new screen's music() ends the fight's music at once.
+void bossMusic(int track);
+void bossMusicEnd();
+bool bossMusicOn();  // from the fade out until the room's music is back at full volume
 // Beat Slice: plays this track from its very start, whatever the Game Music choice, until the next music().
 void musicBeat(int track);
 float musicTime();           // seconds into the playing track, or -1 while it is still loading or silent

@@ -28,7 +28,7 @@
 #include "custom_music.h"
 #endif
 
-#define VERSION_STRING "1.1.0"
+#define VERSION_STRING "1.2.0"
 
 #if PORT_TWO_SCREENS
 static constexpr float kSlideTop = 400, kSlideBottom = 320;
@@ -306,11 +306,12 @@ enum { SIGN_MIXER = MODE_COUNT + 1, SIGN_PASS };  // signs on Pick a Game that o
 // mode's info sign. The 3DS can't touch its top screen, so there it stays a sign among the modes.
 static constexpr bool kMixerFruit = !PORT_3DS;
 #if PORT_3DS
-static const u8 kModeOrder[] = {MODE_CLASSIC, MODE_ARCADE, MODE_FRENZY, MODE_ZEN, MODE_SUDDEN, MODE_DAILY, MODE_MINEFIELD, MODE_COMBO, MODE_BEAT, SIGN_MIXER, SIGN_PASS};
+static const u8 kModeOrder[] = {MODE_CLASSIC, MODE_ARCADE, MODE_FRENZY, MODE_ZEN, MODE_SUDDEN, MODE_DAILY, MODE_MINEFIELD, MODE_COMBO, MODE_BEAT, MODE_ORCHARD, MODE_BOSSRUSH, MODE_RECIPE, MODE_SHARP, MODE_JUGGLE, SIGN_MIXER, SIGN_PASS};
 #else
-static const u8 kModeOrder[] = {MODE_CLASSIC, MODE_ARCADE, MODE_FRENZY, MODE_ZEN, MODE_SUDDEN, MODE_DAILY, MODE_MINEFIELD, MODE_COMBO, MODE_BEAT, SIGN_PASS};
+static const u8 kModeOrder[] = {MODE_CLASSIC, MODE_ARCADE, MODE_FRENZY, MODE_ZEN, MODE_SUDDEN, MODE_DAILY, MODE_MINEFIELD, MODE_COMBO, MODE_BEAT, MODE_ORCHARD, MODE_BOSSRUSH, MODE_RECIPE, MODE_SHARP, MODE_JUGGLE, SIGN_PASS};
 #endif
-static_assert(sizeof kModeOrder == MODE_COUNT + 2 - (kMixerFruit ? 1 : 0), "a sign for every mode");
+static constexpr int kModesComing = 0;  // modes not built yet, so they have no sign
+static_assert(sizeof kModeOrder == MODE_COUNT + 2 - (kMixerFruit ? 1 : 0) - kModesComing, "a sign for every mode");
 static constexpr int kModesPerPage = 6;
 static constexpr int kModePages = ((int)sizeof kModeOrder + kModesPerPage - 1) / kModesPerPage;
 static constexpr float kModeTop = 46, kModeStep = 58, kModeSignW = 124, kModeSignH = 52;
@@ -1116,8 +1117,8 @@ static const char* const kTrackRowNames[kTrackCount + 1] = {
 
 // Pass and Play: 2 to 4 people take one run each on the same device, and the highest score wins.
 static constexpr int kPassMax = 4, kPassNameLen = 10;
-static const u8 kPassModes[] = {MODE_CLASSIC, MODE_ARCADE, MODE_FRENZY, MODE_SUDDEN, MODE_MINEFIELD, MODE_COMBO};
-static const char* const kPassModeNames[] = {"Classic", "Arcade", "Frenzy", "Sudden Death", "Minefield", "Combo Rush"};
+static const u8 kPassModes[] = {MODE_CLASSIC, MODE_ARCADE, MODE_FRENZY, MODE_SUDDEN, MODE_MINEFIELD, MODE_COMBO, MODE_RECIPE, MODE_SHARP, MODE_JUGGLE};
+static const char* const kPassModeNames[] = {"Classic", "Arcade", "Frenzy", "Sudden Death", "Minefield", "Combo Rush", "Recipe", "Sharpshooter", "Juggle"};
 static const char* const kPassCounts[] = {"2", "3", "4"};
 static u8 sPassPlayers = 0, sPassModeRow = 0;  // row values: players is 0 for two people
 static char sPassNames[kPassMax][kPassNameLen + 1];
@@ -1166,7 +1167,7 @@ static int passWinner() {
 
 static const Row kPassRows[] = {
 	{ROW_CHOICE, "Players", &sPassPlayers, 0, 2, kPassCounts, 0, 0, ACT_NONE, "Everyone takes one turn", "on this device."},
-	{ROW_CHOICE, "Game", &sPassModeRow, 0, 5, kPassModeNames, 0, 0, ACT_NONE, "Everyone plays this mode.", "Scores here don't change your bests."},
+	{ROW_CHOICE, "Game", &sPassModeRow, 0, 8, kPassModeNames, 0, 0, ACT_NONE, "Everyone plays this mode.", "Scores here don't change your bests."},
 	{ROW_ACTION, sPassNames[0], nullptr, 0, 0, nullptr, 0, 0, ACT_PASS_NAME, "Choose it to type a name.", ""},
 	{ROW_ACTION, sPassNames[1], nullptr, 0, 0, nullptr, 0, 0, ACT_PASS_NAME, "Choose it to type a name.", ""},
 	{ROW_ACTION, sPassNames[2], nullptr, 0, 0, nullptr, 0, 0, ACT_PASS_NAME, "Choose it to type a name.", ""},
@@ -1180,7 +1181,7 @@ static int passRowPlayer(const Row& r) {
 }
 
 static const Row kMixerRows[] = {
-	{ROW_CHOICE, "Low Gravity", &gSave.mixer[MIX_LOW_GRAVITY], 0, 1, kOffOn, 0, 0, ACT_NONE, "Fruit floats and hangs in the air.", "Not used in Daily Fruit or Beat Slice."},
+	{ROW_CHOICE, "Low Gravity", &gSave.mixer[MIX_LOW_GRAVITY], 0, 1, kOffOn, 0, 0, ACT_NONE, "Fruit floats and hangs in the air.", "Not used in Daily, Beat Slice or Boss Rush."},
 	{ROW_CHOICE, "Giant Fruit", &gSave.mixer[MIX_GIANT], 0, 1, kOffOn, 0, 0, ACT_NONE, "Every fruit is half as big again.", "Turns Tiny Fruit off."},
 	{ROW_CHOICE, "Tiny Fruit", &gSave.mixer[MIX_TINY], 0, 1, kOffOn, 0, 0, ACT_NONE, "Small fruit, harder to hit.", "Turns Giant Fruit off."},
 	{ROW_CHOICE, "Mirror", &gSave.mixer[MIX_MIRROR], 0, 1, kOffOn, 0, 0, ACT_NONE, "Your blade moves left when", "you move right."},
@@ -1193,6 +1194,7 @@ static const Row kAudioRows[] = {
 	{ROW_SLIDER, "Menu Sounds", &gSave.menuSfx, 0, 100, nullptr, 0, 100, ACT_NONE, "The tap when you press a sign.", ""},
 	{ROW_CHOICE, "Menu Music", &gSave.menuTrack, 0, kTrackCount, kTrackRowNames, 0, 0, ACT_NONE, "What plays in the menus. Auto", "shuffles every track you own."},
 	{ROW_CHOICE, "Game Music", &gSave.gameTrack, 0, kTrackCount, kTrackRowNames, 0, 0, ACT_NONE, "What plays during a game. Auto", "shuffles them; Zen keeps it calm."},
+	{ROW_CHOICE, "Boss Music", &gSave.bossMusic, 0, 1, kOffOn, 0, 0, ACT_NONE, "Boss fights get their own music.", "Off keeps your music playing."},
 	{ROW_ACTION, "Latency Test", nullptr, 0, 0, nullptr, 0, 0, ACT_LATENCY, "Slice in time with a metronome", "to set Beat Timing for you."},
 	{ROW_SLIDER, "Beat Timing", &gSave.beatLatency, 0, 200, nullptr, 0, 0, ACT_NONE, "Moves the Beat Slice beat. Raise it", "if your slices land late."},
 	{ROW_ACTION, "Reset Audio", nullptr, 0, 0, nullptr, 0, 0, ACT_RESET_AUDIO, "Puts these back to their defaults.", ""},
@@ -1760,7 +1762,7 @@ static bool sPreviewOver;     // the song on show had its turn, and the music in
 static void shopTryOn() {
 	const u8 track = gSave.menuTrack;
 	shopPutBack();
-	*shopSlot(sShopTab) = (u8)shopValue(sShopTab, sShopItem);
+	if (!shopLocked(sShopTab, sShopItem)) *shopSlot(sShopTab) = (u8)shopValue(sShopTab, sShopItem);
 	if (gSave.menuTrack != track) {
 		audio::previewFade(1);
 		audio::preview(MUSIC_MENU);
@@ -1847,7 +1849,21 @@ static void shopEquipNow() {
 	}
 }
 
+static const char* bossName(int boss) { return boss == 0 ? "The Big Melon" : "The Bomb King"; }
+
+// "Beat The Big Melon to unlock", for a locked boss track.
+static const char* shopUnlockLine(int item) {
+	static char line[48];
+	snprintf(line, sizeof line, "Beat %s to unlock", bossName(trackBoss(kBaseTracks + item)));
+	return line;
+}
+
 static void shopAct() {
+	if (shopLocked(sShopTab, sShopItem)) {
+		audio::click(0.4f);
+		shopNote(shopUnlockLine(sShopItem));
+		return;
+	}
 	if (shopOwned(sShopTab, sShopItem)) {
 		shopEquipNow();
 		audio::play(SFX_GOLD, 0.6f);
@@ -1881,6 +1897,10 @@ static void shopSetTab(int tab) {
 	sShopArmT = 0;
 	rowReset(sShopList);
 	shopTryOn();
+	if (tab == SHOP_MUSIC && shopHasNew()) {
+		shopSeenNew();
+		shopSave();
+	}
 }
 
 static void updateShop(const Input& in, bool wasTouching) {
@@ -1983,6 +2003,16 @@ static void updateShop(const Input& in, bool wasTouching) {
 	}
 }
 
+// A padlock: a shackle over a body with a keyhole. s scales it from tile size.
+static void drawPadlock(float cx, float cy, float s) {
+	const u32 metal = rgba(200, 196, 180), body = rgba(214, 170, 70), hole = rgba(60, 40, 20);
+	gfx::rect(cx - 7 * s, cy - 13 * s, 2.5f * s, 9 * s, metal);
+	gfx::rect(cx + 4.5f * s, cy - 13 * s, 2.5f * s, 9 * s, metal);
+	gfx::rect(cx - 7 * s, cy - 15 * s, 14 * s, 2.5f * s, metal);
+	gfx::rect(cx - 10 * s, cy - 5 * s, 20 * s, 15 * s, body);
+	gfx::rect(cx - 1.5f * s, cy - 1 * s, 3 * s, 6 * s, hole);
+}
+
 static void drawShopIcon(int tab, int item, float cx, float cy) {
 	if (tab == SHOP_THEMES) {
 		int b = kBaseBoards + item;
@@ -2041,6 +2071,7 @@ static void drawShop() {
 		Button b = shopButton(kShopTab0 + i);
 		drawPlank(b.x, b.y, b.w, b.h, f == kShopTab0 + i, sPressed == kShopTab0 + i);
 		gfx::text(b.label, b.x + b.w / 2, b.y + 6, 0.38f, i == sShopTab ? COL_ACCENT : COL_DIM, ALIGN_CENTER);
+		if (i == SHOP_MUSIC && shopHasNew()) gfx::text("NEW", b.x + b.w - 3, b.y - 5, 0.26f + sinf(sTime * 6) * 0.015f, rgba(255, 230, 120), ALIGN_RIGHT);
 	}
 	const int n = shopCount(sShopTab);
 	gfx::setClip(0, kShopWindowTop, 320, kShopWindowH);
@@ -2053,18 +2084,22 @@ static void drawShop() {
 		drawPlank(b.x, b.y, b.w, b.h, sel, pressed);
 		if (!sel && f == kShopTile0 + k) gfx::sign(sprites_plank_focus_idx, b.x - 2, b.y - 2 + (pressed ? 2 : 0), b.w + 4, b.h + 4, withAlpha(COL_CREAM, 0.5f));
 		const ShopItem& it = shopItem(sShopTab, k);
+		const bool locked = shopLocked(sShopTab, k);
 		// A name too long for one line goes on two, so it stays as big as its neighbours. The icon moves up for it.
 		char top[32], bottom[32];
-		const bool two = splitLine(it.name, 0.3f, b.w - 10, top, bottom, sizeof top);
-		drawShopIcon(sShopTab, k, b.x + b.w / 2, b.y + (two ? 12 : 15));
+		const bool two = splitLine(locked ? "Boss Track" : it.name, 0.3f, b.w - 10, top, bottom, sizeof top);
+		if (locked) drawPadlock(b.x + b.w / 2, b.y + (two ? 14 : 17), 0.8f);
+		else drawShopIcon(sShopTab, k, b.x + b.w / 2, b.y + (two ? 12 : 15));
 		if (two) {
 			fitText(top, b.x + b.w / 2, b.y + 20, 0.28f, b.w - 8, COL_CREAM);
 			fitText(bottom, b.x + b.w / 2, b.y + 30, 0.28f, b.w - 8, COL_CREAM);
 		} else {
-			fitText(it.name, b.x + b.w / 2, b.y + 26, 0.3f, b.w - 10, COL_CREAM);
+			fitText(locked ? "Boss Track" : it.name, b.x + b.w / 2, b.y + 26, 0.3f, b.w - 10, COL_CREAM);
 		}
 		const float priceY = b.y + 41;
-		if (shopInUse(sShopTab, k)) {
+		if (locked) {
+			gfx::text("LOCKED", b.x + b.w / 2, priceY, 0.27f, COL_DIM, ALIGN_CENTER);
+		} else if (shopInUse(sShopTab, k)) {
 			gfx::text("IN USE", b.x + b.w / 2, priceY, 0.27f, COL_ACCENT, ALIGN_CENTER);
 		} else if (shopOwned(sShopTab, k)) {
 			gfx::text("OWNED", b.x + b.w / 2, priceY, 0.27f, COL_DIM, ALIGN_CENTER);
@@ -2082,18 +2117,29 @@ static void drawShop() {
 	const ShopItem& it = shopItem(sShopTab, sShopItem);
 	bool owned = shopOwned(sShopTab, sShopItem);
 	const bool inUse = shopInUse(sShopTab, sShopItem);
-	if (owned) snprintf(buf, sizeof buf, "%s", inUse ? (shopCanTakeOff(sShopTab) ? "Take Off" : "In Use") : "Use");
+	const bool locked = shopLocked(sShopTab, sShopItem);
+	if (locked) snprintf(buf, sizeof buf, "Locked");
+	else 	if (owned) snprintf(buf, sizeof buf, "%s", inUse ? (shopCanTakeOff(sShopTab) ? "Take Off" : "In Use") : "Use");
 	else if (sShopArmT > 0) snprintf(buf, sizeof buf, "Sure? %u", (unsigned)it.price);
 	else snprintf(buf, sizeof buf, "Buy %u", (unsigned)it.price);
 	Button a = shopButton(kShopAct);
 	drawPlank(a.x, a.y, a.w, a.h, f == kShopAct, sPressed == kShopAct);
-	gfx::text(buf, a.x + a.w / 2, a.y + 8, 0.44f, owned || gSave.coins >= it.price ? COL_CREAM : COL_DIM, ALIGN_CENTER);
+	gfx::text(buf, a.x + a.w / 2, a.y + 8, 0.44f, (!locked && (owned || gSave.coins >= it.price)) ? COL_CREAM : COL_DIM, ALIGN_CENTER);
 }
 
 // What the focused item is, with its live preview: the top screen on the 3DS, beside the menu elsewhere.
 static void drawShopPreview() {
 	const ShopItem& it = shopItem(sShopTab, sShopItem);
 	gfx::setDepth(0.7f);
+	if (shopLocked(sShopTab, sShopItem)) {
+		gfx::text("Locked Boss Track", 200, 22, 0.6f, COL_ACCENT, ALIGN_CENTER);
+		gfx::text(shopUnlockLine(sShopItem), 200, 52, 0.38f, COL_CREAM, ALIGN_CENTER);
+		gfx::setDepth(0.5f);
+		drawPadlock(200, 118, 2.2f);
+		fitText("Its music stays a surprise until then.", 200, 160, 0.36f, 290, COL_DIM);
+		if (sShopNoteT > 0) gfx::text(sShopNote, 200, 205, 0.42f, withAlpha(COL_CREAM, clampf(sShopNoteT * 2, 0, 1)), ALIGN_CENTER);
+		return;
+	}
 	gfx::text(it.name, 200, 22, 0.6f, COL_ACCENT, ALIGN_CENTER);
 	gfx::text(it.line, 200, 52, 0.38f, COL_CREAM, ALIGN_CENTER);
 	if (sShopTab == SHOP_THEMES) {
@@ -2765,6 +2811,22 @@ static const CreditLine kCredits[] = {
 	{CR_NOTE, "NickBin"},
 	{CR_LINE, "JUST STAY WITH ME"},
 	{CR_NOTE, "NickBin"},
+	{CR_HEAD, "Boss Music"},
+	{CR_LINE, "Seed Spitter, Rind and Run,"},
+	{CR_LINE, "Long Live the Fuse, Powder Keg Court"},
+	{CR_NOTE, "made in code for Fruit Slicer"},
+	{CR_GAP, nullptr},
+	{CR_LINE, "8bit Action Boss Battle"},
+	{CR_NOTE, "MintoDog, CC0"},
+	{CR_LINE, "Boss Fight 2"},
+	{CR_NOTE, "ansimuz, CC0"},
+	{CR_LINE, "Boss Fight Bounce"},
+	{CR_NOTE, "Locomule, CC0"},
+	{CR_LINE, "Epic Boss Battle"},
+	{CR_NOTE, "Juhani Junkala, CC0"},
+	{CR_LINE, "A Champion's Will"},
+	{CR_NOTE, "ATMANAN, CC BY 4.0"},
+	{CR_NOTE, "all from OpenGameArt.org"},
 	{CR_HEAD, "Art and Sound"},
 	{CR_LINE, "Sprites, 3D models, boards,"},
 	{CR_LINE, "the font and every sound"},
@@ -2895,13 +2957,16 @@ static Button journalButton(int i) {
 	const int p = i - 1;
 	return {10.0f + (p % kJournalCols) * 60, kJournalTop + (p / kJournalCols) * kJournalStep - sJournalList.pos, 58, 45, nullptr};
 }
-static int journalHiddenRows() { return (progress::journalPages() + kJournalCols - 1) / kJournalCols - kJournalRowsShown; }
+// The Bosses page follows the fruit: a sticker for each boss, dark until it is beaten.
+static int journalTiles() { return progress::journalPages() + BOSS_COUNT; }
+static bool journalIsBoss(int p) { return p >= progress::journalPages(); }
+static int journalHiddenRows() { return (journalTiles() + kJournalCols - 1) / kJournalCols - kJournalRowsShown; }
 static const u32 kUnfound = rgba(40, 28, 20, 225);
 
 static void updateJournal(const Input& in, bool wasTouching) {
-	const int n = progress::journalPages() + 1;
+	const int n = journalTiles() + 1;
 	if (rowScroll(sJournalList, in, wasTouching, kJournalWindowTop, kJournalWindowTop + kJournalWindowH, kJournalStep, journalHiddenRows())) sPressed = -1;
-	Button btns[progress::kNamedFruit + 1];
+	Button btns[progress::kNamedFruit + BOSS_COUNT + 1];
 	for (int i = 0; i < n; i++) btns[i] = journalButton(i);
 	int& f = sFocus[SCREEN_JOURNAL];
 	if (f < 0 || f >= n) f = 1;
@@ -2930,15 +2995,36 @@ static void updateJournal(const Input& in, bool wasTouching) {
 	if (t == 0) cutBack(SCREEN_JOURNAL);
 }
 
+static bool bossBeaten(int boss) { return gSave.bossesBeaten >> boss & 1; }
+static int bossSprite(int boss) { return boss == BOSS_MELON ? sprites_boss_melon_guard_idx : sprites_boss_king_guard_idx; }
+
+static void drawJournalBossTile(const Button& b, int boss, bool focused, bool pressed) {
+	drawPlank(b.x, b.y, b.w, b.h, focused, pressed);
+	const float cx = b.x + b.w * 0.5f;
+	const bool beaten = bossBeaten(boss);
+	gfx::sprite(SHEET_SPRITES, bossSprite(boss), cx, b.y + 17, 0.42f, 0.42f, 0, beaten ? WHITE : kUnfound);
+	// A small crown marks it as a boss.
+	const u32 gold = beaten ? rgba(255, 210, 80) : rgba(90, 80, 70, 220);
+	gfx::rect(cx - 7, b.y + 3, 14, 3, gold);
+	gfx::tri(cx - 7, b.y + 3, gold, cx - 5, b.y - 2, gold, cx - 3, b.y + 3, gold);
+	gfx::tri(cx - 2, b.y + 3, gold, cx, b.y - 3, gold, cx + 2, b.y + 3, gold);
+	gfx::tri(cx + 3, b.y + 3, gold, cx + 5, b.y - 2, gold, cx + 7, b.y + 3, gold);
+	gfx::text(beaten ? "BEATEN" : "?", cx, b.y + 32, 0.26f, focused ? COL_ACCENT : COL_CREAM, ALIGN_CENTER);
+}
+
 static void drawJournal() {
 	const int f = sFocus[SCREEN_JOURNAL];
 	drawHeader("Fruit Journal");
 	drawBackArrow(f == 0, sPressed == 0);
 	char buf[12];
 	gfx::setClip(0, kJournalWindowTop, 320, kJournalWindowH);
-	for (int p = 0; p < progress::journalPages(); p++) {
+	for (int p = 0; p < journalTiles(); p++) {
 		const Button b = journalButton(p + 1);
 		if (b.y + b.h + 2 < kJournalWindowTop || b.y - 2 > kJournalWindowTop + kJournalWindowH) continue;
+		if (journalIsBoss(p)) {
+			drawJournalBossTile(b, p - progress::journalPages(), f == p + 1, sPressed == p + 1);
+			continue;
+		}
 		const int fruit = progress::journalFruit(p);
 		const u32 count = gSave.fruitSliced[fruit];
 		const bool focused = f == p + 1;
@@ -2953,6 +3039,28 @@ static void drawJournal() {
 	}
 	gfx::clearClip();
 	drawScrollMark(kJournalTop, kJournalRowsShown * kJournalStep - 2, sJournalList.pos, journalHiddenRows() * kJournalStep);
+}
+
+// A boss's page: who it is, where it waits, and what beating it gave.
+static void drawJournalBossTop(int boss) {
+	char buf[64];
+	const bool beaten = bossBeaten(boss);
+	gfx::setDepth(1.0f);
+	gfx::sprite(SHEET_SPRITES, bossSprite(boss), 200, 60, 1.0f, 1.0f, gSave.calmFx ? 0 : sinf(sTime * 1.3f) * 0.1f, beaten ? WHITE : kUnfound);
+	gfx::setDepth(0.7f);
+	gfx::text(beaten ? kBosses[boss].name : "Not beaten yet", 200, 98, 0.6f, COL_ACCENT, ALIGN_CENTER);
+	snprintf(buf, sizeof buf, "ORCHARD BLAST, ROOM %d", boss == BOSS_MELON ? 5 : 10);
+	gfx::text(buf, 200, 126, 0.4f, COL_CREAM, ALIGN_CENTER);
+	snprintf(buf, sizeof buf, "%d SLICES TO BEAT", kBosses[boss].slices);
+	gfx::text(buf, 200, 144, 0.4f, COL_CREAM, ALIGN_CENTER);
+	if (beaten) fitText(boss == BOSS_MELON ? "Spits seeds and flops. Slice it when its guard drops." : "Fires cannonballs and lights its fuse. Snuff the fuse in three swipes.", 200, 168, 0.34f, 320, COL_DIM);
+	else fitText("Reach it in Orchard Blast and beat it to fill this page.", 200, 168, 0.34f, 320, COL_DIM);
+	const int tracks = bossTrackCount(boss);
+	if (tracks > 0) {
+		if (beaten) snprintf(buf, sizeof buf, "Its %d tracks are in the Shop", tracks);
+		else snprintf(buf, sizeof buf, "Unlocks %d tracks in the Shop", tracks);
+		gfx::text(buf, 200, 198, 0.38f, beaten ? COL_ACCENT : COL_CREAM, ALIGN_CENTER);
+	}
 }
 
 static void drawJournalTop() {
@@ -2972,8 +3080,16 @@ static void drawJournalTop() {
 		gfx::text(buf, 200, 92, 0.44f, COL_CREAM, ALIGN_CENTER);
 		snprintf(buf, sizeof buf, "MILESTONES %d OF %d", levels, progress::journalPages() * progress::kJournalLevels);
 		gfx::text(buf, 200, 118, 0.44f, COL_CREAM, ALIGN_CENTER);
-		gfx::text("Every milestone pays coins.", 200, 156, 0.38f, COL_DIM, ALIGN_CENTER);
+		int beaten = 0;
+		for (int k = 0; k < BOSS_COUNT; k++) beaten += bossBeaten(k);
+		snprintf(buf, sizeof buf, "BOSSES BEATEN %d OF %d", beaten, (int)BOSS_COUNT);
+		gfx::text(buf, 200, 138, 0.44f, COL_CREAM, ALIGN_CENTER);
+		gfx::text("Every milestone pays coins.", 200, 166, 0.38f, COL_DIM, ALIGN_CENTER);
 		gfx::text("Back to the title", 200, 196, 0.42f, COL_CREAM, ALIGN_CENTER);
+		return;
+	}
+	if (journalIsBoss(f - 1)) {
+		drawJournalBossTop(f - 1 - progress::journalPages());
 		return;
 	}
 	const int fruit = progress::journalFruit(f - 1);
@@ -3033,11 +3149,18 @@ static void drawStatsTop() {
 	topPanel(30, 86, 340, 146);
 	gfx::setDepth(0.7f);
 	gfx::text("BEST SCORES", 200, 92, 0.4f, COL_ACCENT, ALIGN_CENTER);
-	for (int m = 0; m < MODE_COUNT; m++) {
-		const float x = m < 5 ? 46 : 214, y = 114 + (m % 5) * 22;
-		gfx::text(kModes[m].name, x, y, 0.34f, COL_DIM);
+	// The modes on Pick a Game, in two columns: all 14 fit at seven to a column.
+	constexpr int kPerColumn = (MODE_COUNT + 1) / 2;
+	static_assert(kPerColumn <= 7, "the best scores need a second page");
+	int shown = 0;
+	for (int i = 0; i < (int)sizeof kModeOrder; i++) {
+		const int m = kModeOrder[i];
+		if (m >= MODE_COUNT) continue;
+		const float x = shown < kPerColumn ? 46 : 214, y = 112 + (shown % kPerColumn) * 16.5f;
+		shown++;
+		gfx::text(kModes[m].name, x, y, 0.3f, COL_DIM);
 		snprintf(buf, sizeof buf, "%lu", (unsigned long)gSave.best[m]);
-		gfx::text(buf, x + 140, y - 1, 0.38f, COL_CREAM, ALIGN_RIGHT);
+		gfx::text(buf, x + 140, y - 1, 0.33f, COL_CREAM, ALIGN_RIGHT);
 	}
 }
 
@@ -3873,12 +3996,17 @@ static void drawTopContent(Screen screen) {
 				gfx::text("plays, with bests of their own.", 200, yLine + 18, 0.38f, COL_CREAM, ALIGN_CENTER);
 				snprintf(buf, sizeof buf, mixerRulesOn() ? "%d ON" : "ALL OFF", mixerRulesOn());
 				gfx::text(buf, 200, yBest, 0.6f, COL_CREAM, ALIGN_CENTER);
+			} else if (mode == MODE_BOSSRUSH && !bossBeaten(BOSS_MELON)) {
+				gfx::text(kModes[mode].name, 200, yName, 0.6f, COL_ACCENT, ALIGN_CENTER);
+				gfx::text("Locked. Beat The Big Melon in", 200, yLine, 0.38f, COL_CREAM, ALIGN_CENTER);
+				gfx::text("Orchard Blast to open it.", 200, yLine + 18, 0.38f, COL_CREAM, ALIGN_CENTER);
+				drawPadlock(200, yBest + 10, 1.0f);
 			} else if (mode >= 0) {
 				const ModeInfo& m = kModes[mode];
 				gfx::text(m.name, 200, yName, 0.6f, COL_ACCENT, ALIGN_CENTER);
 				gfx::text(m.line1, 200, yLine, 0.38f, COL_CREAM, ALIGN_CENTER);
 				gfx::text(m.line2, 200, yLine + 18, 0.38f, COL_CREAM, ALIGN_CENTER);
-				if (mixerRulesOn() && mode < MODE_DAILY) snprintf(buf, sizeof buf, "MIXER BEST %lu", (unsigned long)gSave.bestMixer[mode]);
+				if (mixerRulesOn() && mixerMode(mode)) snprintf(buf, sizeof buf, "MIXER BEST %lu", (unsigned long)gSave.bestMixer[mode]);
 				else if (assistedRun()) snprintf(buf, sizeof buf, "ASSISTED BEST %lu", (unsigned long)gSave.bestAssisted[mode]);
 				else snprintf(buf, sizeof buf, "BEST %lu", (unsigned long)gSave.best[mode]);
 				gfx::text(buf, 200, yBest, 0.6f, COL_CREAM, ALIGN_CENTER);
@@ -4085,9 +4213,39 @@ static void drawTopContent(Screen screen) {
 				snprintf(buf, sizeof buf, sGame.mixed ? "MIXER BEST %lu" : (sGame.assisted ? "ASSISTED BEST %lu" : "BEST %lu"), (unsigned long)sGame.best);
 				gfx::text(buf, 200, 116, 0.6f, COL_DIM, ALIGN_CENTER);
 			}
-			if (sGame.mode == MODE_BEAT) snprintf(buf, sizeof buf, "SLICED %d   ON THE BEAT %d", sGame.sliced, sGame.beatHits);
-			else snprintf(buf, sizeof buf, "SLICED %d   BEST COMBO %d", sGame.sliced, sGame.bestCombo);
-			gfx::text(buf, 200, 152, 0.42f, COL_CREAM, ALIGN_CENTER);
+			if (sGame.mode == MODE_BOSSRUSH) {
+				// Boss Rush: how many bosses fell, the build, and the time.
+				const Orchard& o = sGame.orc;
+				const Modes12& m = sGame.m12;
+				if (o.won) snprintf(buf, sizeof buf, "RUSH CLEARED IN %d:%02d", (int)sGame.elapsed / 60, (int)sGame.elapsed % 60);
+				else snprintf(buf, sizeof buf, "BEAT %d OF %d BOSSES", m.rushStage, kRushStages);
+				gfx::text(buf, 200, o.newTracks > 0 ? 136 : 142, 0.44f, o.won ? rgba(255, 230, 140) : COL_CREAM, ALIGN_CENTER);
+				snprintf(buf, sizeof buf, "BUILD: %s", m.rushBuild < BUILD_COUNT ? kRushBuilds[m.rushBuild].name : "NONE");
+				gfx::text(buf, 200, o.newTracks > 0 ? 152 : 160, 0.36f, COL_DIM, ALIGN_CENTER);
+				if (o.newTracks > 0) {
+					snprintf(buf, sizeof buf, "NEW IN THE SHOP: %d BOSS TRACK%s", o.newTracks, o.newTracks == 1 ? "" : "S");
+					gfx::text(buf, 200, 166, 0.34f, COL_ACCENT, ALIGN_CENTER);
+				}
+			} else if (sGame.mode == MODE_ORCHARD) {
+				// How far the run got, and what it was built from.
+				const Orchard& o = sGame.orc;
+				if (o.won) snprintf(buf, sizeof buf, "ORCHARD CLEARED!");
+				else snprintf(buf, sizeof buf, "REACHED ROOM %d OF %d", o.room, kOrchardRooms);
+				gfx::text(buf, 200, o.newTracks > 0 ? 136 : 142, 0.44f, o.won ? rgba(255, 230, 140) : COL_CREAM, ALIGN_CENTER);
+				snprintf(buf, sizeof buf, "LEVEL %d   BOSSES %d   SLICED %d", o.level, o.bossesBeaten, sGame.sliced);
+				gfx::text(buf, 200, o.newTracks > 0 ? 152 : 160, 0.36f, COL_DIM, ALIGN_CENTER);
+				if (o.newTracks > 0) {
+					snprintf(buf, sizeof buf, "NEW IN THE SHOP: %d BOSS TRACK%s", o.newTracks, o.newTracks == 1 ? "" : "S");
+					gfx::text(buf, 200, 166, 0.34f, COL_ACCENT, ALIGN_CENTER);
+				}
+			} else {
+				if (sGame.mode == MODE_BEAT) snprintf(buf, sizeof buf, "SLICED %d   ON THE BEAT %d", sGame.sliced, sGame.beatHits);
+				else if (sGame.mode == MODE_RECIPE) snprintf(buf, sizeof buf, "SMOOTHIES %d   SPOILED %d", sGame.m12.cups, sGame.m12.spoiled);
+				else if (sGame.mode == MODE_SHARP) snprintf(buf, sizeof buf, "ON CALL %d   WRONG %d", sGame.m12.calledHits, sGame.m12.wrongHits);
+				else if (sGame.mode == MODE_JUGGLE) snprintf(buf, sizeof buf, "KNOCKS %d   MOST IN THE AIR %d", sGame.m12.knocks, sGame.m12.bestAir);
+				else snprintf(buf, sizeof buf, "SLICED %d   BEST COMBO %d", sGame.sliced, sGame.bestCombo);
+				gfx::text(buf, 200, 152, 0.42f, COL_CREAM, ALIGN_CENTER);
+			}
 			if (sCardFrame) {
 				// The score card: the game's name where the coins go, which are nobody else's business.
 				gfx::setDepth(1.2f);
@@ -4383,8 +4541,11 @@ static void drawRows() {
 	drawScrollMark(kListTop, 240 - kListTop, sScroll, maxScroll());
 }
 
+#include "orchard_ui.inc"
+
 static void drawBottomContent(Screen screen) {
-	static const int kIcons[MODE_COUNT] = {sprites_pip_on_idx, sprites_ic_clock_idx, sprites_ic_leaf_idx, sprites_ic_fast_idx, sprites_ic_one_idx, sprites_ic_mine_idx, sprites_ic_chain_idx, sprites_coin_idx, sprites_ic_note_idx};
+	static const int kIcons[MODE_COUNT] = {sprites_pip_on_idx, sprites_ic_clock_idx, sprites_ic_leaf_idx, sprites_ic_fast_idx, sprites_ic_one_idx, sprites_ic_mine_idx, sprites_ic_chain_idx, sprites_coin_idx, sprites_ic_note_idx,
+	                                          sprites_ic_tree_idx, sprites_ic_crown_idx, sprites_ic_cup_idx, sprites_ic_target_idx, sprites_ic_juggle_idx};
 	sDrawing = screen;
 	gfx::clearPanels();
 	switch (screen) {
@@ -4520,6 +4681,7 @@ static void drawBottomContent(Screen screen) {
 #if PORT_TWO_SCREENS
 		case SCREEN_GAME:
 			sGame.drawField(sBlade);
+			drawOrchardMenus();
 			break;
 #endif
 		case SCREEN_PAUSE: {
@@ -4720,7 +4882,8 @@ static void updateFrame(const Input& in, bool wasTouching) {
 	readingsTick();
 #endif
 	// On Pick a Game, Select opens the Mixer instead.
-	if ((in.down & KEY_SELECT) && sScreen != SCREEN_MODES) sShowDebug = !sShowDebug;
+	// In Orchard Blast and Boss Rush, Select opens the Inventory.
+	if ((in.down & KEY_SELECT) && sScreen != SCREEN_MODES && !((sScreen == SCREEN_GAME || sScreen == SCREEN_PAUSE) && sGame.orchardLike())) sShowDebug = !sShowDebug;
 	if (sSuspended) {
 		sSuspended = false;
 		pauseGame();
@@ -4828,6 +4991,8 @@ static void updateFrame(const Input& in, bool wasTouching) {
 				audio::musicBeat(beatSong());
 				beatScrollTo(beatSong());
 				goTo(SCREEN_BEAT, 1);
+			} else if (mode == MODE_BOSSRUSH && !bossBeaten(BOSS_MELON)) {
+				audio::play(SFX_CLANG, 0.5f);  // locked: the info side says how to open it
 			} else if (t > 0) {
 				sStartMode = (Mode)mode;
 				fadeThen(startGame);
@@ -5045,7 +5210,19 @@ static void updateFrame(const Input& in, bool wasTouching) {
 				break;
 			}
 #endif
-			sBlade.update(sGame.bladeInput(in));
+			{
+				const bool orcTook = updateOrchardMenus(in, wasTouching);
+				if (sOrcInv || sOrcHowTo) {
+					if ((in.down & KEY_START) && sOrcInv) {
+						sOrcInv = false;
+						pauseGame();
+					}
+					break;  // the Inventory holds the run, like the pause menu
+				}
+				Input bin = in;
+				if (orcTook || sOrcSlotTouch) bin.touching = false;
+				sBlade.update(sGame.bladeInput(bin));
+			}
 			sGame.update(sBlade);
 			sGame.kickParticles();
 			if (in.down & KEY_START) {
@@ -5070,6 +5247,7 @@ static void updateFrame(const Input& in, bool wasTouching) {
 				sOptionsFromPause = false;
 				sScreen = SCREEN_GAME;
 				sBlade.reset();
+				if (sGame.orchardLike()) sGame.orcResume();
 			} else if (t == 2) {
 				sOptionsFromPause = true;
 				sFocus[SCREEN_OPTIONS] = 1;
@@ -5246,6 +5424,7 @@ static void drawFrame() {
 		gHudPaused = sScreen != SCREEN_GAME;
 		sGame.drawHud();
 		drawStickPoint();
+		if (sScreen == SCREEN_GAME) drawOrchardMenus();
 #if PORT_PAUSE_BUTTON
 		if (sScreen == SCREEN_GAME) {
 			// Half see-through, so fruit passing behind it stays easy to see.

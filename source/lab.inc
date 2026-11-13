@@ -154,11 +154,18 @@ static void labField() {
 #endif
 }
 
+// The last ordinary song on sale: boss tracks after it stay locked until their boss is beaten.
+static int labShopSong() {
+	int i = shopCount(SHOP_MUSIC) - 1;
+	while (i > 0 && trackBoss(kBaseTracks + i) >= 0) i--;
+	return i;
+}
+
 // A song tried on plays for 8 to 10 seconds, then the music in use comes back; Use makes a song both
 // the Menu and the Game Music. Driven through updateShop, a frame at a time, on the last song on sale.
 static void labShopPreview() {
 	Input in{};
-	const int song = shopCount(SHOP_MUSIC) - 1, value = shopValue(SHOP_MUSIC, song);
+	const int song = labShopSong(), value = shopValue(SHOP_MUSIC, song);
 	const u8 menuWas = sKeep[SHOP_MUSIC], gameWas = gSave.gameTrack;
 	labCheck(!shopInUse(SHOP_MUSIC, song) && gSave.menuTrack == value, "the song tried on is on show, not in use");
 	sPreviewT = 0;
@@ -167,13 +174,13 @@ static void labShopPreview() {
 	while (sPreviewT >= 0 && frames < 900) {
 		updateShop(in, false);
 		frames++;
-		faded = faded || (sPreviewT > kPreviewPlay && audio::currentTrack() == kTrackCount - 1);
+		faded = faded || (sPreviewT > kPreviewPlay && audio::currentTrack() == kBaseTracks + labShopSong());
 	}
 	char d[48];
 	snprintf(d, sizeof d, "%.2f s", frames * kDt);
 	labCheck(frames * kDt >= 8.0f && frames * kDt <= 10.0f, "a Shop preview gives way after 8 to 10 seconds", d);
 	labCheck(faded, "a Shop preview fades out before it gives way");
-	labCheck(gSave.menuTrack == menuWas && audio::currentTrack() != kTrackCount - 1 && sPreviewOver, "the music in use comes back after a Shop preview");
+	labCheck(gSave.menuTrack == menuWas && audio::currentTrack() != kBaseTracks + labShopSong() && sPreviewOver, "the music in use comes back after a Shop preview");
 	for (int i = 0; i < 90; i++) updateShop(in, false);
 	labCheck(sReturnT < 0, "the music in use fades back in within a second and a half");
 	const float longest = gfx::textWidth("Your Menu Music, not your Game Music.", 0.36f);
@@ -184,12 +191,69 @@ static void labShopPreview() {
 	shopBuy(SHOP_MUSIC, song);
 	shopEquipNow();
 	labCheck(gSave.menuTrack == value && gSave.gameTrack == value && shopInUse(SHOP_MUSIC, song), "Using a Shop song makes it the Menu and the Game Music");
-	labCheck(audio::currentTrack() == kTrackCount - 1 && sPreviewT < 0, "a song put in use plays on, with no preview timer");
+	labCheck(audio::currentTrack() == kBaseTracks + labShopSong() && sPreviewT < 0, "a song put in use plays on, with no preview timer");
 	sKeep[SHOP_MUSIC] = menuWas;  // back as it was, so later steps play the usual tracks
 	gSave.gameTrack = gameWas;
 	shopTryOn();
 	shopPreviewStop();
 	shopSave();
+}
+
+// The Orchard Blast Inventory: opens on Select, resumes from its first sign, swaps, and asks before a drop or a quit.
+static void labInventory() {
+	const u8 seenWas = gSave.howToSeen;
+	gSave.howToSeen |= 3;
+	sGame.start(MODE_ORCHARD);
+	sGame.phase = PHASE_PLAY;
+	Orchard& o = sGame.orc;
+	o.choosing = false;
+	o.boss.on = false;
+	o.slot[0] = CARD_BLENDER;
+	o.slot[1] = CARD_GOLDAPPLE;
+	Input in = {};
+	auto press = [&](u32 key) {
+		in = {};
+		in.down = key;
+		updateOrchardMenus(in, false);
+	};
+	press(KEY_SELECT);
+	labCheck(sOrcInv && sOrcConfirm == 0, "Select opens the Inventory");
+	press(KEY_A);
+	labCheck(!sOrcInv && o.resumeT > 2.9f, "the Inventory opens on Resume, and Resume comes back with a 3, 2, 1");
+	press(KEY_SELECT);
+	OrcInvItem items[64];
+	const int n = orcInvItems(items);
+	const int first = n - INVB_COUNT;
+	sOrcInvFocus = first + INVB_SWAP;
+	press(KEY_A);
+	labCheck(o.slot[0] == CARD_GOLDAPPLE && o.slot[1] == CARD_BLENDER, "Swap Slots in the Inventory swaps the charms");
+	sOrcInvFocus = 1;  // Slot 2
+	press(0);
+	sOrcInvFocus = first + INVB_DROP;
+	press(KEY_A);
+	labCheck(sOrcConfirm == 1, "Drop asks first: Drop this charm?");
+	press(KEY_A);
+	labCheck(sOrcConfirm == 0 && o.slot[1] == CARD_BLENDER, "the drop question starts on No, so A keeps the charm");
+	press(KEY_A);
+	press(KEY_RIGHT);
+	press(KEY_A);
+	labCheck(o.slot[1] == CARD_NONE && o.slot[0] == CARD_GOLDAPPLE, "Yes drops the charm in the slot picked last");
+	sOrcInvFocus = first + INVB_QUIT;
+	press(KEY_A);
+	labCheck(sOrcConfirm == 2, "Quit asks first: End this run?");
+	press(KEY_B);
+	labCheck(sOrcInv && sOrcConfirm == 0, "B answers No and stays in the Inventory");
+	int upgrades = 0, buttons = 0;
+	for (int i = 0; i < n; i++) {
+		upgrades += items[i].kind == INV_UPGRADE;
+		buttons += items[i].kind == INV_BUTTON && items[i].y + items[i].h <= kFieldH && items[i].x >= 0 && items[i].x + items[i].w <= kFieldW;
+	}
+	char d[48];
+	snprintf(d, sizeof d, "%d upgrades, %d signs on a %.0f by %.0f field", upgrades, buttons, kFieldW, kFieldH);
+	labCheck(upgrades == 9 && buttons == INVB_COUNT, "the Inventory lists every upgrade, and its signs fit the field", d);
+	sOrcInv = false;
+	sOrcConfirm = 0;
+	gSave.howToSeen = seenWas;
 }
 
 static void labMenus() {
@@ -208,6 +272,7 @@ static void labMenus() {
 			labExpect(SCREEN_JOURNAL, "Journal opens");
 			// The Journal draws 2D pictures whichever art style is chosen; the 3DS used to drop them with 3D art.
 			labCheck(gfx::stickersLoaded(), gSave.artStyle == ART_3D ? "Journal has its fruit pictures with 3D models" : "Journal has its fruit pictures with 2D stickers");
+			labCheck(journalTiles() == progress::journalPages() + BOSS_COUNT && journalIsBoss(journalTiles() - 1) && !journalIsBoss(progress::journalPages() - 1), "the Journal ends with a Bosses page, one sticker per boss");
 			botTap(kBack);
 			return;
 		case 4: labExpect(SCREEN_TITLE, "Journal back arrow cuts its berry and goes back"); botTap(kTitleButtons[3]); return;
@@ -269,14 +334,14 @@ static void labMenus() {
 		case 15: labCheck(audio::musicTime() >= 0 || audio::musicPending(), "Shop music preview plays"); labCheck(audio::currentTrack() == kBaseTracks, "Shop preview switches to the track on the tile");
 			labShopScroll();
 			// The last song on sale, the longest kind of file the game loads: give it time to arrive.
-			sShopItem = shopCount(SHOP_MUSIC) - 1;
+			sShopItem = labShopSong();
 			shopTryOn();
 			sPreviewT = -1;  // held while it loads: labShopPreview times the preview on its own
 			sBotPhaseFrames = -420;
 			return;
 		case 16: {
-			labCheck(audio::currentTrack() == kTrackCount - 1 && audio::musicTime() >= 0 && !audio::musicPending(), "A full-length Shop song loads and plays");
-			labCheck(strchr(shopItem(SHOP_MUSIC, shopCount(SHOP_MUSIC) - 1).name, '.') == nullptr, "Shop song names carry no file extension");
+			labCheck(audio::currentTrack() == kBaseTracks + labShopSong() && audio::musicTime() >= 0 && !audio::musicPending(), "A full-length Shop song loads and plays");
+			labCheck(strchr(shopItem(SHOP_MUSIC, labShopSong()).name, '.') == nullptr, "Shop song names carry no file extension");
 			labShopPreview();
 			sBotMenuStep = 55;
 			botTap(kBack);
@@ -335,6 +400,9 @@ static void labMixerPage() {
 
 // Pick a Game's pages, the first time the bot reaches it. Returns true while there are steps left.
 static bool labModePages() {
+#ifdef LAB_QUICK
+	return false;  // the quick Lab skips the menu checks
+#endif
 	static int step = 0;
 	const Button& next = kPageArrows[1];
 	switch (step++) {
@@ -356,6 +424,12 @@ static bool labModePages() {
 			botTapXY((int)(next.x + next.w / 2), (int)(next.y + next.h / 2));
 			return true;
 		case 4:
+			static int taps = 0;
+			if (sModePage != 0 && ++taps < kModePages) {
+				step--;  // tap on past the last page
+				botTapXY((int)(next.x + next.w / 2), (int)(next.y + next.h / 2));
+				return true;
+			}
 			labCheck(sModePage == 0, "turning past the last page wraps to the first");
 			sBotKeys = KEY_SELECT;  // a 3DS's Select, or Back or View on a controller
 			return true;
@@ -418,6 +492,37 @@ static void labWatchGame() {
 		return;
 	}
 	if (sBotModeFrames == 120) labCheck(audio::musicTime() >= 0, "game music plays", modeName(sGame.mode));
+	if (sGame.mode == MODE_ORCHARD) {
+		// Orchard Blast: the how-to shows on a first run and holds play; level-up cards are taken with A.
+		static bool sawHowTo, sawCards, cardsChecked;
+		if (sBotModeFrames == 1) {
+			sawHowTo = sawCards = cardsChecked = false;
+			gSave.howToSeen = 0;
+		}
+		if (sOrcHowTo && !sawHowTo && sOrcHowToT > 0.7f) {
+			sawHowTo = true;
+			const float el = sGame.elapsed;
+			labCheck(sOrcHowTo == 1 && el < 3, "Orchard Blast shows its how-to at the start of a first run");
+		}
+		if ((sOrcHowTo && sOrcHowToT > 0.7f) || (sGame.orc.choosing && sBotModeFrames % 40 == 0)) sBotKeys = KEY_A;
+		if (sGame.orc.choosing) sawCards = true;
+		if (sawCards && !cardsChecked && !sGame.orc.choosing && sGame.orc.level > 1 && sawHowTo) {
+			cardsChecked = true;
+			labCheck(gSave.howToSeen & 1, "a level-up card is picked with A, and play goes on", "");
+		}
+	}
+	if (sGame.mode >= MODE_BOSSRUSH && sGame.mode <= MODE_JUGGLE) {
+		// Each of the other new modes opens on a how-to of its own, the first time.
+		static bool sawOwn;
+		if (sBotModeFrames == 1) sawOwn = false;
+		if (sOrcHowTo && !sawOwn && sOrcHowToT > 0.7f) {
+			sawOwn = true;
+			labCheck(sOrcHowTo == HOWTO_RUSH + (sGame.mode - MODE_BOSSRUSH) && sGame.elapsed < 1, "a new mode shows its own how-to first", modeName(sGame.mode));
+		}
+		if (sBotModeFrames == 600 && !sawOwn) labCheck(false, "a new mode shows its own how-to first", modeName(sGame.mode));
+		if (sGame.mode == MODE_BOSSRUSH && sBotModeFrames == 1200)
+			labCheck(sGame.m12.rushBuild < BUILD_COUNT && !sGame.m12.rushPicking, "Boss Rush's build is picked with A", "");
+	}
 	if (sGame.mode == MODE_PRACTICE && sGame.practiceStep < PS_FRENZY && (sGame.feverMeter > 0 || sGame.chain >= 2)) sLabMeterEarly = true;
 	if (sGame.statBombHits != sLabBombHits) {
 		sLabBombHits = sGame.statBombHits;
@@ -458,6 +563,20 @@ static void labHoldQuit(Input& in, bool first) {
 // (the bomb goes off and the game closes). The 3DS just ends.
 static void labFinish(Input& in) {
 	static int step = 0, held = 0;
+#ifdef LAB_QUICK
+	// The quick Lab: only the checks of the new code, then done. No shop, boards, saves of older versions or quit bomb.
+	(void)in;
+	(void)held;
+	if (step == 0) {
+		step = 1;
+		labInventory();
+		sGame.labOrchard(labCheck);
+		sGame.labModes12(labCheck);
+		labSummary();
+		sBotDone = true;
+	}
+	return;
+#endif
 	if (step == 0) {
 		labCheck(sLabBlastSeen && !sLabBlastMissed, "every bomb hit sets off a blast");
 		labCheck(gfx::fontImageCount() == gfx::fontLetterCount() * 2, "the font table matches the font sheet");
@@ -593,8 +712,22 @@ static void labFinish(Input& in) {
 			gSave.beatLatency = 0;
 			gSave.scoreRules = 1;
 			saveRetireOldBests();
-			labCheck(gSave.beatLatency == 100 && gSave.scoreRules == 2 && gSave.best[MODE_ZEN] == zenBefore, "a save from before the Latency Test starts at 0 ms and keeps its bests");
-			gSave.scoreRules = rulesBefore > 2 ? rulesBefore : 2;
+			labCheck(gSave.beatLatency == 100 && gSave.scoreRules == 3 && gSave.best[MODE_ZEN] == zenBefore, "a save from before the Latency Test starts at 0 ms and keeps its bests");
+			gSave.scoreRules = rulesBefore > 3 ? rulesBefore : 3;
+			// 1.2: the score tables moved to make room for more modes. Old bests come across, and only once.
+			{
+				const u32 classicNow = gSave.best[MODE_CLASSIC];
+				const u8 musicNow = gSave.bossMusic;
+				gSave.scoreRules = 2;
+				gSave.best11[MODE_CLASSIC] = classicNow + 500;
+				gSave.bossMusic = 0;
+				saveRetireOldBests();
+				labCheck(gSave.best[MODE_CLASSIC] == classicNow + 500 && gSave.best11[MODE_CLASSIC] == 0 && gSave.scoreRules == 3 && gSave.bossMusic == 1, "a 1.1 save keeps its bests in the bigger 1.2 tables, with Boss Music on");
+				gSave.best[MODE_CLASSIC] = classicNow;
+				saveRetireOldBests();
+				labCheck(gSave.best[MODE_CLASSIC] == classicNow, "the 1.2 score move happens only once");
+				gSave.bossMusic = musicNow;
+			}
 			sGame.start(MODE_CLASSIC);
 			sGame.beatPerLoop = 0;
 			sGame.beatFirst = 0;
@@ -802,6 +935,7 @@ static void labFinish(Input& in) {
 			gSave.best[MODE_CLASSIC] = classic;
 			gSave.scoreRules = rules;
 		}
+		labInventory();
 		sGame.labProbes(sBlade, labCheck);
 		step = 1;
 #if PORT_3DS

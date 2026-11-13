@@ -34,8 +34,9 @@ struct SettingsV4 {
 };
 static_assert(sizeof(SettingsV4) == 60, "0.4 save layout changed");
 // Fields never move once shipped: these pin the 1.0 layout.
-static_assert(offsetof(Settings, trail) == 486 && offsetof(Settings, modePlays) == 488 && offsetof(Settings, portBlock) == 552, "a saved field moved");
-static_assert(offsetof(Settings, portBlock) % 4 == 0 && offsetof(Settings, bestMixer) == offsetof(Settings, portBlock) + 32, "the port block must start 4-byte aligned and hold 32 bytes: resize reserved[] or the port fields");
+static_assert(offsetof(Settings, trail) == 486 && offsetof(Settings, modePlays11) == 488 && offsetof(Settings, portBlock) == 552, "a saved field moved");
+static_assert(offsetof(Settings, portBlock) % 4 == 0 && offsetof(Settings, bestMixer11) == offsetof(Settings, portBlock) + 32, "the port block must start 4-byte aligned and hold 32 bytes: resize reserved[] or the port fields");
+static_assert(offsetof(Settings, best) == 632, "the 1.2 score tables start right after 1.1's last field");
 
 static u32 checksum(const void* data, size_t size) {
 	const u8* p = (const u8*)data;
@@ -48,6 +49,10 @@ void saveResetScores() {
 	memset(gSave.best, 0, sizeof gSave.best);
 	memset(gSave.bestAssisted, 0, sizeof gSave.bestAssisted);
 	memset(gSave.bestMixer, 0, sizeof gSave.bestMixer);
+	memset(gSave.best11, 0, sizeof gSave.best11);
+	memset(gSave.bestAssisted11, 0, sizeof gSave.bestAssisted11);
+	memset(gSave.bestMixer11, 0, sizeof gSave.bestMixer11);
+	gSave.orchardBestRoom = gSave.orchardBestLevel = 0;
 	gSave.totalFruit = 0;
 	gSave.bestCombo = 0;
 	gSave.playSeconds = 0;
@@ -67,6 +72,7 @@ void saveDefaults(bool keepScores, int section) {
 		gSave.menuSfx = 80;
 		gSave.menuTrack = gSave.gameTrack = 0;
 		gSave.beatLatency = 100;
+		gSave.bossMusic = 1;
 	}
 	if (section == SEC_ALL || section == SEC_VISUALS) {
 		// A New 3DS gets the full look. An Old 3DS starts on the settings it can hold 60 with.
@@ -182,6 +188,22 @@ static bool readSave(const char* path) {
 // new ones. They are cleared once; every other score stays.
 // Later 1.1 fields that start from a byte older saves left at 0 are set up here too, once.
 void saveRetireOldBests() {
+	if (gSave.scoreRules < 3) {
+		// 1.2 moved the score tables to make room for more modes. A 0.4 save was read straight into the
+		// new tables, so the larger of the two is kept.
+		for (int i = 0; i < kOldModes; i++) {
+			if (gSave.best11[i] > gSave.best[i]) gSave.best[i] = gSave.best11[i];
+			if (gSave.bestAssisted11[i] > gSave.bestAssisted[i]) gSave.bestAssisted[i] = gSave.bestAssisted11[i];
+			if (gSave.bestMixer11[i] > gSave.bestMixer[i]) gSave.bestMixer[i] = gSave.bestMixer11[i];
+			if (gSave.modePlays11[i] > gSave.modePlays[i]) gSave.modePlays[i] = gSave.modePlays11[i];
+		}
+		// The old tables are retired: cleared, so they can never be copied over again.
+		memset(gSave.best11, 0, sizeof gSave.best11);
+		memset(gSave.bestAssisted11, 0, sizeof gSave.bestAssisted11);
+		memset(gSave.bestMixer11, 0, sizeof gSave.bestMixer11);
+		memset(gSave.modePlays11, 0, sizeof gSave.modePlays11);
+		gSave.bossMusic = 1;
+	}
 	if (gSave.scoreRules < 1) {
 		gSave.best[MODE_ZEN] = gSave.bestAssisted[MODE_ZEN] = 0;
 		gSave.best[MODE_COMBO] = gSave.bestAssisted[MODE_COMBO] = 0;
@@ -191,6 +213,7 @@ void saveRetireOldBests() {
 		gSave.beatLatency = 100;  // Beat Timing starts at 0 ms
 		gSave.scoreRules = 2;
 	}
+	if (gSave.scoreRules < 3) gSave.scoreRules = 3;
 }
 
 void saveLoad() {
@@ -236,6 +259,9 @@ void saveLoad() {
 	if (gSave.gameSpeed > 2) gSave.gameSpeed = 0;
 	if (gSave.updConsent > 2) gSave.updConsent = 0;
 	gSave.practiceDone &= 1;
+	gSave.bossMusic &= 1;
+	for (u8& t : gSave.bossTrackLast)
+		if (t > kTrackCount) t = 0;
 	if (gSave.trail >= kTrailCount) gSave.trail = 0;
 	gSave.updSkipped[sizeof gSave.updSkipped - 1] = 0;
 	gSave.ownedThemes |= 1;  // the first of each is always owned

@@ -5,6 +5,8 @@
 // SHOP_THEME(name, price, line, plank rgb, accent rgb, bar rgb)   also needs its picture in gen_backgrounds.py
 // SHOP_TRAIL(name, price, line, shape, colour a, colour b)        shapes are listed in blade.cpp
 // SHOP_TRACK(name, price, line, file in romfs/audio, beats per minute)   0 keeps it out of Beat Slice
+// BOSS_TRACK(name, price, line, file, beats per minute, boss)   a Shop song that stays locked until that boss
+//                                                                 is beaten (0 The Big Melon, 1 The Bomb King)
 // SHOP_SPLAT(name, price, line, colour)                           0 uses each fruit's own juice
 // SHOP_SKIN(name, price, line, recolour %, colour, brightness %, opacity %, shine %)   the fruit's own colours fade by recolour %
 #ifndef SHOP_THEME
@@ -15,6 +17,9 @@
 #endif
 #ifndef SHOP_TRACK
 #define SHOP_TRACK(...)
+#endif
+#ifndef BOSS_TRACK
+#define BOSS_TRACK(name, price, line, file, bpm, boss) SHOP_TRACK(name, price, line, file, bpm)
 #endif
 #ifndef SHOP_SPLAT
 #define SHOP_SPLAT(...)
@@ -57,6 +62,17 @@ SHOP_TRACK("WORTHLESS ENEMY", 400, "NickBin ft. Aneolent. Metal.", "music_worthl
 SHOP_TRACK("Lies", 300, "NickBin. EDM.", "music_lies", 128)
 SHOP_TRACK("Lies (VIP Remix)", 450, "NickBin. EDM.", "music_liesvip", 128)
 SHOP_TRACK("JUST STAY WITH ME", 500, "NickBin. Dariacore.", "music_staywithme", 150)
+// 1.2: boss tracks, made by tools/gen_audio.py. Each boss's set unlocks when it is first beaten.
+BOSS_TRACK("Seed Spitter", 400, "The Big Melon's hopping chip tune.", "music_boss_seeds", 144, 0)
+BOSS_TRACK("Rind and Run", 400, "The Big Melon's swung chase.", "music_boss_rind", 132, 0)
+BOSS_TRACK("Long Live the Fuse", 450, "The Bomb King's royal march.", "music_boss_fuse", 116, 1)
+BOSS_TRACK("Powder Keg Court", 450, "The Bomb King's drums and brass.", "music_boss_keg", 128, 1)
+// Found online, levelled by tools/convert_shop_music.py (licences in docs/music-licences, credited in Credits).
+BOSS_TRACK("8bit Action Boss Battle", 400, "MintoDog. Chiptune, CC0.", "music_boss_minto", 145, 0)
+BOSS_TRACK("Boss Fight 2", 400, "ansimuz. Chiptune and synthwave, CC0.", "music_boss_ansimuz", 130, 0)
+BOSS_TRACK("Boss Fight Bounce", 400, "Locomule. Chiptune, CC0.", "music_boss_bounce", 120, 0)
+BOSS_TRACK("Epic Boss Battle", 450, "Juhani Junkala. Orchestral, CC0.", "music_boss_epic", 175, 1)
+BOSS_TRACK("A Champion's Will", 450, "ATMANAN. Orchestral, CC BY 4.0.", "music_boss_champion", 140, 1)
 
 // Colours are 0xRRGGBB.
 SHOP_SPLAT("Ink Blot", 60, "Every fruit lands in black ink.", 0x201C30)
@@ -72,5 +88,6 @@ SHOP_SKIN("Clear Glass", 700, "Blown glass with a hint of the fruit.", 60, 0xC8E
 #undef SHOP_THEME
 #undef SHOP_TRAIL
 #undef SHOP_TRACK
+#undef BOSS_TRACK
 #undef SHOP_SPLAT
 #undef SHOP_SKIN

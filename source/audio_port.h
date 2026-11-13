@@ -22,6 +22,7 @@ void musicStart(const Clip& c, bool loop = true);  // a track that doesn't loop 
 // in; the mixer waits at the edge of what has arrived rather than play what isn't there yet.
 void musicAvail(const s16* pcm, u32 frames, u32 total);
 void musicStop();
+void musicSeek(u32 frame);  // jumps the playing track to this frame (a fight's music handing back)
 void musicVolume(float v);
 void musicRate(float factor);
 float musicTime();  // seconds into the music, wrapping with its loop; -1 when none is playing  // 1 is normal; a little above 1 plays the track faster and higher

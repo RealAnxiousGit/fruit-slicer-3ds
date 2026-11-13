@@ -37,6 +37,8 @@ static const char* const kSfxFiles[SFX_COUNT] = {
 	"strike", "click", "power", "freeze", "fever", "go", "over", "best", "gold",
 	"finale_rise", "finale_hit", "finale_burst",
 	"coin", "plink", "shopbell",
+	"clang", "open", "roar", "bossin", "victory", "pop",
+	"laugh", "chuckle", "whoosh", "launch",
 };
 static_assert(sizeof kSfxFiles / sizeof kSfxFiles[0] == SFX_COUNT, "every sound needs a file name");
 // How much of the mix one sound may take. A new sound is turned down if the ones still playing have
@@ -327,6 +329,27 @@ void shutdown() {
 }
 
 bool available() { return sReady; }
+bool loaded(Sfx s) { return s >= 0 && s < SFX_COUNT && sSfx[s].pcm; }
+
+// The track's file is in the game's files with a good header (the Lab checks every boss track this way).
+bool trackFileThere(int track) {
+	if (track < 0 || track >= kTrackCount) return false;
+#if FS_OGG
+	{
+		char path[64];
+		snprintf(path, sizeof path, "audio/%s.ogg", kTrackFiles[track]);
+		if (port::AssetFile* ogg = port::assetOpen(path)) {
+			port::assetClose(ogg);
+			return true;
+		}
+	}
+#endif
+	u32 head[3];
+	port::AssetFile* f = openClip(kTrackFiles[track], head);
+	if (!f) return false;
+	port::assetClose(f);
+	return true;
+}
 
 void click(float volume) {
 	u8 saved = gSave.sfx;
@@ -341,6 +364,20 @@ static constexpr float kStartAhead = 0.5f;
 static bool sStarted;      // the mixer has the current track
 static float sStartedAt;
 static bool sLoop = true;  // a chosen track loops; Auto's shuffle moves on at the end instead
+// Boss fights: the room's music fades out, the boss track loops, and afterwards the room's music fades
+// back in from where it was. Only one track is ever in memory, so the room's track is read in again.
+enum BossStage { BOSS_OFF, BOSS_FADING, BOSS_GAP, BOSS_PLAYING, BOSS_LEAVING, BOSS_RETURNING };
+static int sBossStage = BOSS_OFF;
+static int sBossTrack = -1, sResumeTrack = -1;
+static bool sResumeAuto;
+static float sResumeAt;     // seconds into the room's track when the fight took over
+static float sBossT;
+static float sBossFade = 1;  // on top of the Music slider while the music changes hands
+static float sBossWait;      // how long the fade back in has waited for the room's track
+static float sSeekSec;       // the next track starts this far in, once that much of it is here
+static constexpr float kBossFadeOut = 1.0f, kBossGap = 0.6f, kBossLeave = 0.7f, kBossReturn = 1.2f;
+static void bossTick(float dt);
+static void bossCancel();
 static float sAskedAt;  // when the current track was asked for, for the test log
 
 static void startMixer(u32 avail) {
@@ -350,6 +387,8 @@ static void startMixer(u32 avail) {
 #endif
 	refreshVolumes();
 	audioport::musicStart(sMusicClip, sLoop);
+	if (sSeekSec > 0 && sMusicClip.rate > 0 && sMusicClip.samples > 0) audioport::musicSeek((u32)(sSeekSec * sMusicClip.rate) % sMusicClip.samples);
+	sSeekSec = 0;
 	audioport::musicAvail(sMusicClip.pcm, avail, sMusicClip.samples);
 	sStarted = true;
 	sStartedAt = sClock;
@@ -360,7 +399,7 @@ static void arrived(u32 fromFrame, u32 avail) {
 	if (avail > fromFrame)
 		audioport::ready(sMusicClip.pcm + fromFrame * sMusicClip.channels, (avail - fromFrame) * sMusicClip.channels * 2);
 	if (sStarted) audioport::musicAvail(sMusicClip.pcm, avail, sMusicClip.samples);
-	else if (avail >= sMusicClip.samples || (!PORT_3DS && avail >= sMusicClip.rate * kStartAhead)) startMixer(avail);  // the 3DS waits for all of it
+	else if (avail >= sMusicClip.samples || (!PORT_3DS && avail >= sMusicClip.rate * (kStartAhead + sSeekSec))) startMixer(avail);  // the 3DS waits for all of it
 }
 
 // Loading broke off part way: whatever had started stops, and the track is let go.
@@ -476,6 +515,7 @@ void update(float dt) {
 		if (sAutoPick) autoNext();
 		else startMixer(sMusicClip.samples);
 	}
+	bossTick(dt);
 	if (sMusicRetired && --sMusicRetiredFrames <= 0) {
 		audioport::release(sMusicRetired);
 		sMusicRetired = nullptr;
@@ -497,6 +537,8 @@ static const char* captionFor(Sfx s) {
 		case SFX_SHOPBELL: return "Ding-a-ling!";
 		case SFX_FINALE_RISE: return "Big fruit!";
 		case SFX_FINALE_BURST: return "Burst!";
+		case SFX_LAUGH: return "Ha ha ha!";
+		case SFX_CHUCKLE: return "Ho ho!";
 		default: return nullptr;
 	}
 }
@@ -526,7 +568,7 @@ void previewFade(float level) {
 
 void refreshVolumes() {
 	if (!sReady) return;
-	audioport::musicVolume(kMusicGain * level(gSave.music) * sPreviewFade);
+	audioport::musicVolume(kMusicGain * level(gSave.music) * sPreviewFade * sBossFade);
 }
 
 #if PORT_CUSTOM_MUSIC
@@ -687,6 +729,7 @@ static void autoNext() {
 }
 
 void music(Music m) {
+	bossCancel();
 	sContext = m;
 	sForced = -1;
 	startFor(m);
@@ -696,6 +739,7 @@ void preview(Music m) { startFor(m); }
 
 void musicBeat(int track) {
 	if (track < 0 || track >= trackCount()) return;
+	bossCancel();
 	sContext = MUSIC_PLAY;
 	sForced = track;
 	if (!sReady) return;
@@ -708,6 +752,93 @@ void musicBeat(int track) {
 		return;
 	}
 	startTrack(track, false, MUSIC_PLAY);  // it starts from the top as soon as its start is in
+}
+
+static void bossCancel() {
+	sBossStage = BOSS_OFF;
+	sSeekSec = 0;
+	if (sBossFade != 1) {
+		sBossFade = 1;
+		refreshVolumes();
+	}
+}
+
+void bossMusic(int track) {
+	if (!sReady || track < 0 || track >= kTrackCount) return;
+	sBossTrack = track;
+	if (sBossStage == BOSS_PLAYING) {
+		startTrack(track, false, sContext);
+		return;
+	}
+	if (sBossStage == BOSS_OFF || sBossStage == BOSS_RETURNING) {
+		sBossStage = BOSS_FADING;
+		sBossT = 0;
+	}
+}
+
+void bossMusicEnd() {
+	if (sBossStage == BOSS_OFF || sBossStage == BOSS_LEAVING || sBossStage == BOSS_RETURNING) return;
+	if (sBossStage == BOSS_FADING) {
+		// The fight was over before the room's music had gone: it simply comes back up.
+		sBossStage = BOSS_RETURNING;
+		sBossT = sBossFade * kBossReturn;
+		return;
+	}
+	sBossStage = BOSS_LEAVING;
+	sBossT = 0;
+}
+
+bool bossMusicOn() { return sBossStage != BOSS_OFF; }
+
+static void bossTick(float dt) {
+	if (sBossStage == BOSS_OFF) return;
+	sBossT += dt;
+	switch (sBossStage) {
+		case BOSS_FADING:
+			sBossFade = clampf(1 - sBossT / kBossFadeOut, 0, 1);
+			if (sBossT >= kBossFadeOut) {
+				// Where the room's music was, then quiet while the boss's intro sound plays.
+				sResumeTrack = sCurrent;
+				sResumeAuto = sAutoPick;
+				const float at = musicTime();
+				sResumeAt = at > 0 ? at : 0;
+				startTrack(-1);
+				sBossStage = BOSS_GAP;
+				sBossT = 0;
+			}
+			break;
+		case BOSS_GAP:
+			if (sBossT >= kBossGap) {
+				sBossFade = 1;
+				startTrack(sBossTrack, false, sContext);
+				sBossStage = BOSS_PLAYING;
+			}
+			break;
+		case BOSS_LEAVING:
+			sBossFade = clampf(1 - sBossT / kBossLeave, 0, 1);
+			if (sBossT >= kBossLeave) {
+				sBossFade = 0;
+				sSeekSec = sResumeAt;
+				if (sResumeTrack >= 0) startTrack(sResumeTrack, sResumeAuto, sContext);
+				else startFor(sContext);
+				sBossStage = BOSS_RETURNING;
+				sBossT = 0;
+				sBossWait = 0;
+			}
+			break;
+		case BOSS_RETURNING:
+			// The fade in waits for the track to be playing again, or gives up waiting after 3 seconds. The wait has
+			// its own clock: holding sBossT at 0 alone would wait for ever on a track that never arrives.
+			sBossWait += dt;
+			if (!sStarted && sBossWait < 3 && sCurrent >= 0) sBossT = 0;
+			sBossFade = clampf(sBossT / kBossReturn, 0, 1);
+			if (sBossT >= kBossReturn) {
+				sBossFade = 1;
+				sBossStage = BOSS_OFF;
+			}
+			break;
+	}
+	refreshVolumes();
 }
 
 int currentTrack() { return sCurrent; }

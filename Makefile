@@ -5,6 +5,7 @@
 #   make AUTOTEST=1  -> a build that plays itself for emulator test runs
 #   make DEV=1       -> developer tools in Options (coins on demand); never for releases
 #   make LAB=1       -> the Lab: plays through every feature and writes PASS/FAIL to lab.txt (developer only)
+#   make LAB=1 QUICK=1 -> the quick Lab: only the newest modes and their checks, everything older skipped
 #---------------------------------------------------------------------------------
 .SUFFIXES:
 
@@ -24,8 +25,8 @@ GRAPHICS	:=	gfx
 GFXBUILD	:=	romfs/gfx
 ROMFS		:=	romfs
 
-APP_TITLE		:=	Fruit Slicer 3DS
-APP_DESCRIPTION	:=	Slice fruit, chain combos, dodge bombs. Free fan game.
+APP_TITLE		:=	Fruit Slicer
+APP_DESCRIPTION	:=	Fruit Slicer
 APP_AUTHOR		:=	RealAnxiousGit
 ICON			:=	meta/icon.png
 
@@ -37,6 +38,9 @@ ifneq ($(strip $(LAB)),)
 AUTOTEST := 1
 DEV := 1
 TESTDEFS += -DLAB
+endif
+ifneq ($(strip $(QUICK)),)
+TESTDEFS += -DLAB_QUICK
 endif
 ifneq ($(strip $(AUTOTEST)),)
 CFLAGS	+=	-DAUTOTEST

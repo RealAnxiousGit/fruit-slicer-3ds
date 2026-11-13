@@ -16,6 +16,10 @@ static ndspWaveBuf sFuseBuf;
 static int sNext;
 static float sMusicVolume;
 static float sMusicRate = 32000, sMusicSpeed = 1;
+static ndspWaveBuf sMusicHead;     // after a seek: the rest of the track, before the loop takes over
+static const s16* sMusicPcm;
+static u32 sMusicFrames, sHeadFrom;
+static bool sMusicLoop;
 
 bool init() {
 	Result rc = ndspInit();
@@ -83,6 +87,10 @@ void musicStart(const Clip& c, bool loop) {
 	sMusicBuf.nsamples = c.samples;
 	sMusicBuf.looping = loop;
 	ndspChnWaveBufAdd(kMusicChannel, &sMusicBuf);
+	sMusicPcm = c.pcm;
+	sMusicFrames = c.samples;
+	sMusicLoop = loop;
+	sHeadFrom = 0;
 }
 
 // The DSP reads the whole buffer itself. A track is read in many times faster than it plays, and each
@@ -94,12 +102,36 @@ void musicRate(float factor) {
 	ndspChnSetRate(kMusicChannel, sMusicRate * factor);
 }
 
+// A seek plays the track once from that frame to its end, then the whole track loops from its start as usual.
+void musicSeek(u32 frame) {
+	if (!sMusicPcm || frame == 0 || frame >= sMusicFrames) return;
+	ndspChnWaveBufClear(kMusicChannel);
+	memset(&sMusicHead, 0, sizeof sMusicHead);
+	sMusicHead.data_vaddr = sMusicPcm + frame;
+	sMusicHead.nsamples = sMusicFrames - frame;
+	ndspChnWaveBufAdd(kMusicChannel, &sMusicHead);
+	sHeadFrom = frame;
+	if (sMusicLoop) {
+		memset(&sMusicBuf, 0, sizeof sMusicBuf);
+		sMusicBuf.data_vaddr = sMusicPcm;
+		sMusicBuf.nsamples = sMusicFrames;
+		sMusicBuf.looping = true;
+		ndspChnWaveBufAdd(kMusicChannel, &sMusicBuf);
+	}
+}
+
 // A full channel reset: clearing the queue alone left a looping track playing until something else took over.
-void musicStop() { ndspChnReset(kMusicChannel); }
+void musicStop() {
+	ndspChnReset(kMusicChannel);
+	sMusicPcm = nullptr;
+	sHeadFrom = 0;
+}
 
 float musicTime() {
 	if (!ndspChnIsPlaying(kMusicChannel) || sMusicRate <= 0) return -1;
-	return ndspChnGetSamplePos(kMusicChannel) / sMusicRate;
+	// While the seek's head plays, its position counts from where it began.
+	const bool inHead = sHeadFrom > 0 && sMusicHead.status != NDSP_WBUF_DONE;
+	return (ndspChnGetSamplePos(kMusicChannel) + (inHead ? sHeadFrom : 0)) / sMusicRate;
 }
 
 void fuseStart(const Clip& c) {

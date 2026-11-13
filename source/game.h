@@ -1,6 +1,7 @@
 #pragma once
 #include "blade.h"
 #include "common.h"
+#include "orchard.h"
 
 // All gameplay objects live in fixed arrays: nothing here allocates after boot,
 // so rapid spawning can't fragment the heap.
@@ -10,10 +11,12 @@ struct Obj {
 	float x, y, vx, vy, rot, rotv, radius, age;
 	float rx, ry, rxv, ryv;  // extra tumble, seen in the 3D art style
 	float hitCooldown;  // tough fruit can't be hit twice by one swipe
+	float morph;        // The Bomb King's decoy fruit: seconds until it turns into a bomb, 0 for none
 	ObjKind kind;
 	u8 fruit;
 	u8 hits;            // slices still needed
 	bool loose;         // broke off a trick fruit: worth a bonus, and never a miss if dropped
+	u8 tag;             // Sharpshooter: 1 + its ring colour, 0 for none
 	bool on;
 };
 struct Half {
@@ -175,6 +178,10 @@ struct Game {
 	float beatFirst;      // seconds into the track of the first beat of a bar: 0 for the game's own tracks
 	float beatLoop;       // seconds before a custom song starts again, once it has loaded
 	int beatPerLoop;      // throw slots in one play of a custom song; 0 for the game's tracks, which run on forever
+	// Orchard Blast (orchard.cpp, boss.cpp).
+	Orchard orc;
+	// Boss Rush, Recipe, Sharpshooter and Juggle (modes12.cpp).
+	Modes12 m12;
 #ifdef AUTOTEST
 	// Measures how often a fruit is actually drawn on top of a bomb.
 	u32 statBombFrames, statOverlapFrames, statWaves, statFrenzies, statResets;
@@ -183,6 +190,8 @@ struct Game {
 	u32 statFruitAt[3], statBombsAt[3];  // thrown outside a Frenzy, by minute and a half of play: 0-30 s, 30-60 s, after
 	u32 statPendingMask;  // queue slots already taken when a wave began
 	void logWave() const;  // Daily Fruit: what this wave threw, to prove every run gets the same
+	void labOrchard(void (*check)(bool, const char*, const char*));  // orchard.cpp
+	void labModes12(void (*check)(bool, const char*, const char*));  // modes12.cpp
 #endif
 
 	void start(Mode m);
@@ -224,6 +233,70 @@ struct Game {
 	float beatOffset() const;  // seconds from the nearest throw slot, negative when early
 	void drawBeatPulse() const;  // Beat Slice: the field's edges glow while a slice would count
 
+	// Orchard Blast, for the menus (orchard.cpp).
+	bool orchardLike() const { return mode == MODE_ORCHARD || mode == MODE_BOSSRUSH; }  // HP, charms and bosses
+	bool orchardHeld() const { return orchardLike() && (orc.choosing || orc.resumeT > 0 || m12.rushPicking); }  // play holds still
+	void rushPick(int build);   // Boss Rush: takes a build and brings the first boss in
+	void drawModes12Field() const;  // the recipe, the call, the rings
+	bool orcCanReroll() const { return orc.choosing && !orc.placing && orc.rerolls > 0; }
+	void orcPick(int i);        // takes offer i
+	void orcReroll();
+	void orcPlace(int slot);    // puts the charm just taken in slot 0 or 1; -1 keeps the charms already there
+	void orcUse(int slot);      // fires a slotted charm
+	void orcSwapSlots();
+	void orcDrop(int slot);
+	void orcResume() { orc.resumeT = 3.0f; }  // after the Inventory or a pause: 3, 2, 1
+	bool orcSlotReady(int slot) const;
+	float orcStat(int card) const;  // a stat's current value, for the Inventory
+	int orcXpNeed() const;
+	void drawOrchardHud(float x, float y, float w, float u) const;  // HP, XP, room: on the score sign
+	void drawOrchardField() const;  // the boss, its shots and the charm slots, on the field
+	void drawOrchardOverlay() const;  // charm slots and the 3, 2, 1, over everything on the field
+	static void orcSlotRect(int slot, float* x, float* y, float* w, float* h);  // where a charm slot sits on the field
+
+private:
+	// Orchard Blast (orchard.cpp).
+	void orcStart();
+	void orcUpdate(Blade& blade);    // rooms, healing, charms, the boss: once a step while playing
+	bool orcWave();                  // throws this room's wave; true when it handled the wave
+	float orcDifficulty() const;
+	float orcObjScale() const;       // Steady Hands, Slow-Mo and Freeze Pop slow the fruit
+	float orcReach() const;          // Long Edge widens the blade
+	void orcSliced(const Obj& o);    // XP, healing and the like for a fruit, seed or coin
+	void orcCombo(int n);
+	void orcBomb(Obj& o);
+	void orcDropped(const Obj& o);
+	void orcHurt(int damage, float x, float y, const char* what);
+	void orcGainXp(float amount);
+	void orcNextRoom();
+	void orcOffer();
+	void orcClose();
+	void orcApply(int card);
+	void orcEcho(const Blade& blade);
+	void orcBlender();
+	bool orcOnBeat() const;
+	void orcFinish(bool won);
+	// The other 1.2 modes (modes12.cpp).
+	void m12Start();
+	bool m12Wave();                  // throws the wave for Recipe or Juggle; true when it did
+	bool m12Sliced(const Obj& o);    // Recipe and Sharpshooter: false when the fruit was the wrong one
+	void m12Update();
+	void juggleTest(Blade& blade);    // Juggle: a swipe knocks fruit up instead of cutting
+	void rushNext();                 // Boss Rush: the next boss, or the end
+	void recipeNew();
+	// The boss (boss.cpp).
+	void bossStart(int id, bool royal = false);
+	void bossUpdate(float dt);
+	void bossTest(Blade& blade);     // a slice, a Deflected!, or a cut shot
+	void bossOpen(float seconds, bool laugh = true);  // its guard drops, with a laugh unless it was stunned
+	void bossGiant(float dt);         // The Bomb King's Giant Bomb, under way
+	void bossGiantTest(const Blade& blade, float reach);
+	void bossNextAttack();
+	void bossAttack(float dt);
+	void bossFire(int kind, float x, float y, float vx, float vy);
+	void shotsUpdate(float dt);
+	void drawBoss(bool solid) const;
+	void drawShots() const;
 private:
 	int diffIndex() const;            // Daily Fruit always plays on Normal
 	float slider(u8 value) const;     // a Gameplay slider, 0-100; Daily Fruit holds them at the middle
@@ -287,3 +360,4 @@ int fruitSprite(int fruit);  // the 2D sticker of a fruit kind, on SHEET_FRUIT
 int everydayFruit(Rng& rng);   // any everyday fruit but the coconut
 float levelGravity(int diff);  // the difficulty's gravity, against Normal
 float levelBombs(int diff);    // and how many bombs it throws, against Normal
+float levelInterval(int diff); // and how often it throws, against Normal

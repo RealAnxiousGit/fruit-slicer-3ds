@@ -180,11 +180,24 @@ def make_banner(meshes, sky, far, mid, logo, s):
     return banner
 
 
+def make_logo_banner(logo, w=256, h=128, margin=6):
+    """The HOME Menu banner: the game's logo alone, on a transparent background, as big as fits."""
+    logo = logo.convert("RGBA")
+    box = logo.getbbox()
+    if box:
+        logo = logo.crop(box)
+    k = min((w - 2 * margin) / logo.width, (h - 2 * margin) / logo.height)
+    logo = logo.resize((max(1, round(logo.width * k)), max(1, round(logo.height * k))), Image.LANCZOS)
+    out = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    out.alpha_composite(logo, ((w - logo.width) // 2, (h - logo.height) // 2))
+    return out
+
+
 def build_meta(sky, far, mid, logo):
     meshes = load_meshes()
     store = os.path.join(ROOT, "docs", "store")
     os.makedirs(store, exist_ok=True)
     make_icon(meshes, 48).save(os.path.join(ROOT, "meta", "icon.png"))
     make_icon(meshes, 192).save(os.path.join(store, "icon.png"))
-    make_banner(meshes, sky, far, mid, logo, 1).convert("RGBA").save(os.path.join(ROOT, "meta", "banner.png"))
+    make_logo_banner(logo).save(os.path.join(ROOT, "meta", "banner.png"))  # the logo alone (RealAnxiousGit, 2026-11-13)
     make_banner(meshes, sky, far, mid, logo, 2).convert("RGB").save(os.path.join(store, "banner.png"), optimize=True)
