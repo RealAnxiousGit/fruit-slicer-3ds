@@ -233,7 +233,16 @@ static int resolveTrack(int context, bool* autoPick) {
 	if (context == MUSIC_NONE) return -1;
 	if (context == MUSIC_PLAY && sForced >= 0) return sForced;
 	u8 choice = context == MUSIC_MENU ? gSave.menuTrack : gSave.gameTrack;
-	if (choice > 0) return choice - 1;
+#if PORT_CUSTOM_MUSIC
+	// A custom song chosen in Options: the folder is read the first time one is asked for.
+	static bool scanned = false;
+	if (choice > kTrackCount && !scanned) {
+		scanned = true;
+		if (custom::count() == 0) custom::scan();
+	}
+#endif
+	// A song that has left the Custom Music folder plays as Auto, keeping the choice in case it comes back.
+	if (choice > 0 && choice - 1 < trackCount()) return choice - 1;
 	*autoPick = true;
 	if (sAutoPick && sAutoContext == context && inAutoPool(context, sCurrent)) return sCurrent;
 	return pickAuto(context, sCurrent);

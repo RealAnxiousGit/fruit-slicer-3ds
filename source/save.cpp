@@ -53,6 +53,7 @@ void saveResetScores() {
 	memset(gSave.bestAssisted11, 0, sizeof gSave.bestAssisted11);
 	memset(gSave.bestMixer11, 0, sizeof gSave.bestMixer11);
 	gSave.orchardBestRoom = gSave.orchardBestLevel = 0;
+	gSave.rushBestSecs = 0;
 	gSave.totalFruit = 0;
 	gSave.bestCombo = 0;
 	gSave.playSeconds = 0;
@@ -262,14 +263,23 @@ void saveLoad() {
 	gSave.bossMusic &= 1;
 	for (u8& t : gSave.bossTrackLast)
 		if (t > kTrackCount) t = 0;
+	// A boss beaten before win counts existed counts once.
+	for (int b = 0; b < (int)(sizeof gSave.bossWins / sizeof gSave.bossWins[0]); b++)
+		if ((gSave.bossesBeaten >> b & 1) && gSave.bossWins[b] == 0) gSave.bossWins[b] = 1;
 	if (gSave.trail >= kTrailCount) gSave.trail = 0;
 	gSave.updSkipped[sizeof gSave.updSkipped - 1] = 0;
 	gSave.ownedThemes |= 1;  // the first of each is always owned
 	gSave.ownedTrails |= 1;
 	gSave.ownedTracks |= 1;
 	PORT_CHECK_SETTINGS
+#if PORT_CUSTOM_MUSIC
+	// Past the game's tracks are custom songs, checked when they play, as the folder can change.
+	if (gSave.menuTrack > kTrackCount + kCustomSongsMax) gSave.menuTrack = 0;
+	if (gSave.gameTrack > kTrackCount + kCustomSongsMax) gSave.gameTrack = 0;
+#else
 	gSave.menuTrack %= kTrackCount + 1;
 	gSave.gameTrack %= kTrackCount + 1;
+#endif
 #if !PORT_CUSTOM_MUSIC
 	gSave.beatTrack %= kTrackCount + 1;  // custom songs are checked when Beat Slice starts, as the folder can change
 #endif

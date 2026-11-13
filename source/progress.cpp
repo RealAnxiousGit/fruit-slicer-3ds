@@ -146,6 +146,29 @@ u32 journalPay(const u32* before, const u32* after) {
 	return coins;
 }
 
+// ---------------------------------------------------------------- Boss milestones
+// Ten times what a fruit pays, as a boss win takes a whole run.
+static const u32 kBossMilestones[kBossLevels] = {1, 5, 15, 40};
+static const u32 kBossRewards[kBossLevels] = {50, 150, 400, 1000};
+
+int bossLevel(u32 wins) {
+	int level = 0;
+	while (level < kBossLevels && wins >= kBossMilestones[level]) level++;
+	return level;
+}
+u32 bossMilestone(int level) { return level >= 1 && level <= kBossLevels ? kBossMilestones[level - 1] : 0; }
+u32 bossReward(int level) { return level >= 1 && level <= kBossLevels ? kBossRewards[level - 1] : 0; }
+
+u32 bossWin(int boss) {
+	if (boss < 0 || boss >= (int)(sizeof gSave.bossWins / sizeof gSave.bossWins[0])) return 0;
+	u16& wins = gSave.bossWins[boss];
+	const int before = bossLevel(wins);
+	if (wins < 0xFFFF) wins++;
+	u32 coins = 0;
+	for (int level = before + 1; level <= bossLevel(wins); level++) coins += bossReward(level);
+	return coins;
+}
+
 // ---------------------------------------------------------------- Stats
 Mode favouriteMode() {
 	int best = MODE_COUNT;

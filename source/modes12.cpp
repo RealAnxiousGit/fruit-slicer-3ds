@@ -9,6 +9,7 @@
 #include "boom.h"
 #include "fruitids.h"
 #include "game.h"
+#include "progress.h"
 #include "render.h"
 #include "sprites.h"
 
@@ -589,6 +590,39 @@ void Game::labModes12(void (*check)(bool, const char*, const char*)) {
 	bool kept = true;
 	for (int m = MODE_BOSSRUSH; m <= MODE_JUGGLE; m++) kept = kept && bestTable()[m] == (u32)(100 + m);
 	check(kept, "Boss Rush, Recipe, Sharpshooter and Juggle each save their best", "");
+
+	// Journal boss milestones: wins 1, 5, 15 and 40 pay 50, 150, 400 and 1,000 coins.
+	{
+		const u16 winsWas = gSave.bossWins[BOSS_KING];
+		gSave.bossWins[BOSS_KING] = 0;
+		const u32 first = progress::bossWin(BOSS_KING);
+		gSave.bossWins[BOSS_KING] = 3;
+		const u32 fourth = progress::bossWin(BOSS_KING), fifth = progress::bossWin(BOSS_KING);
+		snprintf(d, sizeof d, "first %lu, fourth %lu, fifth %lu, wins %u", (unsigned long)first, (unsigned long)fourth, (unsigned long)fifth, (unsigned)gSave.bossWins[BOSS_KING]);
+		check(first == 50 && fourth == 0 && fifth == 150 && gSave.bossWins[BOSS_KING] == 5, "Each boss win is counted, and milestones pay 50 on the first and 150 on the fifth", d);
+		check(progress::bossMilestone(4) == 40 && progress::bossReward(4) == 1000 && progress::bossReward(4) == 10 * progress::journalReward(4),
+		      "The last boss milestone is 40 wins for 1,000 coins, ten times a fruit's", "");
+		gSave.bossWins[BOSS_KING] = 0xFFFF;
+		check(progress::bossWin(BOSS_KING) == 0 && gSave.bossWins[BOSS_KING] == 0xFFFF, "A boss's win count stops at its top without wrapping", "");
+		gSave.bossWins[BOSS_KING] = winsWas;
+	}
+	// Boss Rush keeps its fastest clear for Stats.
+	{
+		const u16 rushWas = gSave.rushBestSecs;
+		gSave.rushBestSecs = 0;
+		setup(MODE_BOSSRUSH);
+		orc.won = true;
+		elapsed = 200;
+		commitScore();
+		const u16 firstTime = gSave.rushBestSecs;
+		setup(MODE_BOSSRUSH);
+		orc.won = true;
+		elapsed = 260;
+		commitScore();
+		snprintf(d, sizeof d, "%u s, then %u s", (unsigned)firstTime, (unsigned)gSave.rushBestSecs);
+		check(firstTime == 200 && gSave.rushBestSecs == 200, "Clearing Boss Rush saves the fastest time, and a slower clear doesn't replace it", d);
+		gSave.rushBestSecs = rushWas;
+	}
 	gSave.difficulty = diffWas;
 }
 #endif

@@ -77,6 +77,8 @@ static constexpr int kTrackCount = kBaseTracks
 #define SHOP_TRACK(...) +1
 #include "shop_items.inc"
 	;
+static constexpr int kCustomSongsMax = 64;  // custom::kMax: Custom Music songs, after the game's tracks
+static_assert(kTrackCount + kCustomSongsMax < 255, "Menu and Game Music hold 1 + a track in a byte");
 constexpr int kTrailCount = 1  // 0 is the plain blade colour, 1.. are Shop trails
 #define SHOP_TRAIL(...) +1
 #include "shop_items.inc"
@@ -172,7 +174,9 @@ struct Settings {
 	u8 bossMusic;           // 1 plays the boss tracks in a boss fight
 	u8 howToSeen;           // how-tos shown: bit 0 Orchard Blast, 1 its first boss, 2 Boss Rush, 3 Recipe, 4 Sharpshooter, 5 Juggle
 	u8 bossTrackLast[4];    // per boss, the track (+1) heard in its last fight, so the next one differs
-	u8 reserved12[30];      // later 1.2.x fields take bytes from here
+	u16 bossWins[8];        // per boss, times beaten in any mode (Fruit Journal and its coin milestones)
+	u16 rushBestSecs;       // Boss Rush: the fastest clear, in seconds, 0 = never cleared
+	u8 reserved12[12];      // later 1.2.x fields take bytes from here
 };
 static_assert(MODE_COUNT + 1 <= kMaxModes, "more modes than the save holds");
 static_assert(MODE_JUGGLE - MODE_ORCHARD + 2 <= 8, "howToSeen has a bit for each how-to");

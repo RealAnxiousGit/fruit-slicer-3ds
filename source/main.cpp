@@ -1188,7 +1188,7 @@ static const Row kMixerRows[] = {
 	{ROW_CHOICE, "Double Bombs", &gSave.mixer[MIX_DOUBLE_BOMBS], 0, 1, kOffOn, 0, 0, ACT_NONE, "Twice the bombs in every wave.", "Zen stays bomb-free."},
 	{ROW_CHOICE, "Sides Only", &gSave.mixer[MIX_SIDES], 0, 1, kOffOn, 0, 0, ACT_NONE, "Fruit only comes in", "from the left and right."},
 };
-static const Row kAudioRows[] = {
+static Row kAudioRows[] = {  // not const: Menu and Game Music grow with the Custom Music folder
 	{ROW_SLIDER, "Sound Effects", &gSave.sfx, 0, 100, nullptr, 0, 100, ACT_NONE, "Slices, combos and bombs.", ""},
 	{ROW_SLIDER, "Music", &gSave.music, 0, 100, nullptr, 0, 100, ACT_NONE, "Menu and game music.", ""},
 	{ROW_SLIDER, "Menu Sounds", &gSave.menuSfx, 0, 100, nullptr, 0, 100, ACT_NONE, "The tap when you press a sign.", ""},
@@ -1467,6 +1467,18 @@ static void refreshResolutions() {
 }
 #endif
 
+// Menu and Game Music list the game's tracks, then every song in the Custom Music folder.
+static void refreshMusicRows() {
+#if PORT_CUSTOM_MUSIC
+	custom::scan();  // songs added since last time
+	for (Row& r : kAudioRows)
+		if (r.value == &gSave.menuTrack || r.value == &gSave.gameTrack) {
+			r.hi = (u8)(kTrackCount + custom::count());
+			if (*r.value > r.hi) r.hi = *r.value;  // a song that left the folder stays chosen until it's changed
+		}
+#endif
+}
+
 static bool rowDisabled(const Row& r) {
 	if (passRowPlayer(r) >= passCount()) return true;  // this name's player isn't in the game
 #if PORT_HAS_DISPLAY
@@ -1478,6 +1490,15 @@ static bool rowDisabled(const Row& r) {
 static void rowValueText(const Row& r, char* buf, size_t size) {
 	buf[0] = 0;
 	if (r.kind == ROW_CHOICE) {
+		if ((r.value == &gSave.menuTrack || r.value == &gSave.gameTrack) && *r.value > kTrackCount) {
+#if PORT_CUSTOM_MUSIC
+			const int song = *r.value - 1 - kTrackCount;
+			snprintf(buf, size, "%s", song < custom::count() ? custom::name(song) : "Song not found");
+#else
+			snprintf(buf, size, "Auto");
+#endif
+			return;
+		}
 		snprintf(buf, size, "%s", r.names[*r.value]);
 	} else if (r.kind == ROW_SLIDER) {
 		if (rowDisabled(r)) {
@@ -1533,7 +1554,7 @@ static void changedSetting(const Row& r) {
 static bool choiceLocked(const Row& r, int v) {
 	if (r.value == &gSave.board) return !boardUnlocked(v);
 	if (r.value == &gSave.trail) return !trailUnlocked(v);
-	if (r.value == &gSave.menuTrack || r.value == &gSave.gameTrack) return v > 0 && !trackUnlocked(v - 1);
+	if (r.value == &gSave.menuTrack || r.value == &gSave.gameTrack) return v > 0 && v <= kTrackCount && !trackUnlocked(v - 1);
 	return false;
 }
 
@@ -3009,7 +3030,13 @@ static void drawJournalBossTile(const Button& b, int boss, bool focused, bool pr
 	gfx::tri(cx - 7, b.y + 3, gold, cx - 5, b.y - 2, gold, cx - 3, b.y + 3, gold);
 	gfx::tri(cx - 2, b.y + 3, gold, cx, b.y - 3, gold, cx + 2, b.y + 3, gold);
 	gfx::tri(cx + 3, b.y + 3, gold, cx + 5, b.y - 2, gold, cx + 7, b.y + 3, gold);
-	gfx::text(beaten ? "BEATEN" : "?", cx, b.y + 32, 0.26f, focused ? COL_ACCENT : COL_CREAM, ALIGN_CENTER);
+	const u32 wins = gSave.bossWins[boss];
+	char buf[16];
+	if (beaten) snprintf(buf, sizeof buf, "%lu WIN%s", (unsigned long)wins, wins == 1 ? "" : "S");
+	else snprintf(buf, sizeof buf, "?");
+	gfx::text(buf, cx, b.y + 29, 0.26f, focused ? COL_ACCENT : COL_CREAM, ALIGN_CENTER);
+	const int level = progress::bossLevel(wins);
+	for (int k = 0; k < progress::kBossLevels; k++) gfx::rect(cx - 14 + k * 8, b.y + 39, 4, 3, k < level ? rgba(255, 210, 80) : rgba(0, 0, 0, 90));
 }
 
 static void drawJournal() {
@@ -3051,15 +3078,30 @@ static void drawJournalBossTop(int boss) {
 	gfx::text(beaten ? kBosses[boss].name : "Not beaten yet", 200, 98, 0.6f, COL_ACCENT, ALIGN_CENTER);
 	snprintf(buf, sizeof buf, "ORCHARD BLAST, ROOM %d", boss == BOSS_MELON ? 5 : 10);
 	gfx::text(buf, 200, 126, 0.4f, COL_CREAM, ALIGN_CENTER);
-	snprintf(buf, sizeof buf, "%d SLICES TO BEAT", kBosses[boss].slices);
-	gfx::text(buf, 200, 144, 0.4f, COL_CREAM, ALIGN_CENTER);
-	if (beaten) fitText(boss == BOSS_MELON ? "Spits seeds and flops. Slice it when its guard drops." : "Fires cannonballs and lights its fuse. Snuff the fuse in three swipes.", 200, 168, 0.34f, 320, COL_DIM);
-	else fitText("Reach it in Orchard Blast and beat it to fill this page.", 200, 168, 0.34f, 320, COL_DIM);
+	const u32 wins = gSave.bossWins[boss];
+	snprintf(buf, sizeof buf, "%d SLICES TO BEAT   BEATEN %lu", kBosses[boss].slices, (unsigned long)wins);
+	gfx::text(buf, 200, 142, 0.38f, COL_CREAM, ALIGN_CENTER);
+	if (beaten) fitText(boss == BOSS_MELON ? "Spits seeds and flops. Slice it when its guard drops." : "Fires cannonballs and lights its fuse. Snuff the fuse in three swipes.", 200, 160, 0.32f, 320, COL_DIM);
+	else fitText("Reach it in Orchard Blast and beat it to fill this page.", 200, 160, 0.32f, 320, COL_DIM);
+	// Win milestones, worth far more than a fruit's.
+	const int level = progress::bossLevel(wins);
+	for (int k = 1; k <= progress::kBossLevels; k++) {
+		const float x = 200 + (k - 2.5f) * 74;
+		const bool reached = k <= level;
+		gfx::sprite(SHEET_SPRITES, sprites_coin_idx, x, 180, 0.42f, 0.42f, 0, reached ? WHITE : rgba(90, 80, 70, 200));
+		snprintf(buf, sizeof buf, "%lu WIN%s  +%lu", (unsigned long)progress::bossMilestone(k), k == 1 ? "" : "S", (unsigned long)progress::bossReward(k));
+		gfx::text(buf, x, 191, 0.27f, reached ? COL_ACCENT : COL_DIM, ALIGN_CENTER);
+	}
 	const int tracks = bossTrackCount(boss);
+	if (level < progress::kBossLevels)
+		snprintf(buf, sizeof buf, "%lu more win%s for %lu coins", (unsigned long)(progress::bossMilestone(level + 1) - wins), progress::bossMilestone(level + 1) - wins == 1 ? "" : "s", (unsigned long)progress::bossReward(level + 1));
+	else
+		snprintf(buf, sizeof buf, "Every boss milestone reached!");
+	gfx::text(buf, 200, 206, 0.34f, COL_CREAM, ALIGN_CENTER);
 	if (tracks > 0) {
 		if (beaten) snprintf(buf, sizeof buf, "Its %d tracks are in the Shop", tracks);
 		else snprintf(buf, sizeof buf, "Unlocks %d tracks in the Shop", tracks);
-		gfx::text(buf, 200, 198, 0.38f, beaten ? COL_ACCENT : COL_CREAM, ALIGN_CENTER);
+		gfx::text(buf, 200, 221, 0.3f, beaten ? COL_ACCENT : COL_DIM, ALIGN_CENTER);
 	}
 }
 
@@ -3084,7 +3126,7 @@ static void drawJournalTop() {
 		for (int k = 0; k < BOSS_COUNT; k++) beaten += bossBeaten(k);
 		snprintf(buf, sizeof buf, "BOSSES BEATEN %d OF %d", beaten, (int)BOSS_COUNT);
 		gfx::text(buf, 200, 138, 0.44f, COL_CREAM, ALIGN_CENTER);
-		gfx::text("Every milestone pays coins.", 200, 166, 0.38f, COL_DIM, ALIGN_CENTER);
+		gfx::text("Every milestone pays coins, a boss's the most.", 200, 166, 0.36f, COL_DIM, ALIGN_CENTER);
 		gfx::text("Back to the title", 200, 196, 0.42f, COL_CREAM, ALIGN_CENTER);
 		return;
 	}
@@ -3117,12 +3159,20 @@ static void drawJournalTop() {
 	gfx::text(buf, 200, 208, 0.36f, COL_CREAM, ALIGN_CENTER);
 }
 
+// Orchard Blast's best room is saved as the room the run reached (one past the last on a win),
+// so the highest conquered is the one before it.
+static int statsRoomsConquered() {
+	const int r = (int)gSave.orchardBestRoom - 1;
+	return r < 0 ? 0 : (r > kOrchardRooms ? kOrchardRooms : r);
+}
+
 // Stats: the long view of everything played.
 static void drawStats() {
 	drawHeader("Stats");
 	drawBackArrow(true, sPressed == 0);
 	gfx::sign(sprites_plank_idx, 8, 48, 304, 186, COL_PLANK);
-	char value[6][32];
+	constexpr int kRows = 11;
+	char value[kRows][32];
 	snprintf(value[0], 32, "%lu", (unsigned long)gSave.totalFruit);
 	snprintf(value[1], 32, "%lu", (unsigned long)gSave.coinsLifetime);
 	const unsigned long secs = gSave.playSeconds;
@@ -3132,13 +3182,28 @@ static void drawStats() {
 	snprintf(value[3], 32, "%s", fav < MODE_COUNT ? modeName(fav) : "None yet");
 	snprintf(value[4], 32, "%lu", (unsigned long)gSave.bestCombo);
 	snprintf(value[5], 32, "%d (best %d)", progress::dailyStreak(progress::today()), (int)gSave.dailyBestStreak);
-	static const char* const kNames[6] = {"FRUIT SLICED", "COINS EARNED", "TIME PLAYED", "FAVOURITE MODE", "LONGEST COMBO", "DAILY STREAK"};
-	for (int i = 0; i < 6; i++) {
-		const float y = 60 + i * 28;
-		gfx::text(kNames[i], 26, y + 2, 0.32f, COL_DIM);
-		float s = 0.42f, w = gfx::textWidth(value[i], s);
-		if (w > 150) s *= 150 / w;
-		gfx::text(value[i], 294, y, s, COL_CREAM, ALIGN_RIGHT);
+	// Orchard Blast: the highest room conquered (cleared), its runs and the bosses.
+	const int conquered = statsRoomsConquered();
+	if (conquered >= kOrchardRooms) snprintf(value[6], 32, "All %d, run won", kOrchardRooms);
+	else if (conquered > 0) snprintf(value[6], 32, "Room %d", conquered);
+	else snprintf(value[6], 32, "None yet");
+	snprintf(value[7], 32, "%u runs, %u won", (unsigned)gSave.orchardRuns, (unsigned)gSave.orchardWins);
+	snprintf(value[8], 32, "%u", (unsigned)gSave.orchardBestLevel);
+	unsigned long bossWins = 0;
+	for (u16 w : gSave.bossWins) bossWins += w;
+	snprintf(value[9], 32, "%lu", bossWins);
+	if (gSave.rushBestSecs) snprintf(value[10], 32, "%u:%02u", gSave.rushBestSecs / 60u, gSave.rushBestSecs % 60u);
+	else snprintf(value[10], 32, "Not cleared yet");
+	static const char* const kNames[kRows] = {"FRUIT SLICED", "COINS EARNED", "TIME PLAYED", "FAVOURITE MODE", "LONGEST COMBO", "DAILY STREAK",
+	                                          "HIGHEST ROOM CONQUERED", "RUNS", "BEST LEVEL", "BOSS WINS", "FASTEST BOSS RUSH"};
+	for (int i = 0; i < kRows; i++) {
+		// The Orchard Blast rows sit under their own heading.
+		const float y = 56 + i * 15 + (i >= 6 ? 15 : 0);
+		if (i == 6) gfx::text("ORCHARD BLAST", 160, y - 15, 0.32f, COL_ACCENT, ALIGN_CENTER);
+		gfx::text(kNames[i], 24, y + 2, 0.29f, COL_DIM);
+		float s = 0.36f, w = gfx::textWidth(value[i], s);
+		if (w > 140) s *= 140 / w;
+		gfx::text(value[i], 296, y, s, COL_CREAM, ALIGN_RIGHT);
 	}
 }
 
@@ -5134,6 +5199,7 @@ static void updateFrame(const Input& in, bool wasTouching) {
 			}
 			else if (t > 0) {
 				sSection = sOptionSection[t];
+				if (kSections[sSection].id == SID_AUDIO) refreshMusicRows();
 #if PORT_HAS_DISPLAY
 				if (kSections[sSection].id == SID_VISUALS) refreshResolutions();
 #endif

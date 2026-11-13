@@ -99,8 +99,9 @@ bool trailUnlocked(int trail) { return trail == 0 || (trail < kTrailCount && sho
 void shopCheckSave() {
 	if (!boardUnlocked(gSave.board)) gSave.board = 0;
 	if (!trailUnlocked(gSave.trail)) gSave.trail = 0;
-	if (gSave.menuTrack > 0 && !trackUnlocked(gSave.menuTrack - 1)) gSave.menuTrack = 0;
-	if (gSave.gameTrack > 0 && !trackUnlocked(gSave.gameTrack - 1)) gSave.gameTrack = 0;
+	// Custom songs (past the game's tracks) are always the player's own.
+	if (gSave.menuTrack > 0 && gSave.menuTrack <= kTrackCount && !trackUnlocked(gSave.menuTrack - 1)) gSave.menuTrack = 0;
+	if (gSave.gameTrack > 0 && gSave.gameTrack <= kTrackCount && !trackUnlocked(gSave.gameTrack - 1)) gSave.gameTrack = 0;
 	if (gSave.splat > countOf(kSplats) || (gSave.splat > 0 && !shopOwned(SHOP_SPLATS, gSave.splat - 1))) gSave.splat = 0;
 	if (gSave.skin > countOf(kSkins) || (gSave.skin > 0 && !shopOwned(SHOP_SKINS, gSave.skin - 1))) gSave.skin = 0;
 }

@@ -10,6 +10,7 @@
 #include "fruitids.h"
 #include "game.h"
 #include "model3d.h"
+#include "progress.h"
 #include "render.h"
 #include "shop.h"
 #include "sprites.h"
@@ -513,6 +514,7 @@ void Game::bossTest(Blade& blade) {
 		orc.bossesBeaten++;
 		if (!(gSave.bossesBeaten >> b.id & 1)) orc.newTracks += bossTrackCount(b.id);
 		gSave.bossesBeaten |= 1u << b.id;
+		orc.bossCoins += progress::bossWin(b.id);
 		char buf[40];
 		snprintf(buf, sizeof buf, "%s BEATEN!", b.id == BOSS_MELON ? "BIG MELON" : "BOMB KING");
 		setCallout(buf, rgba(255, 230, 140), 0.8f);

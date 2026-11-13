@@ -816,6 +816,8 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 	char d[128];
 	const u8 diffWas = gSave.difficulty;
 	const u32 beatenWas = gSave.bossesBeaten;
+	u16 winsWas[sizeof gSave.bossWins / sizeof gSave.bossWins[0]];
+	memcpy(winsWas, gSave.bossWins, sizeof winsWas);
 	gSave.difficulty = DIFF_NORMAL;
 	const auto setup = [this]() {
 		start(MODE_ORCHARD);
@@ -1220,6 +1222,7 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 
 	gSave.difficulty = diffWas;
 	gSave.bossesBeaten = beatenWas;
+	memcpy(gSave.bossWins, winsWas, sizeof winsWas);
 	audio::fuse(false);
 }
 #endif

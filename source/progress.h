@@ -34,6 +34,14 @@ u32 journalReward(int level);      // coins it pays
 // Coins for every milestone crossed between two sets of counts.
 u32 journalPay(const u32* before, const u32* after);
 
+// Boss milestones in the Journal: beaten 1, 5, 15 and 40 times, paying far more than fruit.
+constexpr int kBossLevels = 4;
+int bossLevel(u32 wins);         // milestones reached, 0 to kBossLevels
+u32 bossMilestone(int level);    // wins needed for milestone `level` (1 to kBossLevels)
+u32 bossReward(int level);       // coins it pays
+// Counts one more win over `boss` and returns the coins for any milestone it reaches.
+u32 bossWin(int boss);
+
 // Stats page: the most-played mode, or MODE_COUNT before any run.
 Mode favouriteMode();
 }  // namespace progress

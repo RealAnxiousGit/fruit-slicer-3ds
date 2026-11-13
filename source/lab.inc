@@ -276,7 +276,21 @@ static void labMenus() {
 			botTap(kBack);
 			return;
 		case 4: labExpect(SCREEN_TITLE, "Journal back arrow cuts its berry and goes back"); botTap(kTitleButtons[3]); return;
-		case 5: labExpect(SCREEN_STATS, "Stats opens"); botTap(kBack); return;
+		case 5: {
+			labExpect(SCREEN_STATS, "Stats opens");
+			// Highest room conquered: the room a run reached, less one; a won run conquered all 10.
+			const u16 roomWas = gSave.orchardBestRoom;
+			gSave.orchardBestRoom = 0;
+			const int none = statsRoomsConquered();
+			gSave.orchardBestRoom = 7;
+			const int six = statsRoomsConquered();
+			gSave.orchardBestRoom = kOrchardRooms + 1;
+			const int all = statsRoomsConquered();
+			gSave.orchardBestRoom = roomWas;
+			labCheck(none == 0 && six == 6 && all == kOrchardRooms, "Stats shows the highest Orchard Blast room conquered: none, room 6 when room 7 was reached, all 10 on a win");
+			botTap(kBack);
+			return;
+		}
 		case 6: labExpect(SCREEN_TITLE, "Stats back arrow"); botTap(kTitleButtons[6]); return;
 		case 7:
 			labExpect(SCREEN_CREDITS, "Credits opens");
@@ -818,7 +832,32 @@ static void labFinish(Input& in) {
 				beatImportTick();
 				labCheck(beatSong() >= kTrackCount && strcmp(custom::name(beatSong() - kTrackCount), "Lab Song A (2)") == 0,
 				         "a different song with a name already there is added under a new name");
-				const char* made[] = {"Lab Song A.wav", "Lab Song A (2).wav", "Lab Song B.ogg"};
+				{
+					// Menu and Game Music list the custom songs after the game's tracks.
+					const u8 menuWas = gSave.menuTrack, gameWas = gSave.gameTrack;
+					refreshMusicRows();
+					const Row* menuRow = nullptr;
+					for (const Row& r : kAudioRows)
+						if (r.value == &gSave.menuTrack) menuRow = &r;
+					gSave.menuTrack = 0;
+					adjustRow(*menuRow, -1);  // left from Auto wraps round to the last song
+					char shown[64], d2[120];
+					rowValueText(*menuRow, shown, sizeof shown);
+					snprintf(d2, sizeof d2, "value %d of %d, shows %s, playing %d", gSave.menuTrack, (int)menuRow->hi, shown, audio::currentTrack());
+					labCheck(gSave.menuTrack == kTrackCount + custom::count() && strcmp(shown, "Lab Song B") == 0 && !choiceLocked(*menuRow, gSave.menuTrack) &&
+					         audio::currentTrack() == gSave.menuTrack - 1,
+					         "Menu Music offers the custom songs after the game's tracks, by name, and plays the one chosen", d2);
+					gSave.menuTrack = (u8)(kTrackCount + kCustomSongsMax);
+					rowValueText(*menuRow, shown, sizeof shown);
+					audio::preview(MUSIC_MENU);
+					snprintf(d2, sizeof d2, "shows %s, playing %d", shown, audio::currentTrack());
+					labCheck(strcmp(shown, "Song not found") == 0 && audio::currentTrack() < kTrackCount,
+					         "a chosen song that left the folder says so and plays Auto meanwhile", d2);
+					gSave.menuTrack = menuWas;
+					gSave.gameTrack = gameWas;
+					refreshMusicRows();
+				}
+				const char* made[] ={"Lab Song A.wav", "Lab Song A (2).wav", "Lab Song B.ogg"};
 				for (const char* m : made) {
 					char p[600];
 					snprintf(p, sizeof p, "%s%s", custom::folder(), m);

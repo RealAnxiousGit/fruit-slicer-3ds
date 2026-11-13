@@ -180,6 +180,7 @@ struct Orchard {
 	Shot shots[kMaxShots];
 	int bossesBeaten;
 	int newTracks;  // boss tracks this run unlocked in the Shop, for the results screen
+	u32 bossCoins;  // Journal boss milestones reached this run, paid with the results
 	// Echo Blade: the blade's path, replayed half a second later.
 	// One point a step, so the point 30 steps back is where the blade was half a second ago.
 	float echoX[kEchoPoints], echoY[kEchoPoints];

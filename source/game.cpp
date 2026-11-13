@@ -948,6 +948,7 @@ void Game::commitScore() {
 	if (scoreCommitted) return;
 	scoreCommitted = true;
 	journalCoins = progress::journalPay(journalStart, gSave.fruitSliced);
+	if (orchardLike()) journalCoins += orc.bossCoins;  // boss milestones are Journal milestones too
 	gSave.playSeconds += (u32)elapsed;
 	if (mode == MODE_PRACTICE || passName) {
 		// No score to keep. Journal milestones still pay, and the lessons are marked done.
@@ -971,6 +972,10 @@ void Game::commitScore() {
 	if (orchardLike()) {
 		// Lucky Coin adds a quarter a level, and each boss beaten pays 10 more.
 		coinsBonus += (int)(runCoins() * 0.25f * orc.upgrade[CARD_LUCKY]) + 10 * orc.bossesBeaten;
+	}
+	if (mode == MODE_BOSSRUSH && orc.won) {
+		const u32 secs = (u32)(elapsed + 0.5f) > 0 ? (u32)(elapsed + 0.5f) : 1;
+		if (secs < 0xFFFF && (gSave.rushBestSecs == 0 || secs < gSave.rushBestSecs)) gSave.rushBestSecs = (u16)secs;
 	}
 	if (mode == MODE_ORCHARD) {
 		if (gSave.orchardRuns < 0xFFFF) gSave.orchardRuns++;
