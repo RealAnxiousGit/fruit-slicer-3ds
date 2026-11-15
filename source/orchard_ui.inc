@@ -204,7 +204,7 @@ static OrcInvLayout orcInvLayout() {
 	L.runCol = kFieldW >= 380;
 	L.stacked = !L.runCol && kFieldH >= 380;
 	L.top = kFieldTop + 26 + (L.runCol ? 0 : 12);
-	L.bottom = kFieldH - 64;
+	L.bottom = (PORT_3DS || (!L.runCol && !L.stacked)) ? kFieldH - 72 : kFieldH - 64;
 	const float pad = 8;
 	if (L.runCol) {
 		const float w = kFieldW - pad * 4;
@@ -250,8 +250,37 @@ static int orcInvItems(OrcInvItem* out) {
 	}
 	const float gap = 6, w = clampf((kFieldW - 16 - gap * 3) / INVB_COUNT, 50, 96);
 	const float x0 = (kFieldW - (w * INVB_COUNT + gap * (INVB_COUNT - 1))) * 0.5f;
-	for (int b = 0; b < INVB_COUNT; b++) out[n++] = {INV_BUTTON, (u8)b, x0 + b * (w + gap), kFieldH - 32, w, 26};
+	for (int b = 0; b < INVB_COUNT; b++) out[n++] = {INV_BUTTON, (u8)b, x0 + b * (w + gap), kFieldH - 28, w, 24};
 	return n;
+}
+
+// Geometry for the Inventory bottom details strip, sized per port so header, wrapped description
+// and the upgrade "Next:" line always stay clear of the bottom action buttons.
+struct OrcInvDetails {
+	float dy, descY, headScale, descScale, descStep, nextScale;
+	bool compact;
+};
+static OrcInvDetails orcInvDetailsLayout() {
+	const OrcInvLayout L = orcInvLayout();
+	if (PORT_3DS || (!L.runCol && !L.stacked))
+		return {kFieldH - 70.0f, kFieldH - 59.0f, 0.25f, 0.23f, 9.0f, 0.22f, false};
+	return {kFieldH - 63.0f, kFieldH - 54.0f, 0.25f, 0.22f, 8.0f, 0.21f, true};
+}
+static float orcInvDetailsBottom(int card) {
+	const OrcInvDetails D = orcInvDetailsLayout();
+	if (card == CARD_NONE) return D.dy + 8.0f + 32.0f * 0.24f * gfx::gTextBoost;
+	const CardInfo& info = kCards[card];
+	char buf[128];
+	snprintf(buf, sizeof buf, "%s%s%s", info.line1, info.line2[0] ? " " : "", info.line2);
+	const int lines = gfx::textWidth(buf, D.descScale) > (kFieldW - 20) ? 2 : 1;
+	float endY = D.descY + (lines - 1) * D.descStep + 32.0f * D.descScale * gfx::gTextBoost;
+	char next[48] = "";
+	if (info.kind == KIND_UPGRADE && sGame.orc.upgrade[card] < info.maxLevel) cardNextLine(card, sGame.orc.upgrade[card], next, sizeof next);
+	if (next[0]) {
+		const float ny = D.descY + lines * D.descStep + 0.5f;
+		endY = ny + 32.0f * D.nextScale * gfx::gTextBoost;
+	}
+	return endY;
 }
 
 static void orcPips(float x, float y, int have, int max, u32 on) {
@@ -374,7 +403,7 @@ static void drawOrcInventory() {
 				const Button b = {it.x, it.y, it.w, it.h, kInvButtons[it.index]};
 				const bool off = (it.index == INVB_DROP && o.slot[sOrcInvSlot] == CARD_NONE) ||
 				                 (it.index == INVB_SWAP && o.slot[0] == CARD_NONE && o.slot[1] == CARD_NONE);
-				drawSign(b, b.label, f, false, 0.36f);
+				drawSign(b, b.label, f, false, 0.34f);
 				if (off) gfx::rect(it.x, it.y, it.w, it.h, rgba(20, 12, 8, 120));
 				break;
 			}
@@ -386,29 +415,29 @@ static void drawOrcInventory() {
 	if (it.kind == INV_SLOT) card = o.slot[it.index];
 	else if (it.kind == INV_PASSIVE) card = o.passiveOrder[it.index];
 	else if (it.kind == INV_UPGRADE) card = it.index;
-	const float dy = kFieldH - 60;
+	const OrcInvDetails D = orcInvDetailsLayout();
 	if (card != CARD_NONE) {
 		const CardInfo& info = kCards[card];
 		if (info.kind == KIND_UPGRADE)
 			snprintf(buf, sizeof buf, "%s: %s, level %d of %d", info.name, cardKindName(info.kind), o.upgrade[card], info.maxLevel);
 		else
 			snprintf(buf, sizeof buf, "%s: %s %s", info.name, rarityName(info.rarity), cardKindName(info.kind));
-		orcFit(buf, kFieldW * 0.5f, dy, 0.28f, kFieldW - 16, rarityColor(info.rarity));
+		orcFit(buf, kFieldW * 0.5f, D.dy, D.headScale, kFieldW - 16, rarityColor(info.rarity));
 		snprintf(buf, sizeof buf, "%s%s%s", info.line1, info.line2[0] ? " " : "", info.line2);
-		float nextY = orcWrap(buf, kFieldW * 0.5f, dy + 12, 0.26f, kFieldW - 20, 10.5f, COL_CREAM, 2);
+		float nextY = orcWrap(buf, kFieldW * 0.5f, D.descY, D.descScale, kFieldW - 20, D.descStep, COL_CREAM, 2);
 		char next[48] = "";
 		if (info.kind == KIND_UPGRADE && o.upgrade[card] < info.maxLevel) cardNextLine(card, o.upgrade[card], next, sizeof next);
 		if (next[0]) {
 			char nextBuf[64];
 			snprintf(nextBuf, sizeof nextBuf, "Next: %s", next);
-			orcWrap(nextBuf, kFieldW * 0.5f, nextY + 1.0f, 0.24f, kFieldW - 20, 10.0f, rgba(170, 230, 255), 2);
+			orcFit(nextBuf, kFieldW * 0.5f, nextY + 0.5f, D.nextScale, kFieldW - 20, rgba(170, 230, 255));
 		}
 	} else if (it.kind == INV_SLOT) {
-		orcFit("An empty slot. The next charm you take can go here.", kFieldW * 0.5f, dy + 6, 0.24f, kFieldW - 16, COL_DIM);
+		orcFit("An empty slot. The next charm you take can go here.", kFieldW * 0.5f, D.dy + 8, 0.24f, kFieldW - 16, COL_DIM);
 	} else if (it.kind == INV_BUTTON) {
 		static const char* const kHelp[INVB_COUNT] = {"Back to the run.", "Switch the charms in Slot 1 and Slot 2.",
 		                                              "Empty the slot you last picked, to make room.", "End this run and keep its score."};
-		orcFit(kHelp[it.index], kFieldW * 0.5f, dy + 6, 0.24f, kFieldW - 16, COL_DIM);
+		orcFit(kHelp[it.index], kFieldW * 0.5f, D.dy + 8, 0.24f, kFieldW - 16, COL_DIM);
 	}
 	if (sOrcConfirm) {
 		gfx::rect(kFillX, kFillX, kFillW, kFillW, rgba(10, 6, 4, 150));

@@ -1387,8 +1387,8 @@ static int sectionIndex(int id) {
 
 static bool sOptionsFromPause = false;  // Options opened from the pause menu, with a game waiting
 
-// The Options signs: the back arrow, then each section that can be reached right now. Up to four
-// stack in one column; more go in two columns, with an odd last one centred.
+// The Options signs: the back arrow, then each section that can be reached right now. Up to three
+// stack in one column; four use a centred 2x2 grid; more go in two columns, with an odd last one centred.
 static Button sOptionButtons[kSectionCount + 1];
 static int sOptionSection[kSectionCount + 1];
 static int optionButtons() {
@@ -1400,7 +1400,8 @@ static int optionButtons() {
 	sOptionSection[0] = -1;
 	for (int i = 0; i < n; i++) {
 		Button b;
-		if (n <= 4) b = {36, 46 + 48.0f * i, 248, 44, nullptr};
+		if (n <= 3) b = {36, 46 + (194 - (n * 48 - 4)) * 0.5f + 48.0f * i, 248, 44, nullptr};
+		else if (n == 4) b = {i & 1 ? 164.0f : 8.0f, 70 + 74.0f * (i / 2), 148, 60, nullptr};
 		else if (i == n - 1 && (n & 1)) b = {86, 46 + 48.0f * (i / 2), 148, 44, nullptr};
 		else b = {i & 1 ? 164.0f : 8.0f, 46 + 48.0f * (i / 2), 148, 44, nullptr};
 		b.label = kSections[visible[i]].title;

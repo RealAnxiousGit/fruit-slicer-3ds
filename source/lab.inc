@@ -251,6 +251,23 @@ static void labInventory() {
 	char d[48];
 	snprintf(d, sizeof d, "%d upgrades, %d signs on a %.0f by %.0f field", upgrades, buttons, (double)kFieldW, (double)kFieldH);
 	labCheck(upgrades == 9 && buttons == INVB_COUNT, "the Inventory lists every upgrade, and its signs fit the field", d);
+	// Details strip on an Upgrade with a long description + Next line must clear the action buttons even with Larger Text on.
+	const u8 largeWas = gSave.largeText;
+	const u8 bladeWas = o.upgrade[CARD_BLADE];
+	o.upgrade[CARD_BLADE] = 0;
+	float detailsBotOff = 0, detailsBotOn = 0;
+	const float btnTop = items[first].y;
+	gSave.largeText = 0;
+	applyAccessibility();
+	detailsBotOff = orcInvDetailsBottom(CARD_BLADE);
+	gSave.largeText = 1;
+	applyAccessibility();
+	detailsBotOn = orcInvDetailsBottom(CARD_BLADE);
+	gSave.largeText = largeWas;
+	o.upgrade[CARD_BLADE] = bladeWas;
+	applyAccessibility();
+	snprintf(d, sizeof d, "bottom %.1f / %.1f vs buttons %.1f", (double)detailsBotOff, (double)detailsBotOn, (double)btnTop);
+	labCheck(detailsBotOff < btnTop && detailsBotOn < btnTop, "the Inventory card details + Next line stay clear of the bottom buttons", d);
 	// A touch press and release on level-up card 0 picks it
 	const int hpBefore = o.upgrade[CARD_HEALTH];
 	o.choosing = true;
@@ -415,6 +432,16 @@ static void labMenus() {
 		case 19: botTap(kBack); return;
 		case 20:
 			labExpect(SCREEN_OPTIONS, "section back arrow cuts its berry and goes back");
+			{
+				const bool pauseWas = sOptionsFromPause;
+				sOptionsFromPause = true;
+				const int pn = optionButtons();
+				const bool grid2x2 = pn == 5 && sOptionButtons[1].x < 160 && sOptionButtons[2].x > 160 && sOptionButtons[1].y == sOptionButtons[2].y &&
+				                     sOptionButtons[3].y == sOptionButtons[4].y && sOptionButtons[4].y + sOptionButtons[4].h < 220 &&
+				                     fabsf((sOptionButtons[1].x + sOptionButtons[2].x + sOptionButtons[2].w) - 320.0f) < 1.0f;
+				sOptionsFromPause = pauseWas;
+				labCheck(grid2x2, "Pause Options uses a centred 2x2 grid without Scores and Data");
+			}
 			labCheck(optionButtons() == 7, "Options shows five signs, plus Developer in a test build");
 			botTap(optionButtonFor(SID_VISUALS));
 			return;
