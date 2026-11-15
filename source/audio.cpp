@@ -38,7 +38,7 @@ static const char* const kSfxFiles[SFX_COUNT] = {
 	"finale_rise", "finale_hit", "finale_burst",
 	"coin", "plink", "shopbell",
 	"clang", "open", "roar", "bossin", "victory", "pop",
-	"laugh", "chuckle", "whoosh", "launch",
+	"laugh", "chuckle", "whoosh", "launch", "levelup",
 };
 static_assert(sizeof kSfxFiles / sizeof kSfxFiles[0] == SFX_COUNT, "every sound needs a file name");
 // How much of the mix one sound may take. A new sound is turned down if the ones still playing have
@@ -208,9 +208,18 @@ static void oggStartDecode() {
 
 // Auto shuffles: a track plays to its end, then another the player owns, never the same one twice
 // in a row. Zen keeps to the calm tracks. The shuffle's track carries on from menu to menu.
+// Short loopable tracks loop a few times (3 plays total) before advancing; full-length songs play once.
 static bool sAutoPick;     // the playing track came from Auto's shuffle
+static int sAutoLoopsRemaining = 0;
 static int sAutoContext = MUSIC_NONE;
 static u32 sShuffle = 0x9E3779B9u;
+
+bool isSongTrack(int track) {
+	// NickBin songs (14..21) and user-imported custom tracks (>= kTrackCount) are full-length songs.
+	if (track >= 14 && track <= 21) return true;
+	if (track >= kTrackCount) return true;
+	return false;
+}
 
 static bool calmTrack(int t) { return t == 0 || (t >= 2 && t <= 7); }
 
@@ -519,10 +528,19 @@ void update(float dt) {
 		}
 	}
 #endif
-	// A track that has played to its end: Auto's shuffle picks the next one; anything else starts over.
+	// A track that has played to its end: Auto loops loopable tracks a couple of times before advancing;
+	// full-length songs move straight on to the next track. Anything else loops continuously.
 	if (sStarted && !loading() && sClock - sStartedAt > 1.0f && audioport::musicTime() < 0) {
-		if (sAutoPick) autoNext();
-		else startMixer(sMusicClip.samples);
+		if (sAutoPick) {
+			if (sAutoLoopsRemaining > 0) {
+				sAutoLoopsRemaining--;
+				startMixer(sMusicClip.samples);
+			} else {
+				autoNext();
+			}
+		} else {
+			startMixer(sMusicClip.samples);
+		}
 	}
 	bossTick(dt);
 	if (sMusicRetired && --sMusicRetiredFrames <= 0) {
@@ -654,6 +672,7 @@ static void startTrack(int track, bool autoPick = false, int context = MUSIC_NON
 	sLoop = !autoPick;
 	DLOG("[audio] asked for track %d (now %d)\n", track, sCurrent);
 	if (!sReady || track == sCurrent) return;
+	sAutoLoopsRemaining = isSongTrack(track) ? 0 : 2;
 	sCurrent = track;
 	sAskedAt = sClock;
 	sStarted = false;
@@ -733,8 +752,12 @@ static void startFor(int context) {
 // The shuffle's track has ended: on to another.
 static void autoNext() {
 	const int next = pickAuto(sAutoContext, sCurrent);
-	if (next == sCurrent) startMixer(sMusicClip.samples);
-	else startTrack(next, true, sAutoContext);
+	if (next == sCurrent) {
+		sAutoLoopsRemaining = isSongTrack(sCurrent) ? 0 : 2;
+		startMixer(sMusicClip.samples);
+	} else {
+		startTrack(next, true, sAutoContext);
+	}
 }
 
 void music(Music m) {
@@ -744,7 +767,10 @@ void music(Music m) {
 	startFor(m);
 }
 
-void preview(Music m) { startFor(m); }
+void preview(Music m) {
+	if (sBossStage != BOSS_OFF) return;
+	startFor(m);
+}
 
 void musicBeat(int track) {
 	if (track < 0 || track >= trackCount()) return;
@@ -901,7 +927,14 @@ float musicLength() {
 	return (float)sMusicClip.samples / sMusicClip.rate;
 }
 
-void reapply() { startFor(sContext); }
+void reapply() {
+	if (sBossStage != BOSS_OFF) {
+		if (!gSave.bossMusic) bossMusicEnd();
+		else refreshVolumes();
+		return;
+	}
+	startFor(sContext);
+}
 
 void musicSpeed(float factor) {
 	static float now = 1;

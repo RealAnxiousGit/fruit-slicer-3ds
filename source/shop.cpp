@@ -138,7 +138,7 @@ int trackBoss(int track) {
 bool shopLocked(int tab, int i) {
 	if (tab != SHOP_MUSIC) return false;
 	const int boss = trackBoss(kBaseTracks + i);
-	return boss >= 0 && !(gSave.bossesBeaten >> boss & 1);
+	return boss >= 0 && !(gSave.bossTracksFound >> i & 1) && !shopOwned(SHOP_MUSIC, i);
 }
 
 int bossTrackCount(int boss) {
@@ -160,10 +160,7 @@ int bossTrackPick(int boss, u32 roll) {
 }
 
 bool shopHasNew() {
-	const u32 fresh = gSave.bossesBeaten & ~gSave.bossTracksSeen;
-	for (int b = 0; b < 32; b++)
-		if ((fresh >> b & 1) && bossTrackCount(b) > 0) return true;
-	return false;
+	return (gSave.bossTracksFound & ~gSave.bossTracksSeen) != 0;
 }
 
-void shopSeenNew() { gSave.bossTracksSeen |= gSave.bossesBeaten; }
+void shopSeenNew() { gSave.bossTracksSeen |= gSave.bossTracksFound; }

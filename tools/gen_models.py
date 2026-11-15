@@ -682,6 +682,46 @@ def pinata(lat, lon):
     return m
 
 
+def seed(lat, lon):
+    """A 3D watermelon seed: teardrop silhouette, tapered at the top (-y), plump at the bottom (+y), slightly flattened in z."""
+    def point(th, ph):
+        t = th / math.pi  # 0 at top tip (-y), 1 at rounded bottom (+y)
+        prof = math.sin(th) * (0.55 + 0.65 * t) * 18.0
+        rx = prof * 0.78
+        rz = prof * 0.46
+        y = -math.cos(th) * 22.0
+        return np.array((rx * math.cos(ph), y, rz * math.sin(ph)))
+
+    def col(th, ph):
+        t = th / math.pi
+        if t < 0.22:
+            return lerp3((186, 142, 88), (112, 72, 42), t / 0.22)
+        side = abs(math.sin(ph))
+        return lerp3((58, 34, 18), (96, 60, 34), clamp01(side * 0.7 + (1 - t) * 0.3))
+
+    return grid(lat, lon, point, col)
+
+
+def splash(lat, lon):
+    """A 3D watermelon juice droplet / splash: ruby-red teardrop with a glossy pink highlight."""
+    def point(th, ph):
+        t = th / math.pi  # 0 at pointed top (-y), 1 at plump bottom (+y)
+        prof = math.sin(th) * (0.48 + 0.72 * t) * 19.5
+        ripple = 1.0 + 0.04 * math.cos(6 * ph) * math.sin(th)
+        r = prof * ripple
+        y = -math.cos(th) * 22.5
+        return np.array((r * math.cos(ph), y, r * math.sin(ph)))
+
+    def col(th, ph):
+        t = th / math.pi
+        glow = clamp01(0.5 + 0.5 * math.sin(th) * math.cos(ph - 0.6))
+        if t < 0.24:
+            return lerp3((255, 178, 190), (242, 66, 84), t / 0.24)
+        return lerp3((196, 32, 48), (248, 76, 92), glow)
+
+    return grid(lat, lon, point, col)
+
+
 # name, builder, flesh, rim
 FRUIT = [
     ("apple", apple, (255, 240, 190), (246, 216, 150)),
@@ -712,6 +752,8 @@ FRUIT = [
     ("bunch", bunch, (252, 246, 214), (246, 224, 120)),
     ("pomegranate", pomegranate, (250, 214, 196), (214, 70, 84)),
     ("pinata", pinata, (255, 232, 170), (238, 66, 138)),
+    ("seed", seed, (165, 122, 74), (68, 40, 22)),
+    ("splash", splash, (255, 165, 178), (236, 56, 72)),
 ]
 
 

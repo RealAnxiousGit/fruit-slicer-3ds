@@ -11,7 +11,7 @@ enum Sfx {
 	SFX_FINALE_RISE, SFX_FINALE_HIT, SFX_FINALE_BURST,
 	SFX_COIN, SFX_PLINK, SFX_SHOPBELL,
 	SFX_CLANG, SFX_OPEN, SFX_ROAR, SFX_BOSSIN, SFX_VICTORY, SFX_POP,
-	SFX_LAUGH, SFX_CHUCKLE, SFX_WHOOSH, SFX_LAUNCH,
+	SFX_LAUGH, SFX_CHUCKLE, SFX_WHOOSH, SFX_LAUNCH, SFX_LEVELUP,
 	SFX_COUNT
 };
 enum Music { MUSIC_NONE = -1, MUSIC_MENU, MUSIC_PLAY, MUSIC_ZEN, MUSIC_COUNT };
@@ -54,4 +54,5 @@ float trackFirst(int track); // seconds to the first beat of a bar: 0 for the ga
 int trackCount();            // the game's tracks, then any custom songs (Windows, Linux and Android)
 bool trackHasBeat(int track); // a custom song only once its beat has been found
 float musicLength();         // seconds in the playing track, or -1 while it is still loading
+bool isSongTrack(int track);  // false for short loopable tracks, true for full-length songs
 }  // namespace audio

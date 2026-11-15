@@ -149,7 +149,11 @@ struct Game {
 	float coinPulse;    // the HUD's coin count swells for a moment when a coin is caught
 	// Coins the run has made so far, as the HUD shows them: 5 a caught coin and 1 every 100 points.
 	// End-of-run bonuses (new best, Daily, Journal) come on top and show on the result screen.
-	u32 runCoins() const { return mode == MODE_PRACTICE ? 0 : (u32)coinsCaught * 5 + score / 100; }
+	u32 runCoins() const {
+		if (mode == MODE_PRACTICE) return 0;
+		const u32 fromScore = mode == MODE_ORCHARD ? score * 5 : (mode == MODE_BOSSRUSH ? score * 10 : score / 100);
+		return (u32)coinsCaught * 5 + fromScore;
+	}
 	u32 journalCoins;   // part of it from Fruit Journal milestones
 	u32 dailyCoins;     // part of it from the day's first Daily Fruit
 	u32 day;            // Daily Fruit: the day this run belongs to, taken when it starts
@@ -245,7 +249,7 @@ struct Game {
 	void orcUse(int slot);      // fires a slotted charm
 	void orcSwapSlots();
 	void orcDrop(int slot);
-	void orcResume() { orc.resumeT = 3.0f; }  // after the Inventory or a pause: 3, 2, 1
+	void orcResume() { orc.resumeT = 0; }
 	bool orcSlotReady(int slot) const;
 	float orcStat(int card) const;  // a stat's current value, for the Inventory
 	int orcXpNeed() const;

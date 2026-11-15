@@ -1106,35 +1106,51 @@ def spr_icon(kind):
     """Small painted marks for the game-mode signs; each one names that mode's main rule."""
     img = canvas(32)
     d = ImageDraw.Draw(img)
-    cream = (255, 240, 210, 255)
+    cream = (255, 242, 214, 255)
+    warm = (232, 198, 150, 255)
+    hi = (255, 252, 240, 255)
     if kind == "clock":
-        d.ellipse([5 * SS, 5 * SS, 27 * SS, 27 * SS], outline=cream, width=3 * SS)
-        d.line([16 * SS, 16 * SS, 16 * SS, 10 * SS], fill=cream, width=2 * SS)
-        d.line([16 * SS, 16 * SS, 21 * SS, 18 * SS], fill=cream, width=2 * SS)
+        el(d, 16, 17, 11, 11, (70, 52, 42, 180))
+        d.ellipse([5 * SS, 6 * SS, 27 * SS, 28 * SS], outline=cream, width=3 * SS)
+        d.rectangle([13.5 * SS, 2.5 * SS, 18.5 * SS, 5.5 * SS], fill=warm)
+        d.line([16 * SS, 17 * SS, 16 * SS, 10.5 * SS], fill=hi, width=int(2.4 * SS))
+        d.line([16 * SS, 17 * SS, 21.5 * SS, 19 * SS], fill=(255, 206, 90, 255), width=int(2.2 * SS))
+        el(d, 16, 17, 1.8, 1.8, hi)
     elif kind == "leaf":
-        leaf(d, 7, 25, -45, 25, (150, 214, 110, 255))
+        leaf(d, 6, 26, -42, 24, (116, 188, 78, 255))
+        leaf(d, 7, 25, -45, 23, (156, 222, 112, 255))
+        d.line([8 * SS, 24 * SS, 22 * SS, 10 * SS], fill=(220, 250, 186, 220), width=int(1.5 * SS))
     elif kind == "fast":
-        for x in (8, 17):
-            d.line([x * SS, 7 * SS, (x + 8) * SS, 16 * SS, x * SS, 25 * SS], fill=cream, width=4 * SS, joint="curve")
+        for i, x in enumerate((6, 15)):
+            c = warm if i == 0 else cream
+            poly(d, [(x, 6), (x + 10, 16), (x, 26), (x + 4, 16)], c)
+            d.line([(x + 1) * SS, 8 * SS, (x + 8.5) * SS, 16 * SS], fill=hi, width=int(1.4 * SS))
     elif kind == "one":
-        d.line([16 * SS, 6 * SS, 16 * SS, 26 * SS], fill=(240, 90, 80, 255), width=6 * SS)
-        d.line([10 * SS, 11 * SS, 16 * SS, 6 * SS], fill=(240, 90, 80, 255), width=5 * SS)
+        poly(d, [(16, 3), (28, 16), (16, 29), (4, 16)], (186, 48, 44, 255))
+        poly(d, [(16, 5.5), (25.5, 16), (16, 26.5), (6.5, 16)], (242, 86, 76, 255))
+        d.line([16 * SS, 9.5 * SS, 16 * SS, 18.5 * SS], fill=hi, width=int(3.2 * SS))
+        el(d, 16, 22.5, 1.9, 1.9, hi)
     elif kind == "mine":
         for i in range(8):
             a = i * math.pi / 4
-            d.line([16 * SS, 16 * SS, (16 + math.cos(a) * 13) * SS, (16 + math.sin(a) * 13) * SS], fill=(44, 40, 60, 255), width=3 * SS)
-        el(d, 16, 16, 9, 9, (58, 52, 76, 255))
-        el(d, 16, 16, 3, 3, (240, 90, 80, 255))
+            x, y = 16 + math.cos(a) * 12.5, 16 + math.sin(a) * 12.5
+            d.line([16 * SS, 16 * SS, x * SS, y * SS], fill=(48, 44, 68, 255), width=int(3 * SS))
+            el(d, x, y, 1.6, 1.6, (214, 68, 58, 255))
+        el(d, 16, 16, 9.2, 9.2, (62, 56, 84, 255))
+        el(d, 13.5, 13.5, 3.2, 2.2, (130, 126, 164, 200))
+        el(d, 16, 16, 3.4, 3.4, (248, 92, 80, 255))
+        el(d, 15.2, 15.2, 1.2, 1.2, (255, 210, 190, 255))
     elif kind == "chain":
-        for x in (10, 22):
-            d.ellipse([(x - 6) * SS, 10 * SS, (x + 6) * SS, 22 * SS], outline=cream, width=3 * SS)
+        d.ellipse([4 * SS, 9 * SS, 18 * SS, 23 * SS], outline=warm, width=int(3.2 * SS))
+        d.ellipse([14 * SS, 9 * SS, 28 * SS, 23 * SS], outline=cream, width=int(3.2 * SS))
+        d.line([12 * SS, 16 * SS, 20 * SS, 16 * SS], fill=hi, width=int(2.6 * SS))
     elif kind == "note":
-        # Two beamed notes, for Beat Slice.
-        for x in (11, 24):
-            d.ellipse([(x - 6) * SS, 20 * SS, (x + 1) * SS, 27 * SS], fill=cream)
-            d.line([x * SS, 23 * SS, x * SS, 7 * SS], fill=cream, width=3 * SS)
-        d.polygon([(10 * SS, 5 * SS), (25.5 * SS, 3 * SS), (25.5 * SS, 8 * SS), (10 * SS, 10 * SS)], fill=cream)
-    return shrink(img)
+        for x, dy in ((10.5, 1), (23.5, -1)):
+            el(d, x - 2.2, 22.5 + dy, 4.2, 3.2, cream)
+            el(d, x - 3.0, 21.8 + dy, 1.6, 1.1, hi)
+            d.line([(x + 1.2) * SS, (22.5 + dy) * SS, (x + 1.2) * SS, (7 + dy) * SS], fill=cream, width=int(2.8 * SS))
+        poly(d, [(10.5, 6), (25, 4), (25, 8.8), (10.5, 10.8)], (255, 214, 102, 255))
+    return shrink(sticker(img, 1.1, shadow=False))
 
 
 # ---------------------------------------------------------------- Orchard Blast icons (1.2)
@@ -1142,33 +1158,57 @@ def spr_icon(kind):
 def spr_mode_icon(kind):
     img = canvas(32)
     d = ImageDraw.Draw(img)
-    cream = (255, 240, 210, 255)
+    cream = (255, 242, 214, 255)
+    hi = (255, 252, 240, 255)
     if kind == "tree":
-        # Orchard Blast: a fruit tree.
-        d.line([16 * SS, 28 * SS, 16 * SS, 17 * SS], fill=(150, 104, 70, 255), width=4 * SS)
-        el(d, 16, 12, 11, 9, (110, 186, 96, 255))
-        for x, y in ((11, 11), (20, 9), (17, 15)):
-            el(d, x, y, 2.4, 2.4, (240, 90, 80, 255))
+        # Orchard Blast: a lush fruit tree with layered foliage and glossy apples.
+        poly(d, [(13.5, 28), (18.5, 28), (17.2, 16), (14.8, 16)], (146, 96, 58, 255))
+        d.line([15.4 * SS, 27 * SS, 15.8 * SS, 17 * SS], fill=(186, 132, 86, 255), width=int(1.4 * SS))
+        el(d, 11, 14, 6.5, 5.8, (76, 152, 68, 255))
+        el(d, 21, 14, 6.5, 5.8, (76, 152, 68, 255))
+        el(d, 16, 11.5, 9.5, 8.0, (108, 190, 90, 255))
+        el(d, 14, 9.0, 5.5, 4.0, (152, 222, 122, 220))
+        for x, y in ((10.5, 12.5), (20.5, 10.5), (16.5, 15.5)):
+            el(d, x, y, 2.6, 2.6, (238, 72, 66, 255))
+            el(d, x - 0.7, y - 0.7, 0.9, 0.9, (255, 200, 190, 255))
     elif kind == "crown":
-        # Boss Rush.
-        gold = (255, 206, 80, 255)
-        poly(d, [(5, 24), (5, 11), (11, 17), (16, 7), (21, 17), (27, 11), (27, 24)], gold)
-        d.rectangle([5 * SS, 24 * SS, 27 * SS, 27 * SS], fill=(214, 150, 40, 255))
+        # Boss Rush: a jeweled royal gold crown with bevel and gems.
+        gold = (255, 208, 76, 255)
+        deep = (208, 142, 32, 255)
+        poly(d, [(4.5, 23.5), (4.5, 10.5), (10.8, 16.5), (16, 6.5), (21.2, 16.5), (27.5, 10.5), (27.5, 23.5)], gold)
+        poly(d, [(16, 6.5), (21.2, 16.5), (27.5, 10.5), (27.5, 23.5), (16, 23.5)], (238, 182, 54, 255))
+        d.rectangle([4.5 * SS, 22.5 * SS, 27.5 * SS, 26.8 * SS], fill=deep)
+        d.line([5.5 * SS, 23.2 * SS, 26.5 * SS, 23.2 * SS], fill=(255, 238, 160, 255), width=int(1.2 * SS))
+        for x, y in ((4.5, 10.5), (16, 6.5), (27.5, 10.5)):
+            el(d, x, y, 1.8, 1.8, hi)
+        el(d, 16, 19, 2.2, 2.2, (236, 66, 82, 255))
+        for x in (9.5, 22.5):
+            el(d, x, 19.5, 1.5, 1.5, (96, 196, 250, 255))
     elif kind == "cup":
-        # Recipe: a smoothie cup with a straw.
-        d.line([19 * SS, 12 * SS, 24 * SS, 3 * SS], fill=cream, width=2 * SS)
-        poly(d, [(7, 11), (25, 11), (22, 28), (10, 28)], cream)
-        poly(d, [(8.5, 15), (23.5, 15), (21.6, 26), (10.4, 26)], (236, 110, 150, 255))
+        # Recipe: a smoothie cup with dome lid, striped straw, and berry swirl.
+        d.line([18.5 * SS, 13 * SS, 24 * SS, 3.5 * SS], fill=(246, 96, 116, 255), width=int(2.6 * SS))
+        d.line([18.5 * SS, 13 * SS, 24 * SS, 3.5 * SS], fill=hi, width=int(1.2 * SS))
+        poly(d, [(7, 11.5), (25, 11.5), (22, 28), (10, 28)], cream)
+        poly(d, [(8.4, 14.2), (23.6, 14.2), (21.4, 26.4), (10.6, 26.4)], (236, 98, 142, 255))
+        poly(d, [(8.8, 14.2), (16, 14.2), (15, 26.4), (10.6, 26.4)], (250, 132, 170, 255))
+        d.rounded_rectangle([5.5 * SS, 9.5 * SS, 26.5 * SS, 12.5 * SS], radius=1.5 * SS, fill=hi)
+        d.line([10.5 * SS, 15.5 * SS, 12 * SS, 24.5 * SS], fill=(255, 220, 235, 210), width=int(1.4 * SS))
     elif kind == "target":
-        # Sharpshooter.
-        for r, c in ((12, (240, 90, 80, 255)), (8.5, cream), (5, (240, 90, 80, 255)), (2, cream)):
+        # Sharpshooter: bullseye target with gloss and a gold center star/gleam.
+        for r, c in ((12.5, (232, 74, 68, 255)), (9.0, cream), (5.6, (232, 74, 68, 255)), (2.5, (255, 216, 84, 255))):
             el(d, 16, 16, r, r, c)
+        d.arc([5 * SS, 5 * SS, 27 * SS, 27 * SS], 200, 260, fill=(255, 180, 170, 220), width=int(1.5 * SS))
     elif kind == "juggle":
-        # Juggle: three fruit in the air on an arc.
-        d.arc([5 * SS, 6 * SS, 27 * SS, 34 * SS], 200, 340, fill=cream, width=2 * SS)
-        for x, y, c in ((7, 16, (240, 90, 80, 255)), (16, 7, (255, 200, 70, 255)), (25, 16, (130, 200, 90, 255))):
-            el(d, x, y, 4, 4, c)
-    return shrink(img)
+        # Juggle: three glossy fruit in the air on a glowing arc.
+        d.arc([4.5 * SS, 6 * SS, 27.5 * SS, 33 * SS], 195, 345, fill=cream, width=int(2.2 * SS))
+        for x, y, c, hc in (
+            (7, 17, (238, 78, 70, 255), (255, 186, 176, 255)),
+            (16, 7.5, (255, 198, 62, 255), (255, 242, 170, 255)),
+            (25, 17, (118, 198, 82, 255), (204, 246, 176, 255)),
+        ):
+            el(d, x, y, 4.3, 4.3, c)
+            el(d, x - 1.2, y - 1.2, 1.4, 1.1, hc)
+    return shrink(sticker(img, 1.1, shadow=False))
 
 
 CARD_ICONS = [
@@ -1181,203 +1221,276 @@ CARD_ICONS = [
 ]
 # Badge colours by kind: upgrades amber, passive charms green, reusable charms blue, single use pink.
 CARD_KIND = [0] * 9 + [1] * 15 + [2] * 8 + [3] * 10
-KIND_COLOURS = [((236, 168, 58, 255), (150, 96, 26, 255)), ((104, 178, 98, 255), (50, 108, 48, 255)),
-                ((84, 150, 224, 255), (36, 82, 150, 255)), ((226, 104, 146, 255), (140, 48, 86, 255))]
+KIND_COLOURS = [
+    ((242, 174, 58, 255), (144, 88, 20, 255), (255, 224, 136, 255)),
+    ((96, 184, 92, 255), (42, 102, 42, 255), (176, 238, 166, 255)),
+    ((78, 154, 232, 255), (32, 76, 146, 255), (168, 218, 255, 255)),
+    ((232, 98, 146, 255), (136, 42, 82, 255), (255, 184, 212, 255)),
+]
 
 
 def spr_card_icon(index):
-    """One small round badge per Orchard Blast card: its kind's colour, and a white mark for what it does."""
+    """One small round badge per Orchard Blast card: shaded medallion with bevel rim and detailed emblem."""
     key = CARD_ICONS[index]
     img = canvas(32)
     d = ImageDraw.Draw(img)
-    fill, edge = KIND_COLOURS[CARD_KIND[index]]
-    el(d, 16, 16, 15, 15, edge)
-    el(d, 16, 16, 13, 13, fill)
-    w = (255, 250, 240, 255)
-    dark = (40, 30, 50, 255)
+    fill, edge, rim_hi = KIND_COLOURS[CARD_KIND[index]]
+    # Outer dark border and rich inner medallion.
+    el(d, 16, 16, 15.2, 15.2, edge)
+    el(d, 16, 15.6, 13.4, 13.4, fill)
+    img = shade(img, light=(255, 255, 240, 88), dark=(0, 0, 0, 72))
+    d = ImageDraw.Draw(img)
+    # Inner bevel highlight on top-left and warm rim ring.
+    d.arc([3.2 * SS, 2.8 * SS, 28.8 * SS, 28.4 * SS], 195, 325, fill=rim_hi, width=int(1.6 * SS))
+    d.arc([3.2 * SS, 3.4 * SS, 28.8 * SS, 29.0 * SS], 20, 160, fill=edge, width=int(1.4 * SS))
+
+    # Draw the emblem on its own layer so we can cast a crisp inner drop-shadow onto the medallion.
+    em = canvas(32)
+    ed = ImageDraw.Draw(em)
+    w = (255, 252, 242, 255)
+    cream = (255, 238, 204, 255)
+    gold = (255, 214, 78, 255)
+    gold_deep = (196, 136, 24, 255)
+    ice = (176, 236, 255, 255)
+    wood = (166, 114, 72, 255)
+    red = (242, 84, 76, 255)
+    green = (132, 214, 96, 255)
+    dark = (44, 34, 56, 255)
 
     def ln(pts, width=2.5, c=w):
-        d.line([(x * SS, y * SS) for x, y in pts], fill=c, width=int(width * SS), joint="curve")
+        ed.line([(x * SS, y * SS) for x, y in pts], fill=c, width=int(width * SS), joint="curve")
+        for x, y in (pts[0], pts[-1]):
+            el(ed, x, y, width * 0.45, width * 0.45, c)
 
     def ring(cx, cy, r, width=2.5, c=w):
-        d.ellipse([(cx - r) * SS, (cy - r) * SS, (cx + r) * SS, (cy + r) * SS], outline=c, width=int(width * SS))
+        ed.ellipse([(cx - r) * SS, (cy - r) * SS, (cx + r) * SS, (cy + r) * SS], outline=c, width=int(width * SS))
 
-    def heart(cx, cy, s, c=w):
-        el(d, cx - s * 0.5, cy - s * 0.3, s * 0.55, s * 0.55, c)
-        el(d, cx + s * 0.5, cy - s * 0.3, s * 0.55, s * 0.55, c)
-        poly(d, [(cx - s * 1.02, cy - s * 0.1), (cx + s * 1.02, cy - s * 0.1), (cx, cy + s * 1.05)], c)
+    def heart(cx, cy, s, c=w, hi_c=None):
+        el(ed, cx - s * 0.48, cy - s * 0.28, s * 0.56, s * 0.56, c)
+        el(ed, cx + s * 0.48, cy - s * 0.28, s * 0.56, s * 0.56, c)
+        poly(ed, [(cx - s * 1.01, cy - s * 0.08), (cx + s * 1.01, cy - s * 0.08), (cx, cy + s * 1.06)], c)
+        if hi_c:
+            el(ed, cx - s * 0.52, cy - s * 0.42, s * 0.22, s * 0.16, hi_c)
 
-    def bomb(cx, cy, r, c=dark):
-        el(d, cx, cy, r, r, c)
-        ln([(cx + r * 0.5, cy - r * 0.8), (cx + r * 0.9, cy - r * 1.35)], 2, (150, 110, 80, 255))
+    def bomb_mark(cx, cy, r, c=dark):
+        el(ed, cx, cy, r, r, c)
+        el(ed, cx - r * 0.32, cy - r * 0.32, r * 0.3, r * 0.22, (120, 114, 148, 255))
+        ln([(cx + r * 0.45, cy - r * 0.72), (cx + r * 0.88, cy - r * 1.28)], 1.9, wood)
+        el(ed, cx + r * 0.92, cy - r * 1.32, 1.8, 1.8, gold)
 
     if key == "ring":
-        ring(16, 18, 7, 3)
-        poly(d, [(16, 6), (20, 10), (16, 13), (12, 10)], (170, 230, 255, 255))
+        ring(16, 18.5, 6.8, 2.8, gold)
+        ring(16, 18.5, 5.6, 1.2, w)
+        poly(ed, [(16, 5.2), (20.8, 9.6), (16, 13.2), (11.2, 9.6)], ice)
+        poly(ed, [(16, 5.2), (18.5, 9.6), (16, 11.4), (13.5, 9.6)], w)
     elif key == "health":
-        heart(16, 16, 7)
-        ln([(23, 6), (23, 12)], 2)
-        ln([(20, 9), (26, 9)], 2)
+        heart(15, 16.5, 6.8, (250, 88, 108, 255), (255, 196, 210, 255))
+        ln([(23, 6.5), (23, 12.5)], 2.2, w)
+        ln([(20, 9.5), (26, 9.5)], 2.2, w)
     elif key == "armor":
-        poly(d, [(16, 6), (25, 9), (24, 18), (16, 26), (8, 18), (7, 9)], w)
-        poly(d, [(16, 9), (21.5, 11), (21, 17), (16, 22)], fill)
+        poly(ed, [(16, 5.5), (25, 8.8), (23.8, 18.2), (16, 26.2), (8.2, 18.2), (7, 8.8)], w)
+        poly(ed, [(16, 7.8), (22.4, 10.2), (21.5, 17.2), (16, 23.4), (10.5, 17.2), (9.6, 10.2)], (196, 212, 232, 255))
+        poly(ed, [(16, 7.8), (16, 23.4), (10.5, 17.2), (9.6, 10.2)], w)
+        ln([(16, 8), (16, 23)], 1.4, (148, 168, 196, 255))
     elif key == "blade":
-        poly(d, [(8, 24), (22, 7), (25, 10), (11, 26)], w)
-        ln([(7, 21), (12, 26)], 3, (150, 110, 80, 255))
+        poly(ed, [(9, 21.5), (22.5, 6.5), (25.5, 9.5), (12, 24.5)], w)
+        poly(ed, [(10.5, 23), (24, 8), (25.5, 9.5), (12, 24.5)], (196, 216, 236, 255))
+        ln([(7.5, 19.5), (14, 26)], 2.8, gold)
+        ln([(6.5, 25.5), (9.8, 22.2)], 2.6, wood)
     elif key == "regrowth":
-        leaf(d, 9, 24, -50, 15, w)
-        ln([(22, 7), (22, 15)], 2.5)
-        ln([(18, 11), (26, 11)], 2.5)
+        leaf(ed, 8.5, 24.5, -48, 15.5, green)
+        leaf(ed, 9.2, 23.8, -50, 13.5, w)
+        ln([(22.5, 7), (22.5, 14.5)], 2.4, w)
+        ln([(18.8, 10.8), (26.2, 10.8)], 2.4, w)
     elif key == "longedge":
-        ln([(6, 16), (26, 16)], 3)
-        poly(d, [(5, 16), (10, 11), (10, 21)], w)
-        poly(d, [(27, 16), (22, 11), (22, 21)], w)
+        ln([(6.5, 16), (25.5, 16)], 3.0, w)
+        poly(ed, [(4.8, 16), (10.5, 10.8), (10.5, 21.2)], w)
+        poly(ed, [(27.2, 16), (21.5, 10.8), (21.5, 21.2)], w)
+        el(ed, 16, 16, 2.4, 2.4, gold)
     elif key == "steady":
-        # A feather: fruit fall more slowly.
-        poly(d, [(9, 25), (20, 7), (24, 10), (13, 25)], w)
-        ln([(8, 27), (13, 21)], 1.6, edge)
+        poly(ed, [(8.5, 25), (19.5, 6.5), (24.5, 9.8), (13.5, 25)], w)
+        poly(ed, [(11, 25), (22, 8.2), (24.5, 9.8), (13.5, 25)], cream)
+        ln([(7.5, 26.8), (21, 9)], 1.6, gold_deep)
     elif key == "lucky":
-        el(d, 16, 16, 8, 8, (255, 214, 90, 255))
-        ring(16, 16, 8, 1.6, (190, 140, 30, 255))
-        ln([(16, 12), (16, 20)], 2, (190, 140, 30, 255))
+        el(ed, 16, 16, 8.8, 8.8, gold_deep)
+        el(ed, 16, 16, 7.6, 7.6, gold)
+        ring(16, 16, 6.2, 1.4, (255, 244, 180, 255))
+        ln([(16, 12.2), (16, 19.8)], 2.2, gold_deep)
+        el(ed, 13.2, 12.8, 1.6, 1.1, w)
     elif key == "parry":
-        ln([(8, 8), (24, 24)], 3)
-        ln([(24, 8), (8, 24)], 3)
+        ln([(7.5, 24.5), (24, 8)], 3.0, w)
+        ln([(24.5, 24.5), (8, 8)], 3.0, (212, 228, 246, 255))
+        ln([(6.5, 21.5), (11, 26)], 2.4, gold)
+        ln([(25.5, 21.5), (21, 26)], 2.4, gold)
+        el(ed, 16, 16, 2.5, 2.5, gold)
     elif key == "juice":
-        poly(d, [(16, 6), (22, 17), (10, 17)], w)
-        el(d, 16, 19, 6, 6, w)
+        poly(ed, [(16, 5.5), (22.2, 16.8), (9.8, 16.8)], w)
+        el(ed, 16, 18.8, 6.4, 6.4, w)
+        el(ed, 13.8, 17.2, 2.0, 3.0, ice)
     elif key == "magnet":
-        d.arc([8 * SS, 6 * SS, 24 * SS, 22 * SS], 0, 180, fill=w, width=5 * SS)
-        d.rectangle([8 * SS, 10 * SS, 13 * SS, 15 * SS], fill=w)
-        d.rectangle([19 * SS, 10 * SS, 24 * SS, 15 * SS], fill=w)
-        d.rectangle([8 * SS, 8 * SS, 13 * SS, 11 * SS], fill=(240, 90, 80, 255))
-        d.rectangle([19 * SS, 8 * SS, 24 * SS, 11 * SS], fill=(240, 90, 80, 255))
+        ed.arc([8 * SS, 6.5 * SS, 24 * SS, 22.5 * SS], 0, 180, fill=w, width=int(5.2 * SS))
+        ed.rectangle([8 * SS, 10 * SS, 13.2 * SS, 15.5 * SS], fill=w)
+        ed.rectangle([18.8 * SS, 10 * SS, 24 * SS, 15.5 * SS], fill=w)
+        ed.rectangle([8 * SS, 7.5 * SS, 13.2 * SS, 11.2 * SS], fill=red)
+        ed.rectangle([18.8 * SS, 7.5 * SS, 24 * SS, 11.2 * SS], fill=red)
     elif key == "bombsquad":
-        bomb(15, 18, 7)
-        ring(16, 16, 11, 2.2)
-        ln([(8, 8), (24, 24)], 2.2)
+        bomb_mark(15.2, 17.8, 6.8)
+        ring(16, 16, 10.6, 2.4, w)
+        ln([(8.5, 8.5), (23.5, 23.5)], 2.4, red)
     elif key == "secondwind":
-        heart(15, 17, 6.5)
-        d.arc([5 * SS, 5 * SS, 27 * SS, 27 * SS], 200, 330, fill=w, width=2 * SS)
-        poly(d, [(25, 9), (27, 14), (21, 13)], w)
+        heart(15.2, 17.2, 6.0, w, ice)
+        ed.arc([5 * SS, 5 * SS, 27 * SS, 27 * SS], 195, 332, fill=gold, width=int(2.4 * SS))
+        poly(ed, [(24.5, 8.2), (27.5, 14.2), (20.8, 12.8)], gold)
     elif key == "battery":
-        d.rectangle([7 * SS, 11 * SS, 24 * SS, 21 * SS], outline=w, width=2 * SS)
-        d.rectangle([24 * SS, 14 * SS, 26 * SS, 18 * SS], fill=w)
-        d.rectangle([9.5 * SS, 13.5 * SS, 18 * SS, 18.5 * SS], fill=w)
+        ed.rounded_rectangle([6.5 * SS, 10.5 * SS, 23.8 * SS, 21.5 * SS], radius=2 * SS, outline=w, width=int(2.2 * SS))
+        ed.rectangle([23.8 * SS, 13.5 * SS, 26.2 * SS, 18.5 * SS], fill=w)
+        ed.rectangle([9.2 * SS, 13 * SS, 18.5 * SS, 19 * SS], fill=gold)
+        poly(ed, [(15.5, 11.5), (12.5, 16.2), (15.8, 16.2), (14.5, 20.5), (18.8, 15.4), (15.5, 15.4)], w)
     elif key == "goldtouch":
-        el(d, 16, 17, 8, 8, (255, 210, 70, 255))
-        leaf(d, 16, 9, -60, 7, w)
-        ln([(22, 6), (25, 9)], 1.8)
-        ln([(25, 6), (22, 9)], 1.8)
+        el(ed, 15.5, 17.5, 7.8, 7.8, gold)
+        el(ed, 13.2, 15.0, 2.6, 1.8, (255, 248, 200, 255))
+        leaf(ed, 15.5, 9.5, -55, 7.2, w)
+        ln([(22.5, 6), (22.5, 10.5)], 1.8, w)
+        ln([(20.2, 8.2), (24.8, 8.2)], 1.8, w)
     elif key == "seedpouch":
-        el(d, 16, 19, 8, 7, w)
-        poly(d, [(12, 9), (20, 9), (18, 13), (14, 13)], w)
-        for x, y in ((13, 19), (18, 18), (16, 22)):
-            el(d, x, y, 1.4, 1.8, edge)
+        el(ed, 16, 19.2, 8.2, 7.0, cream)
+        poly(ed, [(11.5, 8.5), (20.5, 8.5), (18.4, 13.2), (13.6, 13.2)], cream)
+        ln([(12.5, 12.8), (19.5, 12.8)], 2.0, gold_deep)
+        for x, y in ((13, 19), (18.2, 18.2), (15.8, 22.2)):
+            el(ed, x, y, 1.5, 2.0, (92, 56, 32, 255))
     elif key == "sharprind":
-        for x in (8, 13, 18, 23):
-            poly(d, [(x - 3.5, 24), (x + 3.5, 24), (x, 9)], w)
+        for x in (8.5, 13.5, 18.5, 23.5):
+            poly(ed, [(x - 3.4, 23.5), (x + 3.4, 23.5), (x, 8.5)], w)
+            poly(ed, [(x, 23.5), (x + 3.4, 23.5), (x, 8.5)], (204, 224, 240, 255))
     elif key == "echo":
-        d.arc([6 * SS, 6 * SS, 30 * SS, 30 * SS], 190, 260, fill=w, width=3 * SS)
-        d.arc([2 * SS, 10 * SS, 26 * SS, 34 * SS], 190, 260, fill=(255, 250, 240, 140), width=3 * SS)
+        ed.arc([6 * SS, 6 * SS, 29.5 * SS, 29.5 * SS], 190, 265, fill=w, width=int(3.2 * SS))
+        ed.arc([2 * SS, 10 * SS, 25.5 * SS, 33.5 * SS], 190, 265, fill=ice, width=int(2.8 * SS))
     elif key == "sweep":
-        ln([(8, 16), (14, 22), (25, 9)], 3.5)
+        ln([(7.5, 16.5), (13.8, 22.5), (24.8, 9.2)], 3.6, w)
     elif key == "luckyleaf":
-        for dx, dy in ((-4, -4), (4, -4), (-4, 4), (4, 4)):
-            el(d, 16 + dx, 15 + dy, 4.2, 4.2, w)
-        ln([(17, 20), (21, 27)], 2)
+        for dx, dy in ((-3.8, -3.8), (3.8, -3.8), (-3.8, 3.8), (3.8, 3.8)):
+            el(ed, 16 + dx, 14.8 + dy, 4.3, 4.3, w)
+            el(ed, 16 + dx * 0.6, 14.8 + dy * 0.6, 1.6, 1.6, green)
+        ln([(16.8, 19.5), (20.8, 26.5)], 2.2, w)
     elif key == "overflow":
-        poly(d, [(9, 14), (23, 14), (21, 27), (11, 27)], w)
-        el(d, 11, 10, 2.5, 2.5, w)
-        el(d, 20, 8, 2.5, 2.5, w)
-        el(d, 16, 6, 2, 2, w)
+        poly(ed, [(8.8, 14), (23.2, 14), (21, 26.5), (11, 26.5)], w)
+        poly(ed, [(10.4, 16.2), (21.6, 16.2), (19.8, 25), (12.2, 25)], (242, 108, 148, 255))
+        for x, y, r in ((11, 10, 2.6), (20, 8.2, 2.6), (15.8, 6.2, 2.2)):
+            el(ed, x, y, r, r, gold)
     elif key == "rhythm":
-        el(d, 12, 22, 4, 3.2, w)
-        ln([(15.5, 22), (15.5, 7), (23, 10)], 2.4)
+        el(ed, 11.8, 22, 4.2, 3.3, w)
+        ln([(15.2, 22), (15.2, 6.8), (23.2, 10)], 2.6, w)
+        el(ed, 22, 18, 2.0, 2.0, gold)
     elif key == "thickpeel":
-        ring(16, 16, 9, 4.5)
-        el(d, 16, 16, 3, 3, w)
+        ring(16, 16, 9.2, 4.4, w)
+        ring(16, 16, 6.8, 1.8, green)
+        el(ed, 16, 16, 3.2, 3.2, gold)
     elif key == "glass":
-        poly(d, [(16, 6), (25, 14), (16, 27), (7, 14)], (210, 240, 255, 255))
-        ln([(7, 14), (25, 14)], 1.4, edge)
-        ln([(12, 14), (16, 27), (20, 14)], 1.4, edge)
+        poly(ed, [(16, 5.5), (25.2, 13.8), (16, 26.8), (6.8, 13.8)], ice)
+        poly(ed, [(16, 5.5), (20.5, 13.8), (16, 26.8), (11.5, 13.8)], w)
+        ln([(7, 13.8), (25, 13.8)], 1.4, (90, 168, 222, 255))
     elif key == "blender":
-        poly(d, [(9, 7), (23, 7), (21, 20), (11, 20)], w)
-        d.rectangle([9 * SS, 21 * SS, 23 * SS, 26 * SS], fill=w)
-        poly(d, [(11, 12), (21, 12), (20.4, 18), (11.6, 18)], (236, 110, 150, 255))
+        poly(ed, [(8.8, 6.8), (23.2, 6.8), (21, 20.2), (11, 20.2)], w)
+        ed.rounded_rectangle([8.8 * SS, 20.8 * SS, 23.2 * SS, 26.2 * SS], radius=1.8 * SS, fill=cream)
+        poly(ed, [(10.6, 11.2), (21.4, 11.2), (20.2, 18.6), (11.8, 18.6)], (242, 102, 148, 255))
+        el(ed, 16, 23.5, 1.8, 1.8, gold_deep)
     elif key == "freezepop":
-        d.rounded_rectangle([10 * SS, 5 * SS, 22 * SS, 20 * SS], radius=5 * SS, fill=(170, 230, 255, 255))
-        d.rectangle([14.5 * SS, 20 * SS, 17.5 * SS, 27 * SS], fill=(230, 200, 150, 255))
+        ed.rounded_rectangle([14.2 * SS, 19.2 * SS, 17.8 * SS, 27.2 * SS], radius=1.5 * SS, fill=(232, 192, 136, 255))
+        ed.rounded_rectangle([9.8 * SS, 5.2 * SS, 22.2 * SS, 20.2 * SS], radius=5.2 * SS, fill=ice)
+        ed.rounded_rectangle([11.2 * SS, 6.8 * SS, 15.2 * SS, 17.8 * SS], radius=2.0 * SS, fill=w)
     elif key == "defuser":
-        bomb(14, 19, 7)
-        ln([(19, 9), (26, 5)], 2)
-        poly(d, [(22, 3), (27, 7), (24, 10)], w)
+        bomb_mark(14, 19, 6.8)
+        ln([(18.8, 9.2), (25.8, 5.2)], 2.2, w)
+        poly(ed, [(21.8, 3.2), (27.2, 7.2), (23.8, 10.2)], gold)
     elif key == "smoothie":
-        ln([(19, 9), (23, 4)], 2)
-        poly(d, [(9, 10), (23, 10), (21, 27), (11, 27)], w)
-        poly(d, [(10.5, 14), (21.5, 14), (20, 25), (12, 25)], (150, 220, 120, 255))
+        ln([(18.8, 9.2), (23.2, 3.8)], 2.2, red)
+        poly(ed, [(8.8, 9.8), (23.2, 9.8), (21, 26.8), (11, 26.8)], w)
+        poly(ed, [(10.4, 13.6), (21.6, 13.6), (20, 25), (12, 25)], green)
+        ln([(11.8, 15), (13, 23.5)], 1.4, w)
     elif key == "cleaver":
-        d.rectangle([8 * SS, 8 * SS, 22 * SS, 19 * SS], fill=w)
-        el(d, 11, 11, 1.5, 1.5, fill)
-        d.rectangle([20 * SS, 18 * SS, 24 * SS, 27 * SS], fill=(150, 110, 80, 255))
+        ed.rounded_rectangle([7.8 * SS, 7.5 * SS, 22.2 * SS, 19.2 * SS], radius=1.6 * SS, fill=w)
+        ed.rectangle([7.8 * SS, 16.5 * SS, 22.2 * SS, 19.2 * SS], fill=(200, 218, 236, 255))
+        el(ed, 11, 10.8, 1.6, 1.6, edge)
+        ed.rounded_rectangle([19.8 * SS, 18.2 * SS, 24.2 * SS, 27 * SS], radius=1.5 * SS, fill=wood)
     elif key == "fruitrain":
-        for x, y, c in ((9, 9, (240, 90, 80, 255)), (17, 14, (255, 200, 70, 255)), (24, 20, (130, 200, 90, 255)), (12, 22, w)):
-            el(d, x, y, 3.6, 3.6, c)
+        for x, y, c in ((9, 9.2, red), (17.2, 13.8, gold), (23.8, 19.8, green), (11.8, 22, w)):
+            el(ed, x, y, 3.8, 3.8, c)
+            el(ed, x - 1.0, y - 1.0, 1.2, 1.0, w)
     elif key == "pull":
-        d.arc([10 * SS, 6 * SS, 26 * SS, 22 * SS], 90, 270, fill=w, width=5 * SS)
+        ed.arc([10 * SS, 6 * SS, 26 * SS, 22 * SS], 90, 270, fill=w, width=int(5 * SS))
         for y in (10, 18):
-            ln([(5, y), (9, y)], 1.8)
-        d.rectangle([17 * SS, 6 * SS, 22 * SS, 11 * SS], fill=(240, 90, 80, 255))
-        d.rectangle([17 * SS, 17 * SS, 22 * SS, 22 * SS], fill=w)
+            ln([(5, y), (9, y)], 2.0, gold)
+        ed.rectangle([17 * SS, 6 * SS, 22.2 * SS, 11 * SS], fill=red)
+        ed.rectangle([17 * SS, 17 * SS, 22.2 * SS, 22 * SS], fill=w)
     elif key == "slowmo":
-        poly(d, [(9, 6), (23, 6), (16, 16)], w)
-        poly(d, [(9, 26), (23, 26), (16, 16)], w)
-        poly(d, [(12, 23), (20, 23), (16, 18)], fill)
+        poly(ed, [(8.8, 6), (23.2, 6), (16, 16)], w)
+        poly(ed, [(8.8, 26), (23.2, 26), (16, 16)], w)
+        poly(ed, [(11.5, 8), (20.5, 8), (16, 14.2)], gold)
+        poly(ed, [(11.5, 24.5), (20.5, 24.5), (16, 19.5)], gold)
     elif key == "goldapple":
-        el(d, 13, 18, 6.5, 7.5, (255, 214, 80, 255))
-        el(d, 19, 18, 6.5, 7.5, (255, 214, 80, 255))
-        ln([(16, 11), (17, 6)], 2, (150, 110, 80, 255))
-        leaf(d, 17, 8, -20, 7, (130, 200, 90, 255))
+        el(ed, 13, 18.2, 6.5, 7.5, gold)
+        el(ed, 19, 18.2, 6.5, 7.5, gold)
+        el(ed, 11.2, 15.2, 2.2, 3.0, (255, 248, 200, 255))
+        ln([(16, 11), (17, 6)], 2.2, wood)
+        leaf(ed, 17, 8, -20, 7.5, green)
     elif key == "fruitbomb":
         for i in range(8):
             a = i * math.pi / 4
-            ln([(16 + math.cos(a) * 5, 16 + math.sin(a) * 5), (16 + math.cos(a) * 11, 16 + math.sin(a) * 11)], 2.2)
-        el(d, 16, 16, 4, 4, (255, 210, 90, 255))
+            ln([(16 + math.cos(a) * 4.5, 16 + math.sin(a) * 4.5), (16 + math.cos(a) * 11.2, 16 + math.sin(a) * 11.2)], 2.4, w)
+        el(ed, 16, 16, 4.8, 4.8, gold)
+        el(ed, 16, 16, 2.4, 2.4, w)
     elif key == "rindwall":
         for row in range(3):
-            y = 9 + row * 5.5
+            y = 8.8 + row * 5.5
             off = 0 if row % 2 == 0 else 3.5
             for col in range(3):
-                x = 7 + off + col * 7
-                if x + 6 <= 26:
-                    d.rectangle([x * SS, y * SS, (x + 6) * SS, (y + 4.5) * SS], fill=w)
+                x = 6.8 + off + col * 7
+                if x + 6 <= 26.2:
+                    ed.rounded_rectangle([x * SS, y * SS, (x + 6) * SS, (y + 4.5) * SS], radius=0.8 * SS, fill=w if (row + col) % 2 == 0 else cream)
     elif key == "ripeseed":
-        poly(d, [(16, 26), (11, 17), (16, 8), (21, 17)], w)
-        ln([(24, 13), (24, 6)], 2)
-        poly(d, [(21, 8), (27, 8), (24, 4)], w)
+        poly(ed, [(16, 26), (10.8, 17), (16, 7.8), (21.2, 17)], gold)
+        poly(ed, [(16, 24), (12.2, 17), (16, 9.8)], w)
+        ln([(24, 13.5), (24, 6)], 2.2, w)
+        poly(ed, [(21, 8.2), (27, 8.2), (24, 3.8)], w)
     elif key == "skippeel":
-        poly(d, [(6, 8), (15, 16), (6, 24)], w)
-        poly(d, [(16, 8), (25, 16), (16, 24)], w)
+        for x0, c in ((6.2, cream), (15.5, w)):
+            poly(ed, [(x0, 7.8), (x0 + 9.2, 16), (x0, 24.2)], c)
+            poly(ed, [(x0, 7.8), (x0 + 9.2, 16), (x0 + 2.5, 16)], w)
     elif key == "bossbane":
-        poly(d, [(7, 16), (7, 9), (11, 13), (16, 6), (21, 13), (25, 9), (25, 16)], (255, 206, 80, 255))
-        ln([(8, 26), (24, 18)], 3)
+        poly(ed, [(6.8, 16), (6.8, 8.8), (11, 13), (16, 5.8), (21, 13), (25.2, 8.8), (25.2, 16)], gold)
+        ln([(7.5, 25.8), (24.5, 17.8)], 3.2, w)
     elif key == "luckypit":
-        el(d, 16, 17, 6, 8, (200, 130, 90, 255))
+        el(ed, 16, 17, 6.2, 8.2, (206, 136, 88, 255))
+        el(ed, 14.2, 14.5, 2.2, 3.2, (242, 190, 142, 255))
         for i in range(5):
             a = -math.pi / 2 + i * 2 * math.pi / 5
-            el(d, 16 + math.cos(a) * 11, 17 + math.sin(a) * 10, 1.6, 1.6, w)
+            el(ed, 16 + math.cos(a) * 11, 17 + math.sin(a) * 10, 1.8, 1.8, gold)
     elif key == "coinjar":
-        d.rounded_rectangle([9 * SS, 10 * SS, 23 * SS, 27 * SS], radius=3 * SS, outline=w, width=2 * SS)
-        d.rectangle([11 * SS, 6 * SS, 21 * SS, 9 * SS], fill=w)
-        el(d, 16, 19, 4, 4, (255, 210, 80, 255))
+        ed.rounded_rectangle([8.8 * SS, 9.8 * SS, 23.2 * SS, 26.8 * SS], radius=3 * SS, outline=w, width=int(2.2 * SS))
+        ed.rounded_rectangle([10.8 * SS, 5.8 * SS, 21.2 * SS, 9.2 * SS], radius=1.2 * SS, fill=cream)
+        el(ed, 16, 19.2, 4.5, 4.5, gold)
+        el(ed, 14.8, 18.0, 1.5, 1.2, w)
     elif key == "laststand":
-        ln([(10, 27), (10, 6)], 2.5)
-        poly(d, [(11, 6), (25, 10), (11, 15)], w)
+        ln([(9.8, 26.8), (9.8, 5.8)], 2.6, cream)
+        el(ed, 9.8, 5.2, 1.8, 1.8, gold)
+        poly(ed, [(10.8, 6.2), (25.5, 10.2), (10.8, 15.5)], w)
+        poly(ed, [(10.8, 10.8), (25.5, 10.2), (10.8, 15.5)], cream)
     elif key == "flood":
-        for y in (11, 17, 23):
-            pts = [(6 + i, y + math.sin(i * 0.6) * 2) for i in range(0, 21)]
-            ln(pts, 2.2)
-    return shrink(img)
+        for i, y in enumerate((10.8, 16.5, 22.2)):
+            pts = [(6 + k, y + math.sin(k * 0.6) * 2.1) for k in range(0, 21)]
+            ln(pts, 2.4, w if i != 1 else ice)
+
+    # Composite emblem drop shadow and emblem onto the medallion, then add a specular gloss dot.
+    em_mask = mask_of(em)
+    sh = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    sh_alpha = ImageChops.offset(em_mask, int(0.8 * SS), int(1.2 * SS))
+    sh.putalpha(sh_alpha.point(lambda a: a * 115 // 255))
+    sh_col = Image.new("RGBA", img.size, (edge[0] // 2, edge[1] // 2, edge[2] // 2, 255))
+    sh_col.putalpha(sh.getchannel("A"))
+    img.alpha_composite(sh_col)
+    img.alpha_composite(em)
+    el(ImageDraw.Draw(img), 10.2, 8.2, 2.4, 1.4, (255, 255, 255, 110))
+    return shrink(sticker(img, 1.1, shadow=False))
 
 
 # ---------------------------------------------------------------- bosses

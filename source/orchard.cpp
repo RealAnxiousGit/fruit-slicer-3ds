@@ -17,8 +17,8 @@ const CardInfo kCards[CARD_COUNT] = {
 	// Upgrades
 	{"Ring", "+20% XP from everything.", "", KIND_UPGRADE, RARE_COMMON, 5, 0, 0},
 	{"Health", "+5 Max HP, and heals 5.", "", KIND_UPGRADE, RARE_COMMON, 5, 0, 0},
-	{"Armor", "Every hit does 1 less.", "A hit still does at least 1.", KIND_UPGRADE, RARE_COMMON, 4, 0, 0},
-	{"Blade", "A boss's guard stays down longer.", "Coconuts need one slice less.", KIND_UPGRADE, RARE_COMMON, 5, 0, 0},
+	{"Armor", "Every hit does 1 less.", "A hit still does at least 1.", KIND_UPGRADE, RARE_RARE, 4, 0, 0},
+	{"Blade", "A boss's guard stays down longer.", "Coconuts need one slice less.", KIND_UPGRADE, RARE_RARE, 5, 0, 0},
 	{"Ring of Regrowth", "You heal 20% faster.", "", KIND_UPGRADE, RARE_COMMON, 5, 0, 0},
 	{"Long Edge", "A wider slice, so fruit", "are easier to catch.", KIND_UPGRADE, RARE_COMMON, 5, 0, 0},
 	{"Steady Hands", "Fruit fall 5% slower.", "", KIND_UPGRADE, RARE_COMMON, 3, 0, 0},
@@ -28,37 +28,37 @@ const CardInfo kCards[CARD_COUNT] = {
 	{"Juice Formula", "Each fruit heals 0.25 HP,", "on top of your slow healing.", KIND_PASSIVE, RARE_RARE, 1, 0, 0},
 	{"Power-up Magnet", "Arcade's power-ups show up", "more often.", KIND_PASSIVE, RARE_COMMON, 1, 0, 0},
 	{"Bomb Squad", "The first bomb you slice in", "each room does no damage.", KIND_PASSIVE, RARE_RARE, 1, 0, 0},
-	{"Second Wind", "Once a run, when you'd go down,", "come back with half your HP.", KIND_PASSIVE, RARE_RARE, 1, 0, 0},
+	{"Second Wind", "Once a run, when you'd go down,", "come back with half your HP.", KIND_PASSIVE, RARE_LEGEND, 1, 0, 0},
 	{"Combo Battery", "Combos of 5 or more", "give double XP.", KIND_PASSIVE, RARE_COMMON, 1, 0, 0},
-	{"Golden Touch", "Gold fruit come 3 times", "as often.", KIND_PASSIVE, RARE_COMMON, 1, 0, 0},
+	{"Golden Touch", "Gold fruit come 3 times", "as often.", KIND_PASSIVE, RARE_RARE, 1, 0, 0},
 	{"Seed Pouch", "Seeds and loose pieces give", "XP like whole fruit.", KIND_PASSIVE, RARE_COMMON, 1, 0, 0},
 	{"Sharp Rind", "In a boss fight, a bomb you slice", "knocks its guard down too.", KIND_PASSIVE, RARE_RARE, 1, 0, 0},
-	{"Echo Blade", "Each swipe cuts again, faintly,", "half a second later.", KIND_PASSIVE, RARE_RARE, 1, 0, 0},
+	{"Echo Blade", "Each swipe cuts again, faintly,", "half a second later.", KIND_PASSIVE, RARE_LEGEND, 1, 0, 0},
 	{"Clean Sweep", "Get through a room without", "dropping a fruit: heal 3 HP.", KIND_PASSIVE, RARE_COMMON, 1, 0, 0},
 	{"Lucky Leaf", "+2 Rerolls on the", "level-up screen.", KIND_PASSIVE, RARE_COMMON, 1, 0, 0},
-	{"Overflow", "XP past a level up carries", "over twice as much.", KIND_PASSIVE, RARE_COMMON, 1, 0, 0},
+	{"Overflow", "XP past a level up carries", "over twice as much.", KIND_PASSIVE, RARE_RARE, 1, 0, 0},
 	{"Ripe Rhythm", "Slices on the music's beat", "give +50% XP.", KIND_PASSIVE, RARE_RARE, 1, 0, 0},
 	{"Thick Peel", "A shield that blocks one hit,", "fresh at the start of every room.", KIND_PASSIVE, RARE_RARE, 1, 0, 0},
 	{"Glass Cannon", "Double XP, boss guards stay down", "twice as long. Max HP halved.", KIND_PASSIVE, RARE_LEGEND, 1, 0, 0},
 	// Reusable charms
 	{"Blender", "For 10 s, slices every fruit", "that comes up. Bombs are left.", KIND_REUSABLE, RARE_RARE, 1, 10, 30},
-	{"Freeze Pop", "For 5 s, everything freezes", "in midair, boss attacks too.", KIND_REUSABLE, RARE_COMMON, 1, 5, 40},
+	{"Freeze Pop", "For 5 s, everything freezes", "in midair, boss attacks too.", KIND_REUSABLE, RARE_RARE, 1, 5, 40},
 	{"Defuser", "Every bomb on screen", "fizzles out.", KIND_REUSABLE, RARE_COMMON, 1, 0, 45},
 	{"Smoothie", "Heals 30% of your Max HP.", "", KIND_REUSABLE, RARE_COMMON, 1, 0, 60},
-	{"Cleaver", "Your next slice on a boss goes", "straight through its guard.", KIND_REUSABLE, RARE_RARE, 1, 0, 90},
+	{"Cleaver", "Your next slice on a boss goes", "straight through its guard.", KIND_REUSABLE, RARE_LEGEND, 1, 0, 90},
 	{"Fruit Rain", "For 4 s, a burst of fruit", "with no bombs.", KIND_REUSABLE, RARE_COMMON, 1, 4, 35},
 	{"Magnet Pull", "For 6 s, fruit, power-ups", "and coins drift to your blade.", KIND_REUSABLE, RARE_COMMON, 1, 6, 30},
 	{"Slow-Mo", "For 6 s, everything moves", "at half speed.", KIND_REUSABLE, RARE_COMMON, 1, 6, 50},
 	// Single-use charms
-	{"Golden Apple", "Heals you to full HP.", "", KIND_SINGLE, RARE_COMMON, 1, 0, 0},
-	{"Fruit Bomb", "Slices everything on screen.", "Bombs turn into XP.", KIND_SINGLE, RARE_RARE, 1, 0, 0},
+	{"Golden Apple", "Heals you to full HP.", "", KIND_SINGLE, RARE_RARE, 1, 0, 0},
+	{"Fruit Bomb", "Slices everything on screen.", "Bombs turn into XP.", KIND_SINGLE, RARE_LEGEND, 1, 0, 0},
 	{"Rind Wall", "Blocks all damage", "for 8 seconds.", KIND_SINGLE, RARE_COMMON, 1, 0, 0},
 	{"Ripe Seed", "Gain a level on the spot.", "", KIND_SINGLE, RARE_RARE, 1, 0, 0},
-	{"Skip Peel", "Jump to the next room.", "Not in a boss room.", KIND_SINGLE, RARE_COMMON, 1, 0, 0},
+	{"Skip Peel", "Jump to the next room.", "Not in a boss room.", KIND_SINGLE, RARE_RARE, 1, 0, 0},
 	{"Boss Bane", "The boss's guard drops", "for 3 seconds.", KIND_SINGLE, RARE_RARE, 1, 0, 0},
 	{"Lucky Pit", "Your next level up shows", "5 cards instead of 3.", KIND_SINGLE, RARE_COMMON, 1, 0, 0},
 	{"Coin Jar", "Coins count twice for", "the rest of the room.", KIND_SINGLE, RARE_COMMON, 1, 0, 0},
-	{"Last Stand", "For 10 s nothing takes you below", "1 HP, and Deflected! is free.", KIND_SINGLE, RARE_RARE, 1, 0, 0},
+	{"Last Stand", "For 10 s nothing takes you below", "1 HP, and Deflected! is free.", KIND_SINGLE, RARE_LEGEND, 1, 0, 0},
 	{"Juice Flood", "For 5 s, the screen floods", "with fruit, at double XP.", KIND_SINGLE, RARE_RARE, 1, 0, 0},
 };
 
@@ -103,10 +103,10 @@ const BossInfo kBosses[BOSS_COUNT] = {
 };
 
 static const OrchardLevel kLevels[DIFF_COUNT] = {
-	{25, 4, 0.75f, 2.5f, 1, 0.85f},
-	{20, 5, 1.0f, 2.0f, 2, 1.0f},
-	{20, 6, 1.25f, 1.5f, 2, 1.1f},
-	{15, 8, 1.5f, 1.2f, 3, 1.2f},
+	{25, 2, 0.334f, 0.65f, 0.70f, 2.5f, 1, 0.85f},
+	{20, 4, 1.000f, 1.00f, 1.00f, 2.0f, 2, 1.00f},
+	{16, 6, 1.667f, 1.25f, 1.30f, 1.5f, 3, 1.10f},
+	{12, 8, 2.667f, 1.50f, 1.60f, 1.2f, 4, 1.20f},
 };
 const OrchardLevel& orchardLevel(int diff) { return kLevels[diff % DIFF_COUNT]; }
 int orchardXpFor(int level) { return 6 + 4 * level; }
@@ -145,6 +145,7 @@ void Game::orcStart() {
 	orc.rerolls = 1;
 	orc.slot[0] = orc.slot[1] = CARD_NONE;
 	maxStrikes = 0;  // HP, not misses
+	gravity = lerpf(300, 430, plan(1).d) * kFieldK * levelGravity(gSave.difficulty) * (mix[MIX_LOW_GRAVITY] ? 0.6f : 1.0f);
 	setCallout("ROOM 1", rgba(255, 230, 140));
 #ifdef TEST_ORCHARD
 	// Screenshots: a level up straight away, a charm in each slot, and the first boss soon after.
@@ -176,6 +177,10 @@ float Game::orcReach() const { return 1.0f + 0.12f * orc.upgrade[CARD_LONGEDGE];
 int Game::orcXpNeed() const { return (int)(orchardXpFor(orc.level) * orchardLevel(gSave.difficulty).xpNeed + 0.5f); }
 
 bool Game::orcWave() {
+	if (mode == MODE_BOSSRUSH) {
+		waveTimer = 999.0f;
+		return true;
+	}
 	const RoomPlan& p = plan(orc.room);
 	gravity = lerpf(300, 430, p.d) * kFieldK * levelGravity(gSave.difficulty) * (mix[MIX_LOW_GRAVITY] ? 0.6f : 1.0f);
 	if (orc.bossRoom) {
@@ -223,7 +228,7 @@ bool Game::orcWave() {
 				fruit = trickFruitOf(MODE_ORCHARD, gSpawn, pinataThrown < kPinataMax);
 				if (fruit == kPinata) pinataThrown++;
 			}
-			queue(stagger * i, x, vx, vy, kinds[i], fruit);
+			queue(stagger * i, x, vx, vy, kinds[i], isBomb ? 0 : fruit);
 		}
 	}
 	waveTimer = p.interval * levelInterval(gSave.difficulty) + stagger * count;
@@ -246,6 +251,7 @@ void Game::orcGainXp(float amount) {
 		orc.level++;
 		orc.levelsWaiting++;
 	}
+	if (orc.levelsWaiting > 0 && !orc.choosing && phase == PHASE_PLAY && (feverT > 0 || frenzyT > 0)) orcOffer();
 }
 
 void Game::orcSliced(const Obj& o) {
@@ -330,6 +336,13 @@ void Game::orcHurt(int damage, float x, float y, const char* what) {
 
 void Game::orcBomb(Obj& o) {
 	if (orc.upgrade[CARD_SHARPRIND] && orc.boss.on && orc.boss.dazeT <= 0 && !orc.boss.beaten) bossOpen(1.5f);
+	if (orc.boss.on && !orc.boss.beaten && orc.boss.id == BOSS_KING && o.tag == 1) {
+		addPopup("DEFUSED!", o.x, o.y - 18, rgba(200, 240, 170), 0.7f);
+		orcGainXp(1);
+		if (orc.upgrade[CARD_JUICE]) orc.hp = fminf(orc.maxHp, orc.hp + 0.25f);
+		sliced++;
+		return;
+	}
 	if (orc.upgrade[CARD_BOMBSQUAD] && !orc.bombSquadUsed) {
 		orc.bombSquadUsed = true;
 		addPopup("BOMB SQUAD!", o.x, o.y - 18, rgba(200, 220, 255), 0.7f);
@@ -362,7 +375,7 @@ void Game::orcNextRoom() {
 		orc.hp = fminf(orc.maxHp, orc.hp + 3);
 		addPopup("CLEAN SWEEP +3 HP", kFieldW * 0.5f, kFieldTop + 70, rgba(160, 240, 170), 0.6f);
 	}
-	award(25 * orc.room);
+	award(1);
 	if (orc.room >= kOrchardRooms) {
 		orcFinish(true);
 		return;
@@ -395,7 +408,8 @@ void Game::orcOffer() {
 		if (info.kind == KIND_REUSABLE || info.kind == KIND_SINGLE) {
 			if (orc.slot[0] == c || orc.slot[1] == c) continue;  // already in a slot
 		}
-		int w = info.rarity == RARE_LEGEND ? 5 : (info.rarity == RARE_RARE ? 25 : 70);
+		int w = info.rarity == RARE_LEGEND ? 16 : (info.rarity == RARE_RARE ? 42 : 60);
+		if (orc.room >= 5 && info.rarity != RARE_COMMON) w += 10;
 		if (info.kind == KIND_SINGLE && afterBoss) w = w * 8 / 5;
 		pool[n] = c;
 		weight[n] = w;
@@ -417,7 +431,7 @@ void Game::orcOffer() {
 	orc.choosing = true;
 	orc.placing = false;
 	orc.focus = 0;
-	audio::play(SFX_BEST, 0.8f);
+	audio::play(SFX_LEVELUP, 0.85f);
 	showCaption("Level up! Pick a card.");
 }
 
@@ -433,7 +447,7 @@ void Game::orcClose() {
 	orc.placing = false;
 	if (orc.levelsWaiting > 0) orc.levelsWaiting--;
 	if (orc.levelsWaiting > 0) orcOffer();
-	else orc.resumeT = 3.0f;
+	else orc.resumeT = 0;
 }
 
 void Game::orcApply(int card) {
@@ -696,8 +710,11 @@ void Game::orcUpdate(Blade& blade) {
 		orc.roomT += dt * gameSpeedScale();
 		if (orc.roomT >= kRoomSeconds) orcNextRoom();
 	}
-	// A level up waits for the slicing in hand to finish, then opens the cards.
-	if (orc.levelsWaiting > 0 && !orc.choosing && phase == PHASE_PLAY && !blade.active) orcOffer();
+	// A level up opens the cards straight away, even in the middle of a swipe or a Fruit Frenzy.
+	if (orc.levelsWaiting > 0 && !orc.choosing && phase == PHASE_PLAY) {
+		blade.reset();
+		orcOffer();
+	}
 }
 
 float Game::orcStat(int card) const {
@@ -731,51 +748,58 @@ void Game::drawOrchardField() const {
 void Game::drawOrchardHud(float x, float y, float w, float u) const {
 	char buf[40];
 	const Boss& b = orc.boss;
+	const float titleScale = (PORT_3DS ? 0.38f : 0.3f) * u;
+	const float hpScale = (PORT_3DS ? 0.28f : 0.22f) * u;
+	const float lvScale = (PORT_3DS ? 0.28f : 0.22f) * u;
+	const float yOff = PORT_3DS ? (y + 6.0f) : y;
 	// The room, or the boss and the slices it still needs.
 	if (b.on && !b.beaten) {
 		snprintf(buf, sizeof buf, "%s", b.id == BOSS_MELON ? (b.royal ? "ROYAL MELON" : "BIG MELON") : (b.royal ? "ROYAL KING" : "BOMB KING"));
-		gfx::text(buf, x, y + 5 * u, 0.3f * u, rgba(255, 200, 140), ALIGN_RIGHT);
+		gfx::text(buf, x, yOff + 4.0f * u, titleScale, rgba(255, 200, 140), ALIGN_RIGHT);
 		const int all = b.total;
 		for (int i = 0; i < all; i++) {
 			const bool cut = i < all - b.left;
 			// One mark per slice it needs: bright while still to do, dim once landed.
-			const float px = x - 10 * u - (all - 1 - i) * 13 * u;
-			gfx::rect(px, y + 17 * u, 9 * u, 7 * u, cut ? rgba(90, 70, 60, 200) : rgba(255, 110, 90));
+			const float pw = (PORT_3DS ? 11.0f : 9.0f) * u, ph = (PORT_3DS ? 8.0f : 7.0f) * u;
+			const float px = x - 10 * u - (all - 1 - i) * (pw + 4 * u);
+			gfx::rect(px, yOff + (PORT_3DS ? 20.0f : 19.0f) * u, pw, ph, cut ? rgba(90, 70, 60, 200) : rgba(255, 110, 90));
 		}
 	} else {
 		if (mode == MODE_BOSSRUSH) snprintf(buf, sizeof buf, "BOSS %d/%d", m12.rushStage + 1 > kRushStages ? kRushStages : m12.rushStage + 1, kRushStages);
 		else snprintf(buf, sizeof buf, "ROOM %d/%d", orc.room > kOrchardRooms ? kOrchardRooms : orc.room, kOrchardRooms);
-		gfx::text(buf, x, y + 5 * u, 0.3f * u, COL_CREAM, ALIGN_RIGHT);
+		gfx::text(buf, x, yOff + 4.0f * u, titleScale, COL_CREAM, ALIGN_RIGHT);
 		if (!orc.bossRoom) {
 			const float k = clampf(1 - orc.roomT / kRoomSeconds, 0, 1);
-			const float rw = 56 * u;
-			gfx::rect(x - rw, y + 18 * u, rw, 4 * u, rgba(0, 0, 0, 110));
-			gfx::rect(x - rw, y + 18 * u, rw * k, 4 * u, COL_DIM);
+			const float rw = 56 * u, rh = (PORT_3DS ? 6.0f : 4.0f) * u;
+			gfx::rect(x - rw, yOff + (PORT_3DS ? 21.0f : 19.0f) * u, rw, rh, rgba(0, 0, 0, 110));
+			gfx::rect(x - rw, yOff + (PORT_3DS ? 21.0f : 19.0f) * u, rw * k, rh, COL_DIM);
 		}
 	}
-	const float roomW = 72 * u;
+	const float roomW = (PORT_3DS ? 80.0f : 72.0f) * u;
 	float bw = w - roomW - 8 * u;
-	if (bw > 130 * u) bw = 130 * u;
+	if (bw > (PORT_3DS ? 140.0f : 130.0f) * u) bw = (PORT_3DS ? 140.0f : 130.0f) * u;
 	if (bw < 50 * u) bw = 50 * u;
-	const float bx = x - roomW - bw, bh = 9 * u;
+	const float bx = x - roomW - bw, bh = (PORT_3DS ? 16.0f : 13.0f) * u;
 	// HP: red, flashing when hit; blue while a Rind Wall or Last Stand holds.
 	const float hpK = clampf(orc.hp / (orc.maxHp > 0 ? orc.maxHp : 1), 0, 1);
 	const bool guarded = orc.invulnT > 0 || orc.lastStandT > 0;
 	u32 hpCol = guarded ? rgba(130, 200, 255) : (hpK < 0.3f ? rgba(255, 90, 80) : rgba(240, 70, 80));
 	if (orc.hurtFlash > 0 && !gSave.calmFx) hpCol = rgba(255, 230, 230);
-	gfx::rect(bx - 1, y + 4 * u - 1, bw + 2, bh + 2, gfx::themeBar());
-	gfx::rect(bx, y + 4 * u, bw * hpK, bh, hpCol);
-	if (orc.peelShield) gfx::rect(bx, y + 4 * u, 3 * u, bh, rgba(190, 240, 150));
+	const float yHp = yOff + (mode == MODE_BOSSRUSH ? 8.0f : (PORT_3DS ? 6.0f : 5.5f)) * u;
+	gfx::rect(bx - 1, yHp - 1, bw + 2, bh + 2, gfx::themeBar());
+	gfx::rect(bx, yHp, bw * hpK, bh, hpCol);
+	if (orc.peelShield) gfx::rect(bx, yHp, 3 * u, bh, rgba(190, 240, 150));
 	snprintf(buf, sizeof buf, "HP %d/%d", (int)ceilf(orc.hp), (int)orc.maxHp);
-	gfx::text(buf, bx + 4 * u, y + 3 * u, 0.26f * u, COL_CREAM);
+	gfx::text(buf, bx + 5 * u, yHp + (bh - 40 * hpScale) * 0.5f, hpScale, COL_CREAM);
 	// XP and the level. Boss Rush has neither.
 	if (mode == MODE_BOSSRUSH) return;
 	const float xpK = clampf(orc.xp / (float)orcXpNeed(), 0, 1);
-	const float xy = y + 16 * u;
-	gfx::rect(bx - 1, xy - 1, bw + 2, 6 * u + 2, gfx::themeBar());
-	gfx::rect(bx, xy, bw * xpK, 6 * u, orc.xpPulse > 0 ? rgba(200, 240, 255) : rgba(110, 190, 255));
+	const float xy = yHp + bh + 2.5f * u;
+	const float xh = (PORT_3DS ? 7.0f : 5.0f) * u;
+	gfx::rect(bx - 1, xy - 1, bw + 2, xh + 2, gfx::themeBar());
+	gfx::rect(bx, xy, bw * xpK, xh, orc.xpPulse > 0 ? rgba(200, 240, 255) : rgba(110, 190, 255));
 	snprintf(buf, sizeof buf, "LV %d", orc.level);
-	gfx::text(buf, bx - 6 * u, xy - 4 * u, 0.26f * u, rgba(170, 220, 255), ALIGN_RIGHT);
+	gfx::text(buf, bx - 8.0f * u, yHp + (bh - 40 * lvScale) * 0.5f, lvScale, rgba(170, 220, 255), ALIGN_RIGHT);
 }
 
 void Game::drawOrchardOverlay() const {
@@ -789,8 +813,8 @@ void Game::drawOrchardOverlay() const {
 		gfx::rect(x, y, w, 2, ready ? rgba(150, 230, 255) : rgba(90, 90, 110));
 		if (card != CARD_NONE) {
 			const CardInfo& info = kCards[card];
-			const float is = (w - 10) / 32;
-			gfx::sprite(SHEET_SPRITES, cardIcon(card), x + w * 0.5f, y + h * 0.5f + 2, is, is, 0, ready ? WHITE : rgba(150, 150, 160, 200));
+			const float is = (PORT_3DS ? 0.44f : 0.60f) * (w / 40.0f);
+			gfx::sprite(SHEET_SPRITES, cardIcon(card), x + w * 0.5f, y + h * 0.5f + 1, is, is, 0, ready ? WHITE : rgba(150, 150, 160, 200));
 			if (orc.slotCool[s] > 0 && info.cooldown > 0) {
 				const float k = clampf(orc.slotCool[s] / info.cooldown, 0, 1);
 				gfx::rect(x, y + h * (1 - k), w, h * k, rgba(0, 0, 0, 120));
@@ -816,6 +840,7 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 	char d[128];
 	const u8 diffWas = gSave.difficulty;
 	const u32 beatenWas = gSave.bossesBeaten;
+	const u32 foundWas = gSave.bossTracksFound;
 	u16 winsWas[sizeof gSave.bossWins / sizeof gSave.bossWins[0]];
 	memcpy(winsWas, gSave.bossWins, sizeof winsWas);
 	gSave.difficulty = DIFF_NORMAL;
@@ -837,13 +862,13 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 		return b;
 	};
 
-	// The six boss and charm sounds made for 1.2.
+	// The boss, charm and level-up sounds made for 1.2.
 	if (audio::available()) {
-		const Sfx made[] = {SFX_CLANG, SFX_OPEN, SFX_ROAR, SFX_BOSSIN, SFX_VICTORY, SFX_POP, SFX_LAUGH, SFX_CHUCKLE, SFX_WHOOSH, SFX_LAUNCH};
+		const Sfx made[] = {SFX_CLANG, SFX_OPEN, SFX_ROAR, SFX_BOSSIN, SFX_VICTORY, SFX_POP, SFX_LAUGH, SFX_CHUCKLE, SFX_WHOOSH, SFX_LAUNCH, SFX_LEVELUP};
 		int missing = 0;
 		for (Sfx s : made) missing += !audio::loaded(s);
 		snprintf(d, sizeof d, "%d missing", missing);
-		check(missing == 0, "Orchard Blast's own sounds load: Deflected!, Open!, roar, intro, victory, pop, laugh, chuckle, whoosh, launch", d);
+		check(missing == 0, "Orchard Blast's own sounds load: Deflected!, Open!, roar, intro, victory, pop, laugh, chuckle, whoosh, launch, levelup", d);
 
 		// Boss music: the room's track hands over to a boss track, then comes back.
 		const u8 musicWas = gSave.bossMusic, lastWas = gSave.bossTrackLast[BOSS_MELON];
@@ -874,7 +899,7 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 		snprintf(d, sizeof d, "room %d, now %d", room, audio::currentTrack());
 		check(audio::currentTrack() == room, "After the boss, the room's music comes back", d);
 		// Real time passes too: the 3DS reads music on a background thread.
-		for (int i = 0; i < 300 && audio::bossMusicOn(); i++) {
+		for (int i = 0; i < 300 && (audio::bossMusicOn() || audio::musicTime() < 0); i++) {
 			audio::update(kDt);
 			audioport::settle();
 		}
@@ -883,20 +908,24 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 		gSave.bossMusic = musicWas;
 		gSave.bossTrackLast[BOSS_MELON] = lastWas;
 
-		// The Shop keeps a boss's tracks locked until it is beaten.
+		// The Shop keeps each boss track locked until that track is discovered in a boss fight.
 		const u32 beatenNow = gSave.bossesBeaten, seenNow = gSave.bossTracksSeen, ownedNow = gSave.ownedTracks, coinsNow = gSave.coins;
+		const u32 foundNow = gSave.bossTracksFound;
 		const int item = fight - kBaseTracks;
 		gSave.bossesBeaten = gSave.bossTracksSeen = 0;
+		gSave.ownedTracks = 0;
+		gSave.bossTracksFound = 0;
 		gSave.coins = 5000;
 		check(shopLocked(SHOP_MUSIC, item) && shopBuy(SHOP_MUSIC, item) != BUY_DONE && !shopOwned(SHOP_MUSIC, item) && !shopHasNew(),
-		      "A boss track is locked, and can't be bought, until its boss is beaten", "");
-		gSave.bossesBeaten = 1u << BOSS_MELON;
+		      "A boss track is locked, and can't be bought, until it is discovered in a boss fight", "");
+		gSave.bossTracksFound = 1u << item;
 		check(!shopLocked(SHOP_MUSIC, item) && shopHasNew() && shopBuy(SHOP_MUSIC, item) == BUY_DONE,
-		      "Beating the boss unlocks its tracks to buy, and the Shop marks them new", "");
+		      "Discovering a boss track unlocks that track to buy, and the Shop marks it new", "");
 		shopSeenNew();
 		check(!shopHasNew(), "Opening the Music tab clears the new mark", "");
 		gSave.bossesBeaten = beatenNow;
 		gSave.bossTracksSeen = seenNow;
+		gSave.bossTracksFound = foundNow;
 		gSave.ownedTracks = ownedNow;
 		gSave.coins = coinsNow;
 	}
@@ -932,7 +961,7 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 	bomb.hits = 1;
 	hitBomb(bomb);
 	snprintf(d, sizeof d, "HP %.1f", orc.hp);
-	check(orc.hp == 15 && phase == PHASE_PLAY, "Orchard Blast: a bomb costs 5 HP on Normal and the run goes on", d);
+	check(orc.hp == 16 && phase == PHASE_PLAY, "Orchard Blast: a bomb costs 4 HP on Normal and the run goes on", d);
 	Obj& drop = objs[1];
 	drop = {};
 	drop.on = true;
@@ -989,9 +1018,15 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 	check(orc.rerolls == 0, "No Reroll is left after using it", "");
 	orc.offer[0] = CARD_HEALTH;
 	orcPick(0);
-	check(orc.maxHp == 25 && orc.upgrade[CARD_HEALTH] == 1 && !orc.choosing && orc.resumeT == 3, "Health adds 5 Max HP, then a 3, 2, 1 before play", "");
-	for (int i = 0; i < 200; i++) update(idle);
-	check(!orchardHeld(), "Play goes on after the 3, 2, 1", "");
+	check(orc.maxHp == 25 && orc.upgrade[CARD_HEALTH] == 1 && !orc.choosing && orc.resumeT == 0, "Health adds 5 Max HP, and play resumes right away", "");
+	feverT = 4.0f;
+	orcGainXp((float)orcXpNeed());
+	check(orc.choosing && feverT > 0, "Leveling up during a Fruit Frenzy opens the upgrade screen right away", "");
+	orc.offer[0] = CARD_HEALTH;
+	orcPick(0);
+	feverT = 0;
+	for (int i = 0; i < 10; i++) update(idle);
+	check(!orchardHeld(), "Play goes on right after picking an upgrade", "");
 
 	// Charms go into slots; a third asks which slot to replace.
 	const auto take = [this](int card) {
@@ -1039,11 +1074,11 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 	orcOffer();
 	check(orc.offerCount == 5, "Lucky Pit shows five cards", "");
 
-	// Rooms: 15 seconds each, then a boss in room 5.
+	// Rooms: 15 seconds each, scoring 1 point per room finished, then a boss in room 5.
 	setup();
 	Blade none;
 	for (int i = 0; i < (int)(kRoomSeconds * 60) + 5; i++) orcUpdate(none);
-	check(orc.room == 2 && !orc.bossRoom, "A room lasts 15 seconds", "");
+	check(orc.room == 2 && !orc.bossRoom && score == 1, "A room lasts 15 seconds and scores 1 point when finished", "");
 	orc.room = 4;
 	orc.roomT = kRoomSeconds;
 	orcUpdate(none);
@@ -1101,12 +1136,7 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 	Shot& shot = orc.shots[0];
 	Blade c1 = swipe(80, 200, 120, 200, 0x52000001u);
 	bossTest(c1);
-	check(shot.on && shot.hits == 1, "A cannonball takes two swipes", "");
-	bossTest(c1);
-	check(shot.on, "The same swipe can't cut a cannonball twice", "");
-	Blade c2 = swipe(80, 200, 120, 200, 0x52000002u);
-	bossTest(c2);
-	check(!shot.on, "The second swipe breaks it", "");
+	check(!shot.on, "A single slice defuses a cannonball", "");
 	orc.hp = 20;
 	bossFire(SHOT_SEED, 160, (float)kFieldH - 2, 0, 50);
 	shotsUpdate(kDt);
@@ -1135,7 +1165,7 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 	check(decoy && decoy->kind == OBJ_BOMB, "A decoy fruit turns into a bomb", "");
 
 	// Difficulty numbers.
-	check(orchardLevel(DIFF_EASY).startHp == 25 && orchardLevel(DIFF_INSANE).startHp == 15 && orchardLevel(DIFF_HARD).bombDamage == 6, "Difficulty sets HP and bomb damage", "");
+	check(orchardLevel(DIFF_EASY).startHp == 25 && orchardLevel(DIFF_INSANE).startHp == 12 && orchardLevel(DIFF_HARD).bombDamage == 6, "Difficulty sets HP and bomb damage", "");
 
 
 	// Timed fights: a bot that plays like a good player beats each boss on each difficulty, three times. It slices
@@ -1209,7 +1239,7 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 					audio::fuse(false);
 				}
 				snprintf(d, sizeof d, "%s %s: %.0f s on average (longest %.0f), %.0f damage taken, %d Giant Bombs", kBosses[boss].name, kDiffName[dif], total / 3, longest, hurt / 3, giants);
-				check(true, "Timed fight", d);
+				check(total > 0 && longest < 400, "Timed fight", d);
 				if (dif == DIFF_NORMAL) normalTime[boss] = total / 3;
 			}
 		}
@@ -1222,6 +1252,7 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 
 	gSave.difficulty = diffWas;
 	gSave.bossesBeaten = beatenWas;
+	gSave.bossTracksFound = foundWas;
 	memcpy(gSave.bossWins, winsWas, sizeof winsWas);
 	audio::fuse(false);
 }

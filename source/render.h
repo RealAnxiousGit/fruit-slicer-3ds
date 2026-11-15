@@ -39,6 +39,13 @@ void sync();
 // draw stickers whichever art style is chosen. A no-op where the sheet is always loaded.
 void keepStickers(bool on);
 bool stickersLoaded();  // for the Lab: is the 2D fruit sheet in right now
+#if PORT_3DS
+inline bool ultraArt() { return false; }
+inline bool ultraLoaded() { return false; }
+#else
+bool ultraArt();
+bool ultraLoaded();
+#endif
 
 void beginFrame();
 void endFrame();

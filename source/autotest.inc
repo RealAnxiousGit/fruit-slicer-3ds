@@ -205,8 +205,16 @@ static void botMenuWalk() {
 			sMenuPointY = kTitleButtons[1].y + 12;
 			botMenuPicture("j1_menu_point");
 			return;
+		case 53:
+			sGuidePage = 0;
+			for (int i = 0; i < kGuideCount; i++) if (kGuides[i].id == MODE_ORCHARD) sGuidePage = i;
+			goTo(SCREEN_GUIDES, -1);
+			return;
+		case 54: botMenuPicture("a4_guides"); sGuidePage = 0; return;
+		case 55: botMenuPicture("a4b_guides_classic"); return;
+		case 56: sBotDone = true; return;
 #endif
-		default: return;
+		default: sBotDone = true; return;
 	}
 }
 #endif
@@ -543,7 +551,7 @@ static void autotestInput(Input& in) {
 		static int invCheck;
 		static float invElapsed;
 		if (sBotModeFrames == 1) invDone = false, invCheck = 0;
-		if (!invDone && sBotModeFrames > 300 && !sOrcHowTo && !sGame.orc.choosing && !sGame.orchardHeld() && sGame.phase == PHASE_PLAY) {
+		if (!invDone && sBotModeFrames > 300 && !sGame.orc.choosing && !sGame.orchardHeld() && sGame.phase == PHASE_PLAY) {
 			invDone = true;
 			invElapsed = sGame.elapsed;
 			invCheck = 30;
@@ -558,8 +566,8 @@ static void autotestInput(Input& in) {
 			return;
 		}
 	}
-	if ((sOrcHowTo || (sGame.orchardLike() && (sGame.orc.choosing || sGame.m12.rushPicking))) && sBotModeFrames % 90 == 0) {
-		in.down |= KEY_A;  // past a how-to, a level-up card, or Boss Rush's build
+	if (sGame.orchardLike() && (sGame.orc.choosing || sGame.m12.rushPicking) && sBotModeFrames % 90 == 0) {
+		in.down |= KEY_A;  // past a level-up card, or Boss Rush's build
 		return;
 	}
 
@@ -630,6 +638,21 @@ static void autotestInput(Input& in) {
 		return;
 	}
 	if (!t) t = sGame.botTarget(false);
+	if (!t && sGame.mode == MODE_BOSSRUSH && sGame.phase == PHASE_PLAY) {
+		const Boss& b = sGame.orc.boss;
+		if (b.on && !b.beaten && b.enterT <= 0) {
+			float tx = b.x, ty = b.y;
+			for (const auto& s : sGame.orc.shots) {
+				if (s.on) { tx = s.x; ty = s.y; break; }
+			}
+			sBotX = tx - 30;
+			sBotY = ty;
+			sBotDX = 15;
+			sBotDY = 0;
+			sBotStroke = 4;
+			return;
+		}
+	}
 	if (!t) return;
 	// In the lessons, wait for the fruit to come down within reach (on a 3DS they peak on the top screen).
 	if (sGame.mode == MODE_PRACTICE && t->y < 12) return;

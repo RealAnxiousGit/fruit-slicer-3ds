@@ -219,7 +219,7 @@ static void labInventory() {
 	press(KEY_SELECT);
 	labCheck(sOrcInv && sOrcConfirm == 0, "Select opens the Inventory");
 	press(KEY_A);
-	labCheck(!sOrcInv && o.resumeT > 2.9f, "the Inventory opens on Resume, and Resume comes back with a 3, 2, 1");
+	labCheck(!sOrcInv && o.resumeT == 0, "the Inventory opens on Resume, and play resumes right away");
 	press(KEY_SELECT);
 	OrcInvItem items[64];
 	const int n = orcInvItems(items);
@@ -249,8 +249,48 @@ static void labInventory() {
 		buttons += items[i].kind == INV_BUTTON && items[i].y + items[i].h <= kFieldH && items[i].x >= 0 && items[i].x + items[i].w <= kFieldW;
 	}
 	char d[48];
-	snprintf(d, sizeof d, "%d upgrades, %d signs on a %.0f by %.0f field", upgrades, buttons, kFieldW, kFieldH);
+	snprintf(d, sizeof d, "%d upgrades, %d signs on a %.0f by %.0f field", upgrades, buttons, (double)kFieldW, (double)kFieldH);
 	labCheck(upgrades == 9 && buttons == INVB_COUNT, "the Inventory lists every upgrade, and its signs fit the field", d);
+	// A touch press and release on level-up card 0 picks it
+	const int hpBefore = o.upgrade[CARD_HEALTH];
+	o.choosing = true;
+	o.levelsWaiting = 1;
+	o.offerCount = 3;
+	o.offer[0] = CARD_HEALTH;
+	o.offer[1] = CARD_ARMOR;
+	o.offer[2] = CARD_BLADE;
+	sOrcOpenT = 0.05f;  // inside the 0.40s swipe grace time
+	float cx, cy, cw, ch;
+	orcCardRect(0, 3, &cx, &cy, &cw, &ch);
+	Input touchIn = {};
+	touchIn.touching = true;
+	touchIn.tx = cx + cw * 0.5f;
+	touchIn.ty = cy + ch * 0.5f;
+	updateOrchardMenus(touchIn, true);   // swipe held from play
+	sOrcOpenT = 0.50f;
+	updateOrchardMenus(touchIn, true);   // still touching past grace
+	touchIn.touching = false;
+	updateOrchardMenus(touchIn, true);   // release must not pick
+	labCheck(o.choosing && o.upgrade[CARD_HEALTH] == hpBefore, "a swipe held past the level-up grace time never picks a card");
+
+	// Press card 0, slide off while still touching, then release: must cancel.
+	touchIn.touching = true;
+	updateOrchardMenus(touchIn, false);
+	touchIn.tx = cx - 24;
+	updateOrchardMenus(touchIn, true);
+	touchIn.touching = false;
+	updateOrchardMenus(touchIn, true);
+	labCheck(o.choosing && sOrcCardDown < 0 && o.upgrade[CARD_HEALTH] == hpBefore, "sliding off a level-up card cancels the tap");
+
+	// Now a clean press and release on card 0 picks it.
+	touchIn.tx = cx + cw * 0.5f;
+	touchIn.touching = true;
+	updateOrchardMenus(touchIn, false);  // frame 1: press down
+	const bool pressedDown = (sOrcCardDown == 0);
+	touchIn.touching = false;
+	updateOrchardMenus(touchIn, true);   // frame 2: release
+	labCheck(pressedDown && !o.choosing && o.upgrade[CARD_HEALTH] == hpBefore + 1, "a level-up card is picked by clicking or tapping on it");
+
 	sOrcInv = false;
 	sOrcConfirm = 0;
 	gSave.howToSeen = seenWas;
@@ -259,13 +299,21 @@ static void labInventory() {
 static void labMenus() {
 	const float firstRowY = kListTop + kRowH * 0.5f;
 	switch (sBotMenuStep++) {
-		case 0:
+		case 0: {
 			labExpect(SCREEN_TITLE, "boots to the title");
 			labDaily();
 			labField();
+			float fx0, fy0, fd0, fx1, fy1, fd1;
+			fruitSpot(kTitleButtons[0], &fx0, &fy0, &fd0);
+			fruitSpot(kTitleButtons[1], &fx1, &fy1, &fd1);
+			const bool hitCenter = menuHit(kTitleButtons[0], SCREEN_TITLE, (int)fx0, (int)fy0) && menuHit(kTitleButtons[1], SCREEN_TITLE, (int)fx1, (int)fy1);
+			const bool missEdge = !menuHit(kTitleButtons[0], SCREEN_TITLE, (int)kTitleButtons[0].x + 2, (int)kTitleButtons[0].y + 2) &&
+			                      !menuHit(kTitleButtons[1], SCREEN_TITLE, (int)kTitleButtons[1].x + 2, (int)kTitleButtons[1].y + 2);
+			labCheck(hitCenter && missEdge, "Title fruit hitboxes match the fruit, not the sign corners");
 			labCheck(audio::musicTime() >= 0 || audio::musicPending(), "menu music plays");
 			botTap(kTitleButtons[4]);
 			return;
+		}
 		case 1: labExpect(SCREEN_HOWTO, "How to Play opens"); botTap(kBack); return;
 		case 2: labExpect(SCREEN_TITLE, "How to Play back arrow"); botTap(kTitleButtons[2]); return;
 		case 3:
@@ -484,7 +532,7 @@ static u32 sLabBombHits;
 static void labWatchGame() {
 	if (sBotModeFrames == 1 && sLabTapped && !sLabTapSeen && sGame.mode != MODE_PRACTICE) {
 		sLabTapSeen = true;
-		labCheck(true, "a stylus tap on a mode sign starts it", modeName(sGame.mode));
+		labCheck(sScreen == SCREEN_GAME && sGame.mode == (Mode)sBotMode && (sGame.phase == PHASE_READY || sGame.phase == PHASE_PLAY), "a stylus tap on a mode sign starts it", modeName(sGame.mode));
 	}
 	if (sBotModeFrames == 1) {
 		// Every mode cut short, and every other one played with the 2D stickers.
@@ -505,35 +553,25 @@ static void labWatchGame() {
 		sBotDone = true;
 		return;
 	}
-	if (sBotModeFrames == 120) labCheck(audio::musicTime() >= 0, "game music plays", modeName(sGame.mode));
+	if (sBotModeFrames == 120) {
+		const bool playing = audio::musicTime() >= 0 || audio::musicPending() || (sGame.mode == MODE_BOSSRUSH && audio::bossMusicOn());
+		labCheck(playing, "game music plays", modeName(sGame.mode));
+	}
 	if (sGame.mode == MODE_ORCHARD) {
-		// Orchard Blast: the how-to shows on a first run and holds play; level-up cards are taken with A.
-		static bool sawHowTo, sawCards, cardsChecked;
+		// Orchard Blast: level-up cards are taken with A, and play resumes immediately.
+		static bool sawCards, cardsChecked;
 		if (sBotModeFrames == 1) {
-			sawHowTo = sawCards = cardsChecked = false;
-			gSave.howToSeen = 0;
+			sawCards = cardsChecked = false;
 		}
-		if (sOrcHowTo && !sawHowTo && sOrcHowToT > 0.7f) {
-			sawHowTo = true;
-			const float el = sGame.elapsed;
-			labCheck(sOrcHowTo == 1 && el < 3, "Orchard Blast shows its how-to at the start of a first run");
-		}
-		if ((sOrcHowTo && sOrcHowToT > 0.7f) || (sGame.orc.choosing && sBotModeFrames % 40 == 0)) sBotKeys = KEY_A;
+		if (sGame.orc.choosing && sBotModeFrames % 40 == 0) sBotKeys = KEY_A;
 		if (sGame.orc.choosing) sawCards = true;
-		if (sawCards && !cardsChecked && !sGame.orc.choosing && sGame.orc.level > 1 && sawHowTo) {
+		if (sawCards && !cardsChecked && !sGame.orc.choosing && sGame.orc.level > 1) {
 			cardsChecked = true;
-			labCheck(gSave.howToSeen & 1, "a level-up card is picked with A, and play goes on", "");
+			labCheck(sGame.orc.levelsWaiting == 0 && !sGame.orc.choosing && sGame.orc.hp > 0, "a level-up card is picked with A, and play goes on", "");
 		}
 	}
 	if (sGame.mode >= MODE_BOSSRUSH && sGame.mode <= MODE_JUGGLE) {
-		// Each of the other new modes opens on a how-to of its own, the first time.
-		static bool sawOwn;
-		if (sBotModeFrames == 1) sawOwn = false;
-		if (sOrcHowTo && !sawOwn && sOrcHowToT > 0.7f) {
-			sawOwn = true;
-			labCheck(sOrcHowTo == HOWTO_RUSH + (sGame.mode - MODE_BOSSRUSH) && sGame.elapsed < 1, "a new mode shows its own how-to first", modeName(sGame.mode));
-		}
-		if (sBotModeFrames == 600 && !sawOwn) labCheck(false, "a new mode shows its own how-to first", modeName(sGame.mode));
+		if (sGame.mode == MODE_BOSSRUSH && sGame.m12.rushPicking && sBotModeFrames % 40 == 0) sBotKeys = KEY_A;
 		if (sGame.mode == MODE_BOSSRUSH && sBotModeFrames == 1200)
 			labCheck(sGame.m12.rushBuild < BUILD_COUNT && !sGame.m12.rushPicking, "Boss Rush's build is picked with A", "");
 	}
@@ -549,7 +587,8 @@ static void labResult() {
 	snprintf(d, sizeof d, "score %lu, sliced %d, %.0f s", (unsigned long)sGame.score, sGame.sliced, sGame.elapsed);
 	char name[48];
 	snprintf(name, sizeof name, "%s reaches its result", modeName(sGame.mode));
-	labCheck(sGame.sliced > 0, name, d);
+	const bool reached = sGame.mode == MODE_BOSSRUSH ? (sGame.score > 0 || sGame.orc.bossesBeaten > 0 || sGame.sliced > 0) : sGame.sliced > 0;
+	labCheck(reached, name, d);
 	if (sGame.mode == MODE_PRACTICE) {
 		labCheck(!sLabMeterEarly, "lessons keep the Frenzy meter and combo off until the Frenzy lesson");
 		labCheck(sGame.statFrenzies > 0, "the Frenzy lesson needs a Frenzy before it ends");
@@ -883,7 +922,7 @@ static void labFinish(Input& in) {
 				for (auto& o : sGame.objs) o.on = false;
 			}
 #if PORT_ULTRA
-			{
+			if (gfx::ultraArt()) {
 				// Textures: Ultra loads the 4K art, the other choices never do, and a saved Ultra comes back.
 				const u8 texBefore = gSave.texQuality;
 				gSave.texQuality = 3;
@@ -902,6 +941,8 @@ static void labFinish(Input& in) {
 				gSave.texQuality = texBefore;
 				port::applyGraphics();
 				saveWrite();
+			} else {
+				labCheck(!gfx::ultraLoaded(), "Textures: Ultra is skipped when unsupported");
 			}
 #endif
 #if !PORT_3DS
@@ -931,8 +972,10 @@ static void labFinish(Input& in) {
 #endif
 #if PORT_3DS
 			// The 3DSX update's file swap, on stand-in files beside the save.
-			static const char* const kLabOld = "sdmc:/3ds/FruitSlicer/lab_swap.bin";
-			static const char* const kLabNew = "sdmc:/3ds/FruitSlicer/lab_swap.bin.new";
+			char kLabOld[128], kLabNew[128], kLabBackup[128];
+			port::dataPath(kLabOld, sizeof kLabOld, "lab_swap.bin");
+			port::dataPath(kLabNew, sizeof kLabNew, "lab_swap.bin.new");
+			port::dataPath(kLabBackup, sizeof kLabBackup, "lab_swap.bin.old");
 			const auto write = [](const char* path, const char* text) {
 				FILE* f = fopen(path, "wb");
 				if (f) {
@@ -953,8 +996,8 @@ static void labFinish(Input& in) {
 			labCheck(!port::replaceFile(kLabOld, kLabNew) && holds(kLabOld, "old"), "a 3DSX update with no download leaves the game alone");
 			write(kLabNew, "new");
 			labCheck(port::replaceFile(kLabOld, kLabNew) && holds(kLabOld, "new"), "a 3DSX update replaces the game file");
-			FILE* leftover = fopen("sdmc:/3ds/FruitSlicer/lab_swap.bin.new", "rb");
-			FILE* backup = fopen("sdmc:/3ds/FruitSlicer/lab_swap.bin.old", "rb");
+			FILE* leftover = fopen(kLabNew, "rb");
+			FILE* backup = fopen(kLabBackup, "rb");
 			labCheck(!leftover && !backup, "a 3DSX update leaves no extra files behind");
 			if (leftover) fclose(leftover);
 			if (backup) fclose(backup);

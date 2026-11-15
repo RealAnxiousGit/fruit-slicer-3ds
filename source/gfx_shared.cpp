@@ -120,15 +120,17 @@ void notePanel(float x, float y, float w, float h) {
 
 static float fitScale(const char* s, float x, float y, float scale, Align align) {
 	const float w = textWidth(s, scale);
-	const float midY = y + 16 * scale * gTextBoost;
+	const float midY = y + 14 * scale * gTextBoost;
 	float ox, oy;
 	getOffset(&ox, &oy);
 	for (int i = sPanelCount - 1; i >= 0; i--) {
 		const Panel& p = sPanels[i];
-		if (p.ox != ox || p.oy != oy || x < p.x || x > p.x + p.w || midY < p.y || midY > p.y + p.h) continue;
-		const float pad = p.w > 60 ? 7 : 3, lo = p.x + pad, hi = p.x + p.w - pad;
+		if (p.ox != ox || p.oy != oy) continue;
+		if (x < p.x - 6 || x > p.x + p.w + 6 || midY < p.y - 4 || midY > p.y + p.h + 16) continue;
+		const float pad = p.w > 60 ? (p.w > 120 ? 9.0f : 6.0f) : 3.0f;
+		const float lo = p.x + pad, hi = p.x + p.w - pad;
 		float room = align == ALIGN_LEFT ? hi - x : (align == ALIGN_RIGHT ? x - lo : 2 * (x - lo < hi - x ? x - lo : hi - x));
-		if (w > room && room > 8) return scale * room / w;
+		if (w > room && room > 6) return scale * (room / w);
 		return scale;
 	}
 	return scale;

@@ -62,6 +62,7 @@ SHOP_TRACK("WORTHLESS ENEMY", 400, "NickBin ft. Aneolent. Metal.", "music_worthl
 SHOP_TRACK("Lies", 300, "NickBin. EDM.", "music_lies", 128)
 SHOP_TRACK("Lies (VIP Remix)", 450, "NickBin. EDM.", "music_liesvip", 128)
 SHOP_TRACK("JUST STAY WITH ME", 500, "NickBin. Dariacore.", "music_staywithme", 150)
+SHOP_TRACK("Show the World You're Enough", 400, "NickBin ft. Cabex Music. Calling All Villains. Pop.", "music_enough", 100)
 // 1.2: boss tracks, made by tools/gen_audio.py. Each boss's set unlocks when it is first beaten.
 BOSS_TRACK("Seed Spitter", 400, "The Big Melon's hopping chip tune.", "music_boss_seeds", 144, 0)
 BOSS_TRACK("Rind and Run", 400, "The Big Melon's swung chase.", "music_boss_rind", 132, 0)

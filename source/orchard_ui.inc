@@ -7,9 +7,6 @@ static int sOrcInvFocus;      // the picked item (see orcInvItems)
 static float sOrcOpenT;       // seconds the cards have been up: a short lock-out stops a swipe picking one
 static bool sOrcSlotTouch;    // this touch began on a charm slot, so it never becomes a slice
 static int sOrcCardDown = -1;
-static int sOrcHowTo;         // a how-to panel is up: 0 none, else a HOWTO_ value
-static float sOrcHowToT;
-static void drawOrchardHowTo();
 
 static u32 rarityColor(int r) {
 	return r == RARE_LEGEND ? rgba(255, 205, 80) : (r == RARE_RARE ? rgba(120, 190, 255) : rgba(220, 210, 190));
@@ -23,11 +20,54 @@ static void orcFit(const char* s, float x, float y, float scale, float maxW, u32
 	gfx::text(s, x, y, scale, color, align);
 }
 
+// Word-wraps text across multiple lines so cards keep large, readable font sizes.
+static float orcWrap(const char* s, float cx, float y, float scale, float maxW, float step, u32 color, int maxLines = 4) {
+	char buf[160];
+	snprintf(buf, sizeof buf, "%s", s);
+	char* p = buf;
+	int line = 0;
+	while (*p && line < maxLines) {
+		while (*p == ' ') p++;
+		if (!*p) break;
+		const size_t len = strlen(p);
+		if (gfx::textWidth(p, scale) <= maxW || line == maxLines - 1) {
+			orcFit(p, cx, y, scale, maxW, color);
+			y += step;
+			break;
+		}
+		int split = -1;
+		for (int i = 1; p[i]; i++) {
+			if (p[i] == ' ') {
+				p[i] = 0;
+				const float w = gfx::textWidth(p, scale);
+				p[i] = ' ';
+				if (w <= maxW) split = i;
+				else break;
+			}
+		}
+		if (split < 0) {
+			for (int i = 1; p[i]; i++)
+				if (p[i] == ' ') { split = i; break; }
+		}
+		if (split < 0) {
+			orcFit(p, cx, y, scale, maxW, color);
+			y += step;
+			break;
+		}
+		p[split] = 0;
+		orcFit(p, cx, y, scale, maxW, color);
+		y += step;
+		p += split + 1;
+		line++;
+	}
+	return y;
+}
+
 static void orcCardRect(int i, int n, float* x, float* y, float* w, float* h) {
-	const float gap = 8, top = kFieldTop + 30;
-	float cw = (kFieldW - 24 - gap * (n - 1)) / n;
-	if (cw > 130) cw = 130;
-	float ch = kFieldH - top - 42;
+	const float gap = n >= 5 ? 5.0f : 8.0f, margin = n >= 5 ? 12.0f : 24.0f, top = kFieldTop + 35;
+	float cw = (kFieldW - margin - gap * (n - 1)) / n;
+	if (cw > 132) cw = 132;
+	float ch = kFieldH - top - 38;
 	if (ch > 170) ch = 170;
 	const float total = cw * n + gap * (n - 1);
 	*x = (kFieldW - total) * 0.5f + i * (cw + gap);
@@ -42,33 +82,74 @@ static void drawOrcCard(int card, float x, float y, float w, float h, bool focus
 	const Orchard& o = sGame.orc;
 	const CardInfo& info = kCards[card];
 	const u32 rc = rarityColor(info.rarity);
-	gfx::sign(sprites_plank_idx, x, y, w, h, focused ? COL_ACCENT : COL_PLANK);
+	drawPlank(x, y, w, h, focused, false);
 	gfx::rect(x + 4, y + 4, w - 8, 4, rc);
-	gfx::sprite(SHEET_SPRITES, cardIcon(card), x + w * 0.5f, y + 20, 0.7f, 0.7f);
-	char buf[48];
+	const float iconS = PORT_3DS ? 0.55f : 0.58f;
+	gfx::sprite(SHEET_SPRITES, cardIcon(card), x + w * 0.5f, y + 19, iconS, iconS);
+	char buf[128];
+	const float cx = x + w * 0.5f, maxW = w - 8;
 	snprintf(buf, sizeof buf, "%s %s", rarityName(info.rarity), cardKindName(info.kind));
-	float ty = y + 33;
-	orcFit(buf, x + w * 0.5f, ty, 0.22f, w - 10, rc);
-	ty += 12;
-	orcFit(info.name, x + w * 0.5f, ty, 0.36f, w - 10, COL_CREAM);
-	ty += 20;
-	orcFit(info.line1, x + w * 0.5f, ty, 0.25f, w - 10, COL_CREAM);
-	ty += 12;
-	if (info.line2[0]) orcFit(info.line2, x + w * 0.5f, ty, 0.25f, w - 10, COL_CREAM);
+	float ty = orcWrap(buf, cx, y + 31, 0.26f, maxW, 10.0f, rc, 2);
+	ty += 2;
+	orcFit(info.name, cx, ty, 0.38f, maxW, COL_CREAM);
 	ty += 15;
+	snprintf(buf, sizeof buf, "%s%s%s", info.line1, info.line2[0] ? " " : "", info.line2);
+
+	// Dynamic text scaling: ensure description + footer never overflow card bottom.
+	float descScale = 0.28f, descStep = 11.0f;
+	float footScale = 0.26f, footStep = 10.0f;
+	const float safeBottom = y + h - 8.0f;
+	const float footerReserve = (info.kind == KIND_UPGRADE ? 22.0f : (info.kind == KIND_REUSABLE ? 18.0f : 12.0f));
+	const float descBudget = safeBottom - footerReserve - ty;
+	if (descBudget < 36.0f) {
+		descScale = 0.24f;
+		descStep = 9.5f;
+	}
+
+	ty = orcWrap(buf, cx, ty, descScale, maxW, descStep, COL_CREAM, 4);
+
+	// Position footer neatly within the bottom bounds of the card plank.
+	char foot[128] = "";
+	char footSub[64] = "";
 	if (info.kind == KIND_UPGRADE) {
-		cardNextLine(card, o.upgrade[card], buf, sizeof buf);
-		orcFit(buf, x + w * 0.5f, ty, 0.23f, w - 10, rgba(170, 230, 255));
-		ty += 11;
-		if (o.upgrade[card]) snprintf(buf, sizeof buf, "You have level %d of %d", o.upgrade[card], info.maxLevel);
-		else snprintf(buf, sizeof buf, "Up to level %d", info.maxLevel);
-		orcFit(buf, x + w * 0.5f, ty, 0.22f, w - 10, COL_DIM);
+		cardNextLine(card, o.upgrade[card], foot, sizeof foot);
+		if (o.upgrade[card]) snprintf(footSub, sizeof footSub, "Lv %d / %d", o.upgrade[card], info.maxLevel);
+		else snprintf(footSub, sizeof footSub, "Max Lv %d", info.maxLevel);
 	} else if (info.kind == KIND_REUSABLE) {
-		if (info.lasts > 0) snprintf(buf, sizeof buf, "Lasts %d s, ready again %d s", (int)info.lasts, (int)info.cooldown);
-		else snprintf(buf, sizeof buf, "Ready again after %d s", (int)info.cooldown);
-		orcFit(buf, x + w * 0.5f, ty, 0.22f, w - 10, rgba(170, 230, 255));
+		if (info.lasts > 0) snprintf(foot, sizeof foot, "%d s on, %d s cooldown", (int)info.lasts, (int)info.cooldown);
+		else snprintf(foot, sizeof foot, "%d s cooldown", (int)info.cooldown);
 	} else if (info.kind == KIND_SINGLE) {
-		orcFit("Goes in a slot. Used once.", x + w * 0.5f, ty, 0.22f, w - 10, rgba(170, 230, 255));
+		snprintf(foot, sizeof foot, "Slot charm (1 use)");
+	}
+
+	if (foot[0]) {
+		// If footer text is wider than maxW, scale down dynamically so it fits on 1 line or wraps safely.
+		float tw = gfx::textWidth(foot, footScale);
+		if (tw > maxW) {
+			float targetScale = footScale * (maxW / tw);
+			if (targetScale >= 0.20f) {
+				footScale = targetScale;
+				tw = gfx::textWidth(foot, footScale);
+			}
+		}
+		int linesNeeded = (tw > maxW) ? 2 : 1;
+		if (linesNeeded > 1) {
+			float halfW = tw * 0.55f;
+			if (halfW > maxW) footScale = clampf(footScale * (maxW / halfW), 0.18f, footScale);
+		}
+		int totalLines = linesNeeded + (footSub[0] ? 1 : 0);
+		float footH = totalLines * footStep;
+		float footY = y + h - 10.0f - footH;
+		if (footY < ty + 2.0f) {
+			footScale = 0.20f;
+			footStep = 8.5f;
+			footH = totalLines * footStep;
+			footY = y + h - 8.0f - footH;
+		}
+		float nextY = orcWrap(foot, cx, footY, footScale, maxW, footStep, rgba(170, 230, 255), 2);
+		if (footSub[0]) {
+			orcFit(footSub, cx, nextY, 0.24f, maxW, COL_DIM);
+		}
 	}
 }
 
@@ -81,7 +162,8 @@ static void drawOrcSlotBox(int s, float x, float y, float w, float h, bool focus
 	if (card == CARD_NONE) {
 		orcFit("Empty", x + w * 0.5f, y + h * 0.5f - 6, 0.36f, w - 10, COL_DIM);
 	} else {
-		gfx::sprite(SHEET_SPRITES, cardIcon(card), x + 20, y + h * 0.5f + 4, 0.7f, 0.7f);
+		const float is = PORT_3DS ? 0.55f : 0.58f;
+		gfx::sprite(SHEET_SPRITES, cardIcon(card), x + 20, y + h * 0.5f + 4, is, is);
 		orcFit(kCards[card].name, x + 36, y + h * 0.5f - 4, 0.3f, w - 42, COL_CREAM, ALIGN_LEFT);
 	}
 }
@@ -311,19 +393,20 @@ static void drawOrcInventory() {
 			snprintf(buf, sizeof buf, "%s: %s, level %d of %d", info.name, cardKindName(info.kind), o.upgrade[card], info.maxLevel);
 		else
 			snprintf(buf, sizeof buf, "%s: %s %s", info.name, rarityName(info.rarity), cardKindName(info.kind));
-		orcFit(buf, kFieldW * 0.5f, dy, 0.26f, kFieldW - 16, rarityColor(info.rarity));
+		orcFit(buf, kFieldW * 0.5f, dy, 0.28f, kFieldW - 16, rarityColor(info.rarity));
 		snprintf(buf, sizeof buf, "%s%s%s", info.line1, info.line2[0] ? " " : "", info.line2);
+		float nextY = orcWrap(buf, kFieldW * 0.5f, dy + 12, 0.26f, kFieldW - 20, 10.5f, COL_CREAM, 2);
 		char next[48] = "";
 		if (info.kind == KIND_UPGRADE && o.upgrade[card] < info.maxLevel) cardNextLine(card, o.upgrade[card], next, sizeof next);
 		if (next[0]) {
-			const size_t len = strlen(buf);
-			snprintf(buf + len, sizeof buf - len, "  Next: %s", next);
+			char nextBuf[64];
+			snprintf(nextBuf, sizeof nextBuf, "Next: %s", next);
+			orcWrap(nextBuf, kFieldW * 0.5f, nextY + 1.0f, 0.24f, kFieldW - 20, 10.0f, rgba(170, 230, 255), 2);
 		}
-		orcFit(buf, kFieldW * 0.5f, dy + 13, 0.22f, kFieldW - 16, COL_CREAM);
 	} else if (it.kind == INV_SLOT) {
 		orcFit("An empty slot. The next charm you take can go here.", kFieldW * 0.5f, dy + 6, 0.24f, kFieldW - 16, COL_DIM);
 	} else if (it.kind == INV_BUTTON) {
-		static const char* const kHelp[INVB_COUNT] = {"Back to the run, after a 3, 2, 1.", "Switch the charms in Slot 1 and Slot 2.",
+		static const char* const kHelp[INVB_COUNT] = {"Back to the run.", "Switch the charms in Slot 1 and Slot 2.",
 		                                              "Empty the slot you last picked, to make room.", "End this run and keep its score."};
 		orcFit(kHelp[it.index], kFieldW * 0.5f, dy + 6, 0.24f, kFieldW - 16, COL_DIM);
 	}
@@ -420,12 +503,7 @@ static bool newModeOn() { return sGame.mode >= MODE_ORCHARD && sGame.mode <= MOD
 static void drawRushPick();
 
 static void drawOrchardMenus() {
-	if (!newModeOn()) return;
-	if (sOrcHowTo) {
-		drawOrchardHowTo();
-		return;
-	}
-	if (!sGame.orchardLike()) return;
+	if (!newModeOn() || !sGame.orchardLike()) return;
 	if (sGame.m12.rushPicking) {
 		drawRushPick();
 		return;
@@ -433,29 +511,36 @@ static void drawOrchardMenus() {
 	const Orchard& o = sGame.orc;
 	char buf[64];
 	if (o.choosing) {
-		gfx::rect(kFillX, kFillX, kFillW, kFillW, rgba(20, 12, 8, 170));
+		const float openK = gSave.transitions && !gSave.calmFx ? clampf(sOrcOpenT / 0.24f, 0.0f, 1.0f) : 1.0f;
+		const float ease = openK * openK * (3.0f - 2.0f * openK);
+		gfx::rect(kFillX, kFillX, kFillW, kFillW, rgba(20, 12, 8, (u8)(170 * ease)));
 		if (o.placing) {
+			const float slide = (1.0f - ease) * 28.0f;
 			snprintf(buf, sizeof buf, "Pick a slot for %s", kCards[o.placingCard].name);
-			orcFit(buf, kFieldW * 0.5f, kFieldTop + 30, 0.5f, kFieldW - 20, COL_CREAM);
-			orcFit("It replaces the charm in that slot.", kFieldW * 0.5f, kFieldTop + 56, 0.3f, kFieldW - 20, COL_DIM);
+			orcFit(buf, kFieldW * 0.5f, kFieldTop + 30 - slide * 0.5f, 0.5f, kFieldW - 20, COL_CREAM);
+			orcFit("It replaces the charm in that slot.", kFieldW * 0.5f, kFieldTop + 56 - slide * 0.5f, 0.3f, kFieldW - 20, COL_DIM);
 			for (int s = 0; s < kSlots; s++) {
 				float x, y, w, h;
 				orcPlaceRect(s, &x, &y, &w, &h);
-				drawOrcSlotBox(s, x, y, w, h, o.focus == s);
+				drawOrcSlotBox(s, x, y + slide, w, h, o.focus == s);
 			}
-			const Button k = orcKeepButton();
+			Button k = orcKeepButton();
+			k.y += slide;
 			drawSign(k, k.label, o.focus == 2, false, 0.5f);
 			return;
 		}
 		snprintf(buf, sizeof buf, "LEVEL %d! PICK A CARD", o.level - o.levelsWaiting + 1);
-		orcFit(buf, kFieldW * 0.5f, kFieldTop + 8, 0.6f, kFieldW - 20, rgba(255, 230, 140));
+		orcFit(buf, kFieldW * 0.5f, kFieldTop + 1 - (1.0f - ease) * 16.0f, 0.52f, kFieldW - 20, rgba(255, 230, 140));
 		for (int i = 0; i < o.offerCount; i++) {
 			float x, y, w, h;
 			orcCardRect(i, o.offerCount, &x, &y, &w, &h);
-			drawOrcCard(o.offer[i], x, y, w, h, o.focus == i);
+			const float ct = gSave.transitions && !gSave.calmFx ? clampf((sOrcOpenT - i * 0.03f) / 0.22f, 0.0f, 1.0f) : 1.0f;
+			const float ce = ct * ct * (3.0f - 2.0f * ct);
+			drawOrcCard(o.offer[i], x, y + (1.0f - ce) * 34.0f, w, h, o.focus == i);
 		}
 		if (o.rerolls > 0) {
-			const Button r = orcRerollButton();
+			Button r = orcRerollButton();
+			r.y += (1.0f - ease) * 24.0f;
 			snprintf(buf, sizeof buf, "Reroll (%d)", o.rerolls);
 			drawSign(r, buf, o.focus == o.offerCount, false, 0.46f);
 		}
@@ -469,142 +554,37 @@ static bool tapped(const Input& in, bool wasTouching, float x, float y, float w,
 	return in.touching && !wasTouching && in.tx >= x && in.tx < x + w && in.ty >= y && in.ty < y + h;
 }
 
-// How-to panels, once each: Orchard Blast's first run and first boss, and each of the other new modes. They hold
-// the run until tapped away. sOrcHowTo n is bit n - 1 of gSave.howToSeen.
-enum { HOWTO_ORCHARD = 1, HOWTO_BOSS, HOWTO_RUSH, HOWTO_RECIPE, HOWTO_SHARP, HOWTO_JUGGLE };
-
-static void drawOrchardHowTo() {
-	if (!sOrcHowTo) return;
-	const char* slots = PORT_3DS ? "L and R" : (gStickInUse ? "LB and RB" : "Q and E");
-	const char* inv = PORT_3DS ? "Select" : (gStickInUse ? "Back" : "Tab");
-	char a[64], b[64];
-	const char* lines[6];
-	const char* title;
-	int n = 0;
-	switch (sOrcHowTo) {
-		case HOWTO_ORCHARD:
-			title = "ORCHARD BLAST";
-			lines[n++] = "Ten rooms. A boss waits in rooms 5 and 10.";
-			lines[n++] = "Bombs and bosses cost HP. Dropped fruit never do.";
-			lines[n++] = "Slice fruit for XP. Each level up, pick a card.";
-			snprintf(a, sizeof a, "Charms sit in two slots: tap them, or use %s.", slots);
-			lines[n++] = a;
-			snprintf(b, sizeof b, "%s opens your Inventory.", inv);
-			lines[n++] = b;
-			break;
-		case HOWTO_BOSS:
-			title = "BOSS FIGHT";
-			lines[n++] = "A blue ring means its guard is up.";
-			lines[n++] = "Slicing it then costs you HP: Deflected!";
-			lines[n++] = "A gold ring means the guard is down. Slice!";
-			lines[n++] = "After a slice it's confused for a moment.";
-			lines[n++] = "Slice its shots before they land.";
-			break;
-		case HOWTO_RUSH:
-			title = "BOSS RUSH";
-			lines[n++] = "Pick a build, then fight every boss back to back.";
-			lines[n++] = "No level ups: your build is all you get.";
-			lines[n++] = "Half your HP comes back after each boss.";
-			lines[n++] = "Then they come back as Royals: tougher, quicker.";
-			lines[n++] = "The faster you finish, the higher you score.";
-			break;
-		case HOWTO_RECIPE:
-			title = "RECIPE";
-			lines[n++] = "The recipe at the top shows what the cup needs.";
-			lines[n++] = "Slice those fruit, in those amounts.";
-			lines[n++] = "A wrong fruit, or one too many, spoils the cup.";
-			lines[n++] = "Every full cup adds 8 seconds.";
-			lines[n++] = "Bombs cost 10 points.";
-			break;
-		case HOWTO_SHARP:
-			title = "SHARPSHOOTER";
-			lines[n++] = "Fruit wear coloured rings, each with its own shape.";
-			lines[n++] = "Only the called one scores, and it scores double.";
-			lines[n++] = "A wrong one costs 3 points and your combo.";
-			lines[n++] = "The call changes every few seconds.";
-			lines[n++] = "Bombs cost 10 points.";
-			break;
-		default:
-			title = "JUGGLE";
-			lines[n++] = "Your blade knocks fruit back up, not in half.";
-			lines[n++] = "Each knock scores the number of fruit in the air.";
-			lines[n++] = "Swipe sideways to send a fruit sideways.";
-			lines[n++] = "Three on the floor and the run ends.";
-			lines[n++] = "Knocking a bomb counts as one of the three.";
-			break;
-	}
-	gfx::rect(kFillX, kFillX, kFillW, kFillW, rgba(20, 12, 8, 190));
-	const float w = kFieldW - 24 > 380 ? 380 : kFieldW - 24, x = (kFieldW - w) * 0.5f;
-	const float h = 40 + n * 20 + 34, y = kFieldTop + (kFieldH - kFieldTop - h) * 0.5f;
-	gfx::sign(sprites_plank_idx, x, y, w, h, COL_PLANK);
-	orcFit(title, kFieldW * 0.5f, y + 8, 0.56f, w - 16, rgba(255, 230, 140));
-	for (int i = 0; i < n; i++) orcFit(lines[i], kFieldW * 0.5f, y + 40 + i * 20, 0.3f, w - 16, COL_CREAM);
-	if (sOrcHowToT > 0.6f) orcFit(PORT_3DS ? "Tap or press A" : "Tap, click or press A", kFieldW * 0.5f, y + h - 24, 0.28f, w - 16, COL_DIM);
-}
-
-// True while a how-to panel is up.
-static bool orchardHowTo(const Input& in, bool wasTouching) {
-	const Orchard& o = sGame.orc;
-	if (!sOrcHowTo && !o.choosing && !sOrcInv) {
-		const u8 seen = gSave.howToSeen;
-		const bool bossUp = o.boss.on && !o.boss.beaten && o.boss.enterT <= 0;
-		switch (sGame.mode) {
-			case MODE_ORCHARD:
-				if (!(seen & 1)) sOrcHowTo = HOWTO_ORCHARD;
-				else if (bossUp && !(seen & 2)) sOrcHowTo = HOWTO_BOSS;
-				break;
-			case MODE_BOSSRUSH:
-				if (!(seen & 4)) sOrcHowTo = HOWTO_RUSH;
-				else if (bossUp && !(seen & 2)) sOrcHowTo = HOWTO_BOSS;
-				break;
-			case MODE_RECIPE: if (!(seen & 8)) sOrcHowTo = HOWTO_RECIPE; break;
-			case MODE_SHARP: if (!(seen & 16)) sOrcHowTo = HOWTO_SHARP; break;
-			case MODE_JUGGLE: if (!(seen & 32)) sOrcHowTo = HOWTO_JUGGLE; break;
-			default: break;
-		}
-		if (sOrcHowTo) {
-			sOrcHowToT = 0;
-			sBlade.reset();
-			audio::fuse(false);
-		}
-	}
-	if (!sOrcHowTo) return false;
-	sOrcHowToT += kDt;
-	if (sOrcHowToT > 0.6f && ((in.touching && !wasTouching) || (in.down & (KEY_A | KEY_B | KEY_START | KEY_SELECT)))) {
-		audio::click();
-		gSave.howToSeen |= (u8)(1u << (sOrcHowTo - 1));
-		sOrcHowTo = 0;
-		if (sGame.orchardLike()) sGame.orcResume();
-	}
-	return true;
-}
-
 // Boss Rush's build signs, before the first boss.
 static void rushBuildRect(int i, float* x, float* y, float* w, float* h) { orcCardRect(i, BUILD_COUNT, x, y, w, h); }
 
 static void drawRushPick() {
-	gfx::rect(kFillX, kFillX, kFillW, kFillW, rgba(20, 12, 8, 170));
-	orcFit("PICK A BUILD", kFieldW * 0.5f, kFieldTop + 8, 0.6f, kFieldW - 20, rgba(255, 230, 140));
+	const float openK = gSave.transitions && !gSave.calmFx ? clampf(sOrcOpenT / 0.24f, 0.0f, 1.0f) : 1.0f;
+	const float ease = openK * openK * (3.0f - 2.0f * openK);
+	gfx::rect(kFillX, kFillX, kFillW, kFillW, rgba(20, 12, 8, (u8)(170 * ease)));
+	orcFit("PICK A BUILD", kFieldW * 0.5f, kFieldTop + 4 - (1.0f - ease) * 16.0f, 0.52f, kFieldW - 20, rgba(255, 230, 140));
 	static const int kIcon[BUILD_COUNT] = {CARD_ARMOR, CARD_GLASS, CARD_JUICE};
+	char desc[128];
 	for (int i = 0; i < BUILD_COUNT; i++) {
 		float x, y, w, h;
 		rushBuildRect(i, &x, &y, &w, &h);
+		const float ct = gSave.transitions && !gSave.calmFx ? clampf((sOrcOpenT - i * 0.035f) / 0.22f, 0.0f, 1.0f) : 1.0f;
+		const float ce = ct * ct * (3.0f - 2.0f * ct);
+		y += (1.0f - ce) * 34.0f;
 		const RushBuildInfo& b = kRushBuilds[i];
-		// The focused build gets a gold frame: the plank stays dark so its text reads.
-		if (sGame.m12.rushFocus == i) gfx::rect(x - 3, y - 3, w + 6, h + 6, COL_ACCENT);
-		gfx::sign(sprites_plank_idx, x, y, w, h, COL_PLANK);
-		gfx::sprite(SHEET_SPRITES, cardIcon(kIcon[i]), x + w * 0.5f, y + 24, 0.8f, 0.8f);
-		orcFit(b.name, x + w * 0.5f, y + 44, 0.4f, w - 10, COL_CREAM);
-		orcFit(b.line1, x + w * 0.5f, y + 72, 0.25f, w - 10, COL_CREAM);
-		orcFit(b.line2, x + w * 0.5f, y + 86, 0.25f, w - 10, COL_CREAM);
+		drawPlank(x, y, w, h, sGame.m12.rushFocus == i, false);
+		const float is = PORT_3DS ? 0.65f : 0.68f;
+		gfx::sprite(SHEET_SPRITES, cardIcon(kIcon[i]), x + w * 0.5f, y + 24, is, is);
+		orcFit(b.name, x + w * 0.5f, y + 44, 0.44f, w - 10, COL_CREAM);
+		snprintf(desc, sizeof desc, "%s %s", b.line1, b.line2);
+		orcWrap(desc, x + w * 0.5f, y + 70, 0.31f, w - 10, 13.0f, COL_CREAM, 5);
 	}
-	orcFit("No level ups in a Boss Rush.", kFieldW * 0.5f, kFieldH - 30, 0.28f, kFieldW - 20, COL_DIM);
+	orcFit("No level ups in a Boss Rush.", kFieldW * 0.5f, kFieldH - 30, 0.3f, kFieldW - 20, COL_DIM);
 }
 
 static bool updateRushPick(const Input& in, bool wasTouching) {
 	Modes12& m = sGame.m12;
 	sOrcOpenT += kDt;
-	if (sOrcOpenT < 0.45f) return true;
+	if (sOrcOpenT < 0.28f) return true;
 	if (in.down & KEY_LEFT) m.rushFocus = (u8)(m.rushFocus == 0 ? BUILD_COUNT - 1 : m.rushFocus - 1);
 	if (in.down & KEY_RIGHT) m.rushFocus = (u8)((m.rushFocus + 1) % BUILD_COUNT);
 	int pick = -1;
@@ -626,12 +606,7 @@ static bool updateRushPick(const Input& in, bool wasTouching) {
 
 // Runs the Orchard menus for the game screen. True when they took the frame, so the blade and game input wait.
 static bool updateOrchardMenus(const Input& in, bool wasTouching) {
-	if (!newModeOn() || sGame.phase != PHASE_PLAY) {
-		sOrcInv = false;
-		return false;
-	}
-	if (orchardHowTo(in, wasTouching)) return true;
-	if (!sGame.orchardLike()) {
+	if (!newModeOn() || sGame.phase != PHASE_PLAY || !sGame.orchardLike()) {
 		sOrcInv = false;
 		return false;
 	}
@@ -643,7 +618,11 @@ static bool updateOrchardMenus(const Input& in, bool wasTouching) {
 	if (o.choosing) {
 		sOrcInv = false;
 		sOrcOpenT += kDt;
-		if (sOrcOpenT < 0.45f) return true;
+		// A swipe still held from play can't pick: a card needs a fresh press after the grace time.
+		if (sOrcOpenT < 0.40f) {
+			sOrcCardDown = -1;
+			return true;
+		}
 		if (o.placing) {
 			int pick = -2;
 			for (int s = 0; s < kSlots; s++) {
@@ -680,17 +659,24 @@ static bool updateOrchardMenus(const Input& in, bool wasTouching) {
 				if (in.tx >= x && in.tx < x + w && in.ty >= y && in.ty < y + h) sOrcCardDown = o.focus = i;
 			}
 			if (o.rerolls > 0 && hit(orcRerollButton(), in.tx, in.ty)) reroll = true;
+		} else if (in.touching && sOrcCardDown >= 0) {
+			float x, y, w, h;
+			orcCardRect(sOrcCardDown, n, &x, &y, &w, &h);
+			if (in.tx < x || in.tx >= x + w || in.ty < y || in.ty >= y + h) sOrcCardDown = -1;
 		} else if (!in.touching && wasTouching && sOrcCardDown >= 0) {
 			pick = sOrcCardDown;
 			sOrcCardDown = -1;
 		}
 #if PORT_MOUSE
-		if (in.hovering)
+		if (in.hovering) {
 			for (int i = 0; i < n; i++) {
 				float x, y, w, h;
 				orcCardRect(i, n, &x, &y, &w, &h);
 				if (in.tx >= x && in.tx < x + w && in.ty >= y && in.ty < y + h) o.focus = i;
 			}
+			const Button rBtn = orcRerollButton();
+			if (o.rerolls > 0 && (hit(rBtn, in.tx, in.ty) || (in.tx >= rBtn.x - 4 && in.tx < rBtn.x + rBtn.w + 4 && in.ty >= rBtn.y - 4 && in.ty < rBtn.y + rBtn.h + 4))) o.focus = n;
+		}
 #endif
 		if (in.down & KEY_A) {
 			if (o.focus >= n) reroll = true;
@@ -708,8 +694,8 @@ static bool updateOrchardMenus(const Input& in, bool wasTouching) {
 		return true;
 	}
 	sOrcOpenT = 0;
-	// Select (Tab or I on a keyboard) opens and closes the Inventory.
-	if (in.down & KEY_SELECT) {
+	// Select (Tab or I on a keyboard) opens and closes the Inventory in Orchard Blast.
+	if (sGame.mode == MODE_ORCHARD && (in.down & KEY_SELECT)) {
 		audio::click();
 		if (sOrcInv) {
 			sOrcInv = false;

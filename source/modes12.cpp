@@ -71,6 +71,8 @@ void Game::m12Start() {
 			orc.bossRoom = true;
 			m12.rushPicking = true;
 			m12.rushBuild = BUILD_NONE;
+			phase = PHASE_PLAY;
+			gravity = lerpf(300, 430, 0.5f) * kFieldK * levelGravity(gSave.difficulty) * (mix[MIX_LOW_GRAVITY] ? 0.6f : 1.0f);
 			setCallout("PICK A BUILD", rgba(255, 230, 140));
 			break;
 		case MODE_RECIPE: recipeNew(); break;
@@ -119,23 +121,23 @@ void Game::rushPick(int build) {
 	orc.peelShield = orc.upgrade[CARD_THICKPEEL] != 0;
 	m12.rushPicking = false;
 	m12.rushStage = 0;
+	phase = PHASE_READY;
+	phaseT = 0;
 	audio::play(SFX_POWER, 0.8f);
 	bossStart(BOSS_MELON);
 }
 
 // After each boss: half the HP comes back, then the next one. The second lap is the Royals.
 void Game::rushNext() {
-	award(250 * (m12.rushStage + 1));
+	if (score < (u32)(m12.rushStage + 1)) award(1);
 	m12.rushStage++;
 	if (m12.rushStage >= kRushStages) {
-		// Faster is better: a time bonus, plus HP left.
-		const int fast = 3000 - (int)(elapsed * 10);
-		award((fast > 0 ? fast : 0) + (int)ceilf(orc.hp) * 20);
 		orcFinish(true);
 		return;
 	}
 	orc.hp = fminf(orc.maxHp, orc.hp + orc.maxHp * 0.5f);
 	orc.peelShield = orc.upgrade[CARD_THICKPEEL] != 0;
+	orc.bombSquadUsed = false;
 	addPopup("HALF YOUR HP BACK", kFieldW * 0.5f, kFieldTop + 70, rgba(160, 240, 170), 0.6f);
 	for (auto& s : orc.shots) s.on = false;
 	bossStart(m12.rushStage % 2 == 0 ? BOSS_MELON : BOSS_KING, m12.rushStage >= 2);
@@ -253,8 +255,15 @@ bool Game::m12Sliced(const Obj& o) {
 		}
 		m12.wrongHits++;
 		score = score > 3 ? score - 3 : 0;
-		addPopup("WRONG -3", o.x, o.y - 20, rgba(255, 120, 100), 0.7f);
-		audio::play(SFX_KNOCK, 0.8f, fieldPan(o.x), 0.7f);
+		strikePulse = 1;
+		flash = 0.35f;
+		flashColor = rgba(255, 90, 90);
+		shake = 0.25f;
+		addPopup("WRONG! -3", o.x, o.y - 20, rgba(255, 110, 95), 0.78f);
+		setCallout("WRONG FRUIT! -3", rgba(255, 110, 95), 0.72f);
+		showCaption("Wrong fruit! -3 points.");
+		audio::play(SFX_STRIKE, 0.85f, fieldPan(o.x));
+		PORT_VIBRATE(0.35f, 80);
 		return false;
 	}
 	return true;
@@ -318,6 +327,7 @@ void Game::m12Update() {
 	if (m12.cupPulse > 0) m12.cupPulse -= dt * 2;
 	if (m12.spoilPulse > 0) m12.spoilPulse -= dt * 2;
 	if (m12.callFlash > 0) m12.callFlash -= dt * 1.5f;
+	if (phase != PHASE_PLAY || finaleOn) return;
 	switch (mode) {
 		case MODE_RECIPE: m12.cupT += dt; break;
 		case MODE_SHARP:
@@ -348,6 +358,7 @@ void Game::drawModes12Field() const {
 	char buf[48];
 	const float top = kFieldTop + 6;
 	if (mode == MODE_RECIPE) {
+		if (phase != PHASE_PLAY || finaleOn) return;
 		// The recipe: a cup, then each fruit with how many are in and how many it needs.
 		const float s = gSave.largeText ? 1.25f : 1.0f;
 		const float step = 52 * s, w = 30 * s + m12.recipeKinds * step;
@@ -376,6 +387,7 @@ void Game::drawModes12Field() const {
 			gfx::sprite(SHEET_SPRITES, sprites_ring_idx, o.x, o.y, r, r, 0, sharpColour(c, strong));
 			sharpShape(c, o.x + o.radius * 0.8f, o.y - o.radius * 0.8f, 5.5f, sharpColour(c, strong));
 		}
+		if (phase != PHASE_PLAY || finaleOn) return;
 		// The call, along the top: its shape, colour and name. It grows for a moment when it changes.
 		const float k = 1 + clampf(m12.callFlash, 0, 1) * 0.35f;
 		snprintf(buf, sizeof buf, "SLICE: %s", sharpName(m12.call));
@@ -400,6 +412,7 @@ void Game::drawModes12Field() const {
 void Game::labModes12(void (*check)(bool, const char*, const char*)) {
 	char d[128];
 	const u8 diffWas = gSave.difficulty;
+	const u32 foundWas = gSave.bossTracksFound;
 	gSave.difficulty = DIFF_NORMAL;
 	const auto setup = [this](Mode m) {
 		start(m);
@@ -455,6 +468,23 @@ void Game::labModes12(void (*check)(bool, const char*, const char*)) {
 	const int levelWas = orc.level;
 	orcGainXp(500);
 	check(orc.level == levelWas && !orc.choosing, "No level ups in Boss Rush", "");
+	orcWave();
+	int queued = 0;
+	for (const auto& p : pending) queued += p.on;
+	check(queued == 0, "No fruit waves spawn in Boss Rush", "");
+	orc.boss.enterT = 0;
+	orc.hp = 10;
+	Blade testBlade;
+	testBlade.active = true;
+	testBlade.strokeStart = false;
+	testBlade.strokeId = 101;
+	testBlade.px = 150;
+	testBlade.py = 120;
+	testBlade.x = 170;
+	testBlade.y = 120;
+	bossFire(SHOT_SEED, 160, 120, 0, 0);
+	bossTest(testBlade);
+	check(orc.hp == 10.25f, "Charmer's Juice Formula heals 0.25 HP on defusing boss shots in Boss Rush", "");
 	orc.hp = 2;
 	rushNext();
 	snprintf(d, sizeof d, "HP %.1f of %.0f", orc.hp, orc.maxHp);
@@ -464,9 +494,8 @@ void Game::labModes12(void (*check)(bool, const char*, const char*)) {
 	check(orc.boss.id == BOSS_MELON && orc.boss.royal && orc.boss.left == kBosses[BOSS_MELON].slices + 1, "Then a Royal Big Melon, one slice tougher", "");
 	rushNext();
 	check(orc.boss.id == BOSS_KING && orc.boss.royal && orc.boss.left == kBosses[BOSS_KING].slices + 1, "Then a Royal Bomb King", "");
-	const u32 before = score;
 	rushNext();
-	check(orc.won && score > before, "Beating all four clears the rush, with a time bonus", "");
+	check(orc.won && score == 4, "Beating all four clears the rush and scores 1 per boss beaten", "");
 	audio::fuse(false);
 
 	// Recipe: the right fruit fill the cup, a full cup adds 8 seconds, the wrong one spoils it.
@@ -501,11 +530,11 @@ void Game::labModes12(void (*check)(bool, const char*, const char*)) {
 	need = 0;
 	for (int i = 0; i < m12.recipeKinds; i++) need += m12.recipeNeed[i];
 	check(m12.recipeKinds == 3 && need == 6, "From the fourth cup, three kinds and more fruit", "");
-	score = 50;
+	timeLeft = 40;
 	Obj& rb = fruitAt(1, 0, 160, 120);
 	rb.kind = OBJ_BOMB;
 	hitBomb(rb);
-	check(score == 40 && phase == PHASE_PLAY, "A bomb in Recipe costs 10 points", "");
+	check(timeLeft == 30 && phase == PHASE_PLAY, "A bomb in Recipe reduces the timer by 10 seconds", "");
 
 	// Sharpshooter: only the called colour scores, double; the call changes.
 	setup(MODE_SHARP);
@@ -624,5 +653,6 @@ void Game::labModes12(void (*check)(bool, const char*, const char*)) {
 		gSave.rushBestSecs = rushWas;
 	}
 	gSave.difficulty = diffWas;
+	gSave.bossTracksFound = foundWas;
 }
 #endif

@@ -73,7 +73,17 @@ void Game::bossStart(int id, bool royal) {
 	showCaption("A boss drops in.");
 	audio::play(SFX_BOSSIN, 1.0f);
 	audio::play(SFX_WHOOSH, 0.9f, 0, 0.8f);
-	if (gSave.bossMusic) audio::bossMusic(bossTrackPick(id, gRng.next()));
+	const int track = bossTrackPick(id, gRng.next());
+	b.track = (s8)track;
+	const int item = track - kBaseTracks;
+	if (item >= 0 && item < kTrackCount - kBaseTracks) {
+		const u32 bit = 1u << item;
+		if (!(gSave.bossTracksFound & bit)) {
+			gSave.bossTracksFound |= bit;
+			orc.newTracks++;
+		}
+	}
+	if (gSave.bossMusic) audio::bossMusic(track);
 }
 
 void Game::bossOpen(float seconds, bool laugh) {
@@ -104,7 +114,7 @@ void Game::bossFire(int kind, float x, float y, float vx, float vy) {
 		s.y = y;
 		s.vx = vx;
 		s.vy = vy;
-		s.hits = kind == SHOT_CANNON ? 2 : 1;
+		s.hits = 1;
 		s.life = kind == SHOT_CROWN ? kCrownLife : 0;
 		return;
 	}
@@ -164,10 +174,12 @@ void Game::bossNextAttack() {
 			addPopup("CANNON VOLLEY", b.x, b.y - b.radius - 14, rgba(255, 200, 160), 0.55f);
 			break;
 		case KING_LOB:
+			b.volley = 1;
 			addPopup("ROYAL LOB", b.x, b.y - b.radius - 14, rgba(255, 200, 160), 0.55f);
 			showCaption("Some of that fruit is a trick.");
 			break;
 		case KING_CROWN:
+			b.volley = 1;
 			addPopup("CROWN TOSS", b.x, b.y - b.radius - 14, rgba(255, 220, 120), 0.55f);
 			break;
 		case KING_FUSE:
@@ -189,15 +201,16 @@ void Game::bossNextAttack() {
 void Game::bossAttack(float dt) {
 	Boss& b = orc.boss;
 	const OrchardLevel& lv = orchardLevel(gSave.difficulty);
-	b.attackT += dt;
-	b.volleyT -= dt;
+	const float step = dt * lv.attackSpeed;
+	b.attackT += step;
+	b.volleyT -= step;
 	const float floorY = kFieldH - b.radius * 0.75f;
 	switch (b.attack) {
 		case MEL_SEEDS:
 			if (b.volley > 0 && b.volleyT <= 0) {
 				const float tx = gRng.range(30, kFieldW - 30), ty = (float)kFieldH;
 				const float dx = tx - b.x, dy = ty - b.y, len = sqrtf(dx * dx + dy * dy) + 1;
-				const float speed = (95 + 15 * b.phase) * kFieldK;
+				const float speed = (95 + 15 * b.phase) * kFieldK * lv.bossSpeed;
 				bossFire(SHOT_SEED, b.x + dx / len * b.radius * 0.7f, b.y + dy / len * b.radius * 0.7f, dx / len * speed, dy / len * speed);
 				audio::play(SFX_THROW, 0.5f, fieldPan(b.x), 1.4f);
 				b.squash = 0.4f;
@@ -208,8 +221,8 @@ void Game::bossAttack(float dt) {
 			break;
 		case MEL_FLOP: {
 			const float t = b.attackT;
-			if (t <= dt * 1.5f) audio::play(SFX_WHOOSH, 0.8f, fieldPan(b.x), 1.15f);  // up it hops
-			if (t >= 0.85f && t - dt < 0.85f) audio::play(SFX_WHOOSH, 1.0f, fieldPan(b.x), 0.75f);  // and down
+			if (t <= step * 1.5f) audio::play(SFX_WHOOSH, 0.8f, fieldPan(b.x), 1.15f);  // up it hops
+			if (t >= 0.85f && t - step < 0.85f) audio::play(SFX_WHOOSH, 1.0f, fieldPan(b.x), 0.75f);  // and down
 			if (t < 0.55f) {
 				b.y = lerpf(b.y, kFieldTop + b.radius * 0.6f, 1 - powf(0.0005f, dt));
 			} else if (t < 0.85f) {
@@ -240,7 +253,7 @@ void Game::bossAttack(float dt) {
 			const float t = b.attackT;
 			b.x = lerpf(b.x, kFieldW * 0.5f, 1 - powf(0.02f, dt));
 			b.rx += dt * 9;
-			if (t >= 0.5f && t - dt < 0.5f) audio::play(SFX_WHOOSH, 1.0f, fieldPan(b.x), 0.6f);  // the roll comes at you
+			if (t >= 0.5f && t - step < 0.5f) audio::play(SFX_WHOOSH, 1.0f, fieldPan(b.x), 0.6f);  // the roll comes at you
 			if (t > 0.5f) b.squash = -clampf((t - 0.5f) / 1.3f, 0, 1);  // negative squash: it grows toward the screen
 			if (t >= 1.8f) {
 				b.squash = 0;
@@ -255,7 +268,7 @@ void Game::bossAttack(float dt) {
 			if (b.volley > 0 && b.volleyT <= 0) {
 				const float tx = gRng.range(40, kFieldW - 40), ty = (float)kFieldH;
 				const float dx = tx - b.x, dy = ty - b.y, len = sqrtf(dx * dx + dy * dy) + 1;
-				const float speed = (70 + 10 * b.phase) * kFieldK;
+				const float speed = (70 + 10 * b.phase) * kFieldK * lv.bossSpeed;
 				bossFire(SHOT_CANNON, b.x + dx / len * b.radius, b.y + dy / len * b.radius, dx / len * speed, dy / len * speed);
 				audio::play(SFX_BOOM, 0.35f, fieldPan(b.x), 1.5f);
 				b.squash = 0.6f;
@@ -268,29 +281,34 @@ void Game::bossAttack(float dt) {
 			}
 			break;
 		case KING_LOB:
-			if (b.attackT < dt * 1.5f) {
+			if (b.volley > 0) {
+				b.volley = 0;
 				const int bombs = 1 + (b.phase >= 3), decoys = 2;
 				for (int i = 0; i < bombs + decoys; i++) {
 					float x = 160, vx = 0, vy = -300;
 					const bool bomb = i < bombs;
 					pickThrow(bomb, 0.25f * i, x, vx, vy);
 					// A decoy is queued as a fruit with the top bit set; launch() starts its timer.
-					queue(0.25f * i, x, vx, vy, bomb ? OBJ_BOMB : OBJ_FRUIT, bomb ? 0 : (normalFruitOf(gSpawn) | 0x80));
+					// A King's lobbed bomb has fruit=1 to distinguish from ordinary wave bombs.
+					queue(0.25f * i, x, vx, vy, bomb ? OBJ_BOMB : OBJ_FRUIT, bomb ? 1 : (normalFruitOf(gSpawn) | 0x80));
 				}
+				audio::play(SFX_THROW, 0.7f, fieldPan(b.x), 0.9f);
 			}
-			if (b.attackT > 1.4f) b.attack = ATK_NONE;
+			if (b.attackT > 1.8f) b.attack = ATK_NONE;
 			break;
 		case KING_CROWN:
-			if (b.attackT < dt * 1.5f) {
-				bossFire(SHOT_CROWN, b.x, b.y - b.radius, 0, 0);
+			if (b.volley > 0) {
+				b.volley = 0;
+				bossFire(SHOT_CROWN, b.x, b.y - b.radius, b.x, b.y);
 				b.crownOut = kCrownLife;
-				if (b.finisher) bossOpen(kCrownLife - 0.4f);
 				audio::play(SFX_SWISH0, 0.8f, fieldPan(b.x), 0.8f);
 			}
-			if (b.attackT > 0.5f) b.attack = ATK_NONE;
+			if (b.crownOut <= 0) {
+				b.attack = ATK_NONE;
+			}
 			break;
 		case KING_FUSE:
-			b.fuseT -= dt;
+			b.fuseT -= dt * lv.attackSpeed;
 			if (b.fuseCuts >= 3) {
 				audio::fuse(false);
 				setCallout("SNUFFED!", rgba(170, 230, 255));
@@ -310,7 +328,7 @@ void Game::bossAttack(float dt) {
 		case KING_GIANT: bossGiant(dt); break;
 		default: b.attack = ATK_NONE; break;
 	}
-	if (b.attack == ATK_NONE) b.nextAttack = lerpf(2.6f, 1.6f, (b.phase - 1) * 0.5f) * (gSave.difficulty == DIFF_EASY ? 1.25f : 1.0f) * (b.royal ? 0.8f : 1.0f);
+	if (b.attack == ATK_NONE) b.nextAttack = lerpf(2.6f, 1.6f, (b.phase - 1) * 0.5f) / lv.attackSpeed * (b.royal ? 0.8f : 1.0f);
 }
 
 void Game::shotsUpdate(float dt) {
@@ -322,13 +340,16 @@ void Game::shotsUpdate(float dt) {
 		if (s.kind == SHOT_CROWN) {
 			// Out and back in a loop, like a thrown boomerang.
 			const float k = s.age / kCrownLife * 6.2832f;
-			s.x = b.x + sinf(k) * kFieldW * 0.38f;
-			s.y = b.y - b.radius + (1 - cosf(k)) * (kFieldH - b.y) * 0.42f;
+			const float ox = s.vx, oy = s.vy;
+			s.x = ox + sinf(k) * kFieldW * 0.38f;
+			s.y = oy - b.radius + (1 - cosf(k)) * (kFieldH - oy) * 0.42f;
 			s.life -= dt;
 			if (s.life <= 0) {
 				s.on = false;
 				b.crownOut = 0;
+				b.attack = ATK_NONE;
 				orcHurt(bossDamage(2), b.x, b.y - b.radius, "CROWN");
+				if (b.finisher) bossOpen(orchardLevel(gSave.difficulty).openTime);
 			}
 			continue;
 		}
@@ -353,6 +374,7 @@ void Game::shotsUpdate(float dt) {
 void Game::bossUpdate(float dt) {
 	Boss& b = orc.boss;
 	if (!b.on) return;
+	const OrchardLevel& lv = orchardLevel(gSave.difficulty);
 	b.t += dt;
 	if (b.hurtT > 0) b.hurtT -= kDt;
 	if (b.deflectT > 0) b.deflectT -= kDt;
@@ -398,7 +420,7 @@ void Game::bossUpdate(float dt) {
 	}
 	// Drifts about between attacks, and floats back up after a flop.
 	if (b.attack != MEL_FLOP && b.attack != MEL_CHARGE && b.attack != KING_GIANT) {
-		const float speed = b.id == BOSS_KING ? 0.9f : 0.6f;
+		const float speed = (b.id == BOSS_KING ? 0.9f : 0.6f) * lv.bossSpeed;
 		const float tx = kFieldW * 0.5f + sinf(b.t * speed) * kFieldW * 0.28f;
 		b.x = lerpf(b.x, tx, 1 - powf(0.2f, dt));
 		if (b.openT <= 0) b.y = lerpf(b.y, b.baseY + sinf(b.t * 1.3f) * 6, 1 - powf(0.1f, dt));
@@ -429,13 +451,20 @@ void Game::bossTest(Blade& blade) {
 		s.on = false;
 		if (s.kind == SHOT_CROWN) {
 			b.crownOut = 0;
+			b.attack = ATK_NONE;
 			addPopup("CROWN KNOCKED!", s.x, s.y - 14, rgba(255, 220, 120), 0.6f);
 			audio::play(SFX_GOLD, 0.8f, fieldPan(s.x));
+			bossOpen(orchardLevel(gSave.difficulty).openTime);
+		} else if (s.kind == SHOT_CANNON) {
+			addPopup("DEFUSED!", s.x, s.y - 14, rgba(140, 230, 255), 0.5f);
+			audio::play((Sfx)(SFX_JUICY0 + gRng.below(2)), 0.7f, fieldPan(s.x), 1.3f);
 		} else {
 			audio::play((Sfx)(SFX_JUICY0 + gRng.below(2)), 0.7f, fieldPan(s.x), 1.3f);
 		}
 		emitJuice(s.x, s.y, s.kind == SHOT_CANNON ? rgba(110, 110, 120) : rgba(255, 110, 120), juiceAmount(8), blade.x - blade.px, blade.y - blade.py);
 		orcGainXp(s.kind == SHOT_CANNON ? 2 : 1);
+		if (orc.upgrade[CARD_JUICE]) orc.hp = fminf(orc.maxHp, orc.hp + 0.25f);
+		sliced++;
 	}
 	if (b.attack == KING_GIANT) {
 		bossGiantTest(blade, reach);
@@ -458,11 +487,14 @@ void Game::bossTest(Blade& blade) {
 	float scale = 1 - (b.squash < 0 ? b.squash * 0.8f : 0);
 	const float r = b.radius * scale * 0.92f * reach;
 	if (segDist2(b.x, b.y, blade) > r * r) return;
-	if (b.attack == MEL_CHARGE && b.attackT > 0.6f) {
+	if (b.attack == MEL_CHARGE) {
 		// Blocked the charge: it bounces off, and if the chain is done its guard drops for longer.
+		// A 1.2s deflect cooldown ensures following through doesn't cause accidental deflect damage.
 		b.attack = ATK_NONE;
 		b.squash = 0;
 		b.nextAttack = 2;
+		b.deflectStroke = blade.strokeId;
+		b.deflectT = 1.2f;
 		setCallout("BLOCKED!", rgba(170, 230, 255));
 		audio::play(SFX_CLANG, 1.0f, fieldPan(b.x), 0.8f);
 		if (b.finisher) bossOpen(orchardLevel(gSave.difficulty).openTime * 1.3f);
@@ -505,14 +537,14 @@ void Game::bossTest(Blade& blade) {
 	audio::play(b.id == BOSS_MELON ? SFX_MELON0 : SFX_SHELL, 1.0f, fieldPan(b.x), 0.8f);
 	PORT_VIBRATE(0.6f, 140);
 	orcGainXp(6);
-	award(150);
+	if (orc.upgrade[CARD_JUICE]) orc.hp = fminf(orc.maxHp, orc.hp + 1.0f);
+	sliced++;
 	const int done = b.total - b.left;
 	if (b.left == 0) {
 		b.beaten = true;
 		b.leaveT = 0;
 		for (auto& s : orc.shots) s.on = false;
 		orc.bossesBeaten++;
-		if (!(gSave.bossesBeaten >> b.id & 1)) orc.newTracks += bossTrackCount(b.id);
 		gSave.bossesBeaten |= 1u << b.id;
 		orc.bossCoins += progress::bossWin(b.id);
 		char buf[40];
@@ -521,7 +553,7 @@ void Game::bossTest(Blade& blade) {
 		audio::play(SFX_VICTORY, 1.0f);
 		audio::bossMusicEnd();
 		orcGainXp(20);
-		award(500 * (b.id + 1));
+		if (mode == MODE_BOSSRUSH) award(1);
 		return;
 	}
 	const int phase = 1 + done * kBosses[b.id].phases / b.total;
@@ -637,7 +669,6 @@ void Game::bossGiantTest(const Blade& blade, float reach) {
 			g.vy = -260 * kFieldK;
 			setCallout("LAUNCHED!", rgba(170, 230, 255));
 			audio::play(SFX_LAUNCH, 1.0f, fieldPan(g.x));
-			award(300);
 			orcGainXp(6);
 		}
 	}
@@ -655,8 +686,31 @@ static void drawCrown(float x, float y, float s, u32 gold) {
 }
 
 void Game::drawShots() const {
+	const bool in3D = drawing3D();
+	if (in3D) {
+		m3d::begin(kFieldW, gfx::stereoPerZ(), true);
+		for (const auto& s : orc.shots) {
+			if (!s.on || s.kind == SHOT_CROWN) continue;
+			const float ang = atan2f(s.vy, s.vx) + 1.5708f;
+			if (s.kind == SHOT_SEED) {
+				m3d::Pose pose = {s.x, s.y, 26, s.age * 3.0f, s.rot * 0.7f, ang, 1.05f, 0, 0, 0};
+				m3d::draw(m3d::MESH_SEED, m3d::PART_WHOLE, pose);
+			} else if (s.kind == SHOT_SPLASH) {
+				m3d::Pose pose = {s.x, s.y, 26, s.age * 2.5f, s.rot * 0.8f, ang, 1.15f, 0, 0, 0};
+				m3d::draw(m3d::MESH_SPLASH, m3d::PART_WHOLE, pose);
+			} else if (s.kind == SHOT_CANNON) {
+				m3d::Skin skin = {s.hits == 1 ? 0.45f : 0.0f, 1.0f, 0.35f, 0.25f, 1.0f, 0.35f};
+				m3d::setSkin(&skin);
+				m3d::Pose pose = {s.x, s.y, 26, s.age * 2.0f, s.rot, s.rot * 0.6f, 0.8f, 0, 0, 0};
+				m3d::draw(m3d::MESH_BOMB, m3d::PART_WHOLE, pose);
+				m3d::setSkin(nullptr);
+			}
+		}
+		m3d::end();
+	}
 	for (const auto& s : orc.shots) {
 		if (!s.on) continue;
+		if (in3D && (s.kind == SHOT_SEED || s.kind == SHOT_SPLASH || s.kind == SHOT_CANNON)) continue;
 		switch (s.kind) {
 			case SHOT_SEED: gfx::sprite(SHEET_SPRITES, sprites_drop_idx, s.x, s.y, 0.9f, 1.2f, atan2f(s.vy, s.vx) - 1.5708f, rgba(70, 40, 30)); break;
 			case SHOT_SPLASH: gfx::sprite(SHEET_SPRITES, sprites_drop_idx, s.x, s.y, 1.5f, 1.5f, s.rot * 0.3f, rgba(255, 80, 110)); break;

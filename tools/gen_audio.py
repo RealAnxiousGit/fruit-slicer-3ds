@@ -606,6 +606,17 @@ def launch():
     return norm(out, 0.7)
 
 
+def levelup():
+    """Level up in Orchard Blast: a crisp, sparkly rising RPG arpeggio chime that resolves on a bright bell chord."""
+    out = np.zeros(n_of(1.1))
+    for i, m in enumerate((74, 78, 81, 86)):
+        place(out, bell(mtof(m), 0.45), i * 0.065, 0.72)
+        place(out, bell(mtof(m + 12), 0.32), i * 0.065 + 0.012, 0.28)
+    place(out, chord_stab([62, 69, 74, 78, 86], 0.75), 0.20, 0.16)
+    place(out, thump(160, 75, 0.18, 0.65), 0.20, 0.45)
+    return norm(reverb_tail(out, 0.65, 0.22), 0.78)
+
+
 # ---------------------------------------------------------------- boss music
 # Brighter and busier than the calm tracks, so a higher rate: hats and the chip lead need the top end.
 BOSS_RATE = 22050
@@ -1092,6 +1103,7 @@ def build_audio():
     write_pcm("chuckle", chuckle(), s)
     write_pcm("whoosh", whoosh(), s)
     write_pcm("launch", launch(), s)
+    write_pcm("levelup", levelup(), s)
 
     # Original tracks: all slow, soft and major-leaning.
     menu = [[60, 64, 67, 71, 74], [57, 60, 64, 67, 71], [65, 69, 72, 76], [55, 59, 62, 67, 69]]

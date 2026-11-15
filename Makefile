@@ -100,7 +100,7 @@ $(GFXBUILD):
 
 $(GFXBUILD)/%.t3x: $(GRAPHICS)/%.t3s | $(BUILD) $(GFXBUILD)
 	@echo tex3ds $(notdir $<)
-	@cd $(GRAPHICS) && tex3ds -i $(notdir $<) -H $(CURDIR)/$(BUILD)/$*.h -d $(CURDIR)/$(BUILD)/$*.d -o $(CURDIR)/$@
+	@cd $(GRAPHICS) && tex3ds -i $(notdir $<) -H "$$PWD/../$(BUILD)/$*.h" -d "$$PWD/../$(BUILD)/$*.d" -o "$$PWD/../$@"
 
 $(ROMFS_SHADER): port/fruit.v.pica | $(GFXBUILD)
 	@echo picasso $(notdir $<)

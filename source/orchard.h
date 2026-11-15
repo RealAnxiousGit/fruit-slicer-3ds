@@ -52,8 +52,8 @@ struct Shot {
 	float x, y, vx, vy, age, rot;
 	float life;   // the crown and the juice wave: seconds left
 	u8 kind;
-	u8 hits;      // slices still needed (a cannonball takes two)
-	u32 stroke;   // the swipe that last cut it: a cannonball needs two separate swipes
+	u8 hits;      // slices still needed to defuse
+	u32 stroke;   // the swipe that last cut it
 	bool on;
 };
 
@@ -64,7 +64,7 @@ enum BossAttack : u8 {
 	MEL_SEEDS,   // Seed Spit: a spray of seeds; slice them before they land
 	MEL_FLOP,    // Belly Flop: jumps and slams down, splashing juice
 	MEL_CHARGE,  // Rolling Charge: rolls at the screen. Swipe it to block
-	KING_VOLLEY, // Cannon Volley: cannonballs that take two swipes
+	KING_VOLLEY, // Cannon Volley: cannonballs; slice them to defuse
 	KING_LOB,    // Royal Lob: real bombs, and fruit that turn into bombs
 	KING_CROWN,  // Crown Toss: the crown flies out and back
 	KING_FUSE,   // Short Fuse: its fuse is lit; snuff it with three swipes, or it blows
@@ -121,6 +121,7 @@ struct Boss {
 	GiantBomb giant;
 	bool royal;       // Boss Rush's second lap: one more slice, shorter openings, quicker attacks
 	u8 total;         // slices to beat it
+	s8 track;         // the Shop music track playing for this fight
 };
 
 // The run itself.
@@ -196,6 +197,8 @@ struct OrchardLevel {
 	int startHp;
 	int bombDamage;
 	float bossDamage;   // times each boss attack's damage
+	float bossSpeed;    // boss movement and projectile speed multiplier
+	float attackSpeed;  // boss attack pattern and frequency multiplier
 	float openTime;     // seconds a boss's guard stays down
 	int deflectDamage;
 	float xpNeed;       // times the XP each level needs

@@ -176,7 +176,8 @@ struct Settings {
 	u8 bossTrackLast[4];    // per boss, the track (+1) heard in its last fight, so the next one differs
 	u16 bossWins[8];        // per boss, times beaten in any mode (Fruit Journal and its coin milestones)
 	u16 rushBestSecs;       // Boss Rush: the fastest clear, in seconds, 0 = never cleared
-	u8 reserved12[12];      // later 1.2.x fields take bytes from here
+	u32 bossTracksFound;    // bit i: Shop track i has been discovered in Orchard Blast or Boss Rush
+	u8 reserved12[8];       // later 1.2.x fields take bytes from here
 };
 static_assert(MODE_COUNT + 1 <= kMaxModes, "more modes than the save holds");
 static_assert(MODE_JUGGLE - MODE_ORCHARD + 2 <= 8, "howToSeen has a bit for each how-to");

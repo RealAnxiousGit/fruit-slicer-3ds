@@ -16,4 +16,4 @@ if (-not $Rom) {
     }
 }
 if (-not (Test-Path $Rom)) { throw "No build at $Rom" }
-Start-Process $exe -ArgumentList '-w', "`"$((Resolve-Path $Rom).Path)`""
+Start-Process $exe -WorkingDirectory (Split-Path $exe) -ArgumentList '-w', "`"$((Resolve-Path $Rom).Path)`""

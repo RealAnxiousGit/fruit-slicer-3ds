@@ -346,6 +346,7 @@ void Game::launch(const Pending& p) {
 		o.kind = p.kind;
 		o.fruit = p.kind == OBJ_FRUIT ? (u8)(p.fruit & 0x7F) : p.fruit;
 		if (p.kind == OBJ_FRUIT && (p.fruit & 0x80)) o.morph = gRng.range(1.1f, 1.7f);  // The Bomb King's decoy
+		if (p.kind == OBJ_BOMB && p.fruit == 1) o.tag = 1;  // Lobbed by The Bomb King
 		o.x = p.x;
 		o.y = kSpawnY;
 		o.vx = p.vx;
@@ -364,7 +365,7 @@ void Game::launch(const Pending& p) {
 		}
 		o.hits = p.kind != OBJ_FRUIT ? 1 : (p.fruit == kCoconut ? 2 : (p.fruit == kPinata ? kPinataHits : 1));
 		if (orchardLike() && orc.upgrade[CARD_BLADE] && o.kind == OBJ_FRUIT && o.hits > 1) o.hits = (u8)(o.fruit == kPinata ? (o.hits - orc.upgrade[CARD_BLADE] < 2 ? 2 : o.hits - orc.upgrade[CARD_BLADE]) : 1);
-		if (mode == MODE_SHARP && o.kind == OBJ_FRUIT && o.fruit < kSpiky) {
+		if (mode == MODE_SHARP && o.kind == OBJ_FRUIT && o.fruit != kSpiky) {
 			// Two in five wear the called colour, so there is always something to aim at.
 			o.tag = (u8)(1 + (gRng.unit() < 0.4f ? m12.call : gRng.below(kSharpColours)));
 		}
@@ -837,10 +838,12 @@ void Game::setCallout(const char* s, u32 color, float size) {
 
 // ---------------------------------------------------------------- scoring
 void Game::award(int points) {
-	if (mode == MODE_SUDDEN) points *= 2;
-	if (doubleT > 0) points *= 2;
-	if (chiliT > 0) points *= 2;
-	if (feverT > 0) points *= 2;
+	if (!orchardLike()) {
+		if (mode == MODE_SUDDEN) points *= 2;
+		if (doubleT > 0) points *= 2;
+		if (chiliT > 0) points *= 2;
+		if (feverT > 0) points *= 2;
+	}
 	score += points;
 	scorePulse = 1;
 }
@@ -908,10 +911,11 @@ void Game::finishCombo() {
 	}
 	int bonus = n * t->mult;
 	if (mode == MODE_COMBO) bonus *= 2;
-	award(bonus);
+	if (!orchardLike()) award(bonus);
 
 	char buf[40];
-	snprintf(buf, sizeof buf, "%s! %d COMBO +%d", t->name, n, bonus);
+	if (orchardLike()) snprintf(buf, sizeof buf, "%s! %d COMBO", t->name, n);
+	else snprintf(buf, sizeof buf, "%s! %d COMBO +%d", t->name, n, bonus);
 	setCallout(buf, t->color, t->size);
 	audio::play(t->sfx);
 	if (t->slow > 0 && !gSave.calmFx && mode != MODE_BEAT) slowT = t->slow;  // Beat Slice stays on the beat  // slow motion; a 10-fruit swipe gets half a second
@@ -928,8 +932,10 @@ void Game::finishCombo() {
 		flash = 0.5f;
 		flashColor = t->color;
 	}
-	snprintf(buf, sizeof buf, "+%d", bonus);
-	addPopup(buf, comboX, comboY - 16, t->color, 0.7f + n * 0.05f);
+	if (!orchardLike()) {
+		snprintf(buf, sizeof buf, "+%d", bonus);
+		addPopup(buf, comboX, comboY - 16, t->color, 0.7f + n * 0.05f);
+	}
 	addFever(n < 15 ? n * 0.02f : 0.3f);  // a big single stroke tops the meter up on top of each fruit's own share
 	if (n > bestCombo) bestCombo = n;
 }
@@ -1107,7 +1113,10 @@ void Game::sliceFruit(Obj& o, const Blade& blade) {
 	if (o.hits > 1) {
 		// Tough shell: the first hit only cracks it and knocks it back up. A pinata pays out candy each time.
 		if (o.kind == OBJ_FRUIT && o.fruit == kPinata) {
-			if (mode != MODE_COMBO) {
+			if (orchardLike()) {
+				orcGainXp(2);
+				addPopup("+2 XP", o.x, o.y - 18, rgba(170, 230, 255), 0.7f);
+			} else if (mode != MODE_COMBO) {
 				award(2);
 				addPopup("+2", o.x, o.y - 18, rgba(255, 170, 220), 0.8f);
 			}
@@ -1163,7 +1172,7 @@ void Game::sliceFruit(Obj& o, const Blade& blade) {
 		o.on = false;
 		return;
 	}
-	int pts = o.kind == OBJ_GOLD ? 5 : (def.cut == CUT_SHELL ? 3 : (o.kind == OBJ_FRUIT && (o.fruit == kJelly || o.loose) ? 2 : 1));
+	int pts = orchardLike() ? 0 : (o.kind == OBJ_GOLD ? 5 : (def.cut == CUT_SHELL ? 3 : (o.kind == OBJ_FRUIT && (o.fruit == kJelly || o.loose) ? 2 : 1)));
 	if (mode == MODE_SHARP && o.tag) pts *= 2;  // a called fruit is worth double
 	if (mode == MODE_BEAT && phase == PHASE_PLAY && !beatSlice(o)) {
 		// Off the beat: the fruit is cut, but scores nothing and ends the combo.
@@ -1188,9 +1197,14 @@ void Game::sliceFruit(Obj& o, const Blade& blade) {
 		emitSparks(o.x, o.y, rgba(255, 226, 120), juiceCount(14), 180);
 	}
 	if (chain > 0 && chain % 15 == 0) {
-		award(5);
 		char buf[24];
-		snprintf(buf, sizeof buf, "COMBO %d +5", chain);
+		if (orchardLike()) {
+			orcGainXp(5);
+			snprintf(buf, sizeof buf, "COMBO %d +5 XP", chain);
+		} else {
+			award(5);
+			snprintf(buf, sizeof buf, "COMBO %d +5", chain);
+		}
 		addPopup(buf, kFieldW * 0.5f, kFieldTop + 60, rgba(170, 240, 255), 0.6f);
 	}
 
@@ -1215,6 +1229,14 @@ void Game::hitBomb(Obj& o) {
 		addPopup("BLOCKED", o.x, o.y - 18, rgba(200, 180, 255), 0.7f);
 		return;
 	}
+	if (orchardLike() && orc.boss.on && !orc.boss.beaten && orc.boss.id == BOSS_KING && o.tag == 1) {
+		// The Bomb King's lobbed bombs can be sliced away harmlessly before they land.
+		audio::play(SFX_KNOCK, 0.9f, fieldPan(o.x), 0.85f);
+		emitSparks(o.x, o.y, rgba(200, 240, 170), juiceCount(16), 190);
+		addRing(o.x, o.y, rgba(190, 240, 160), 2.0f, 0.3f);
+		orcBomb(o);
+		return;
+	}
 #ifdef AUTOTEST
 	statBombHits++;
 #endif
@@ -1230,13 +1252,22 @@ void Game::hitBomb(Obj& o) {
 	switch (mode) {
 		case MODE_ARCADE:
 		case MODE_DAILY:
-		case MODE_RECIPE:
 		case MODE_SHARP:
 		case MODE_BEAT:
 			if (mode == MODE_BEAT) beatStreak = 0;
 			score = score > 10 ? score - 10 : 0;
 			addPopup("-10", o.x, o.y, rgba(255, 90, 90), 0.9f);
 			setCallout("BOMB! -10", rgba(255, 110, 90));
+			break;
+		case MODE_RECIPE:
+			addPopup("-10 SEC", o.x, o.y, rgba(255, 90, 90), 0.8f);
+			if (timeLeft > 10) {
+				timeLeft -= 10;
+				setCallout("BOMB! -10 SECONDS", rgba(255, 110, 90));
+			} else {
+				timeLeft = 0;
+				startFinale();
+			}
 			break;
 		case MODE_FRENZY:
 			addPopup("-5 SEC", o.x, o.y, rgba(255, 90, 90), 0.8f);
@@ -1276,7 +1307,7 @@ void Game::sliceObj(Obj& o, const Blade& blade) {
 			coinPulse = 1;
 			if (orchardLike()) orcSliced(o);
 			if (mode == MODE_PRACTICE) practiceSliced(o);
-			if (mode != MODE_COMBO) {  // Combo Rush: combos are the whole score, though the coin still counts
+			if (mode != MODE_COMBO && !orchardLike()) {  // Combo Rush & Orchard: coins count as coins, not score
 				award(5);
 				addPopup("+5", o.x, o.y - 18, rgba(255, 220, 90), 0.8f);
 			}
@@ -1287,7 +1318,7 @@ void Game::sliceObj(Obj& o, const Blade& blade) {
 			return;
 		case OBJ_SEED: {
 			// Worth a point, and every seed caught in the swipe that cut the pomegranate adds to its combo.
-			const int pts = mode == MODE_COMBO ? comboRushPoints(chain + 1) : 1;
+			const int pts = orchardLike() ? 0 : (mode == MODE_COMBO ? comboRushPoints(chain + 1) : 1);
 			if (pts > 0) award(pts);
 			if (orchardLike()) orcSliced(o);
 			if (meterLive()) chain++;
@@ -1382,6 +1413,9 @@ Obj* Game::spawnPiece(const Obj& from, ObjKind kind, int fruit, float radius) {
 		g.hits = 1;
 		g.hitCooldown = 0.12f;
 		g.loose = true;
+		if (mode == MODE_SHARP && kind == OBJ_FRUIT && fruit != kSpiky) {
+			g.tag = from.tag ? from.tag : (u8)(1 + (gRng.unit() < 0.4f ? m12.call : gRng.below(kSharpColours)));
+		}
 		return &g;
 	}
 	return nullptr;
@@ -1744,6 +1778,7 @@ void Game::updateObjects(float dt) {
 			if (o.morph <= 0) {
 				o.morph = 0;
 				o.kind = OBJ_BOMB;
+				o.tag = 1;  // Lobbed by The Bomb King
 				o.radius = 19;
 				o.hits = 1;
 				emitSparks(o.x, o.y, rgba(255, 190, 90), juiceCount(10), 120);
@@ -1753,6 +1788,13 @@ void Game::updateObjects(float dt) {
 		}
 		if (o.vy > 0 && o.y > kKillY) {
 			o.on = false;
+			if (o.kind == OBJ_BOMB && orchardLike() && orc.boss.on && !orc.boss.beaten && orc.boss.id == BOSS_KING && o.tag == 1 && phase == PHASE_PLAY) {
+				boom::start(o.x, kFieldH - 10);
+				emitSparks(o.x, kFieldH - 10, rgba(255, 170, 60), juiceCount(12), 200);
+				audio::play(SFX_BOOM, 0.85f, fieldPan(o.x));
+				orcHurt(orchardLevel(gSave.difficulty).bombDamage, o.x, kFieldH - 20.0f, "BOMB");
+				continue;
+			}
 			// A dropped spiky fruit, pinata or loose piece is never a miss.
 			bool counts = o.kind == OBJ_GOLD || (o.kind == OBJ_FRUIT && o.fruit != kSpiky && o.fruit != kGrape && o.fruit != kPinata && !o.loose);
 			if (counts && phase == PHASE_PLAY) addStrike(o.x);
@@ -1900,7 +1942,7 @@ void Game::update(Blade& blade) {
 					feverMeter = kAfterFrenzy;
 				}
 				feverTimer -= kDt;
-				if (feverTimer <= 0) {
+				if (feverTimer <= 0 && mode != MODE_BOSSRUSH) {
 					feverTimer = mode == MODE_FRENZY && !sLightFrenzy ? 0.12f : 0.2f;
 					float x = 160, vx = 0, vy = -300;
 					pickThrow(false, 0, x, vx, vy);
@@ -1909,7 +1951,7 @@ void Game::update(Blade& blade) {
 			} else if (frenzyT > 0) {
 				frenzyT -= kDt;
 				frenzyTimer -= kDt;
-				if (frenzyTimer <= 0) {
+				if (frenzyTimer <= 0 && mode != MODE_BOSSRUSH) {
 					frenzyTimer = 0.16f;
 					bool left = gRng.below(2);
 					float x = left ? -18.0f : kFieldW + 18.0f;
@@ -2041,7 +2083,7 @@ static constexpr float kBombZ = 42.0f;  // in front of the fruit, so it's never 
 void Game::drawObjects3D(bool top, float ox, float oy) const {
 	bool any = finaleOn && !top;
 	for (const auto& h : halves) any = any || (h.on && onThisScreen(h.y, 30, top, oy));
-	for (const auto& o : objs) any = any || (o.on && (o.kind <= OBJ_BOMB || o.kind == OBJ_COIN) && onThisScreen(o.y, 34, top, oy));
+	for (const auto& o : objs) any = any || (o.on && (o.kind <= OBJ_BOMB || o.kind == OBJ_COIN || o.kind == OBJ_SEED) && onThisScreen(o.y, 34, top, oy));
 	if (!any) return;
 
 	jobs::wait();  // any cuts asked for this frame must be finished before the GPU sees them
@@ -2064,11 +2106,16 @@ void Game::drawObjects3D(bool top, float ox, float oy) const {
 		}
 	}
 	m3d::setSkin(nullptr);
-	// Coins flip end over end as they fly.
+	// Coins flip end over end as they fly; seeds tumble in 3D too.
 	for (const auto& o : objs) {
-		if (!o.on || o.kind != OBJ_COIN || !onThisScreen(o.y, 34, top, oy)) continue;
-		m3d::Pose pose = {o.x + ox, o.y + oy, kFruitZ, o.age * o.rotv, 0, sinf(o.age * 1.7f) * 0.2f, 0.82f, 0, 0, 0};
-		m3d::draw(m3d::MESH_COIN, m3d::PART_WHOLE, pose);
+		if (!o.on || !onThisScreen(o.y, 34, top, oy)) continue;
+		if (o.kind == OBJ_COIN) {
+			m3d::Pose pose = {o.x + ox, o.y + oy, kFruitZ, o.age * o.rotv, 0, sinf(o.age * 1.7f) * 0.2f, 0.82f, 0, 0, 0};
+			m3d::draw(m3d::MESH_COIN, m3d::PART_WHOLE, pose);
+		} else if (o.kind == OBJ_SEED) {
+			m3d::Pose pose = {o.x + ox, o.y + oy, kFruitZ, o.rx, o.ry, o.rot, 0.9f, 0, 0, 0};
+			m3d::draw(m3d::MESH_SEED, m3d::PART_WHOLE, pose);
+		}
 	}
 	if (finaleOn && !top) {
 		float s = 1.0f + finaleSwell + sinf(finaleT * 11) * 0.015f;
@@ -2153,14 +2200,16 @@ void Game::drawField(const Blade& blade) const {
 		gfx::sprite(SHEET_SPRITES, sprites_splat0_idx + s.variant, s.x, s.y, s.scale, s.scale, s.rot,
 		            withAlpha(s.color, clampf(s.life, 0, 1) * 0.75f));
 	}
-	// Soft shadows on the board give solid fruit somewhere to float above.
-	// Soft adds a wide, faint outer shadow around the simple one.
+	// Rich drop shadows on the cutting board give fruit a grounded physical presence
+	// in both 3D and 2D visual styles.
 	const int shadows = PORT_SHADOWS;
-	if (solid && shadows > 0 && !sLightFrenzy) {
+	if (shadows > 0 && !sLightFrenzy && gSave.effects != FX_NONE) {
 		for (const auto& o : objs) {
 			if (!o.on || o.y <= -20 || o.kind > OBJ_BOMB) continue;
-			if (shadows >= 2) gfx::sprite(SHEET_SPRITES, sprites_glow_idx, o.x + 10, o.y + 14, 1.6f, 1.6f, 0, rgba(0, 0, 0, 55));
-			gfx::sprite(SHEET_SPRITES, sprites_glow_idx, o.x + 7, o.y + 10, 1.15f, 1.15f, 0, rgba(0, 0, 0, shadows >= 2 ? 95 : 110));
+			const float r = (o.radius > 0 ? o.radius : 20.0f) / 20.0f;
+			const float sx = 7.0f * acrossScale(), sy = 12.0f * kFieldK;
+			if (shadows >= 2) gfx::sprite(SHEET_SPRITES, sprites_glow_idx, o.x + sx * 1.35f, o.y + sy * 1.35f, 1.55f * r, 1.55f * r, 0, rgba(0, 0, 0, 75));
+			gfx::sprite(SHEET_SPRITES, sprites_glow_idx, o.x + sx, o.y + sy, 1.15f * r, 1.15f * r, 0, rgba(0, 0, 0, shadows >= 2 ? 140 : 125));
 		}
 	}
 	// Bloom: Off keeps only the glows that warn or guide; High widens them and adds a faint outer halo.
@@ -2201,7 +2250,7 @@ void Game::drawField(const Blade& blade) const {
 				if (!solid) drawCoin(o, 0, 0);
 				break;
 			case OBJ_SEED:
-				gfx::sprite(SHEET_SPRITES, sprites_drop_idx, o.x, o.y, kSeedSize, kSeedSize, o.rot, kSeedColour);
+				if (!solid) gfx::sprite(SHEET_SPRITES, sprites_drop_idx, o.x, o.y, kSeedSize, kSeedSize, o.rot, kSeedColour);
 				break;
 			default:
 				if (powerSprite(o.kind) >= 0) gfx::sprite(SHEET_SPRITES, powerSprite(o.kind), o.x, o.y, 1, 1, sinf(o.age * 3) * 0.3f);
@@ -2258,7 +2307,7 @@ void Game::drawFieldTop() const {
 			continue;
 		}
 		if (o.kind == OBJ_SEED) {
-			gfx::sprite(SHEET_SPRITES, sprites_drop_idx, o.x + kTopOffsetX, o.y + kTopOffsetY, kSeedSize, kSeedSize, o.rot, kSeedColour);
+			if (!use3D()) gfx::sprite(SHEET_SPRITES, sprites_drop_idx, o.x + kTopOffsetX, o.y + kTopOffsetY, kSeedSize, kSeedSize, o.rot, kSeedColour);
 			continue;
 		}
 		int spr = powerSprite(o.kind);
@@ -2292,7 +2341,7 @@ void Game::drawHud() const {
 	gfx::setDepth(0.9f);
 	gfx::text(modeName(mode), 380, 10, 0.5f, COL_CREAM, ALIGN_RIGHT);
 	if (orchardLike()) {
-		drawOrchardHud(380, 28, 220, 1);
+		drawOrchardHud(380, 24, 225, 1);
 	} else {
 	if (passName) snprintf(buf, sizeof buf, "%s", passName);
 	else snprintf(buf, sizeof buf, mixed ? "MIXER BEST %lu" : (assisted ? "ASSISTED BEST %lu" : "BEST %lu"), (unsigned long)(score > best ? score : best));
@@ -2452,7 +2501,7 @@ void Game::drawHud() const {
 
 	struct Meter { float t, max; int spr; };
 	const Meter meters[] = {{freezeT, 6, sprites_pw_freeze_idx}, {doubleT, 8, sprites_pw_double_idx}, {frenzyT, 5, sprites_pw_frenzy_idx}, {magnetT, 6, sprites_pw_magnet_idx}, {wideT, 8, sprites_pw_wide_idx}, {shield ? 1.0f : 0.0f, 1, sprites_pw_shield_idx}};
-	float mx = PORT_PAUSE_BUTTON ? 44 : 12;  // the pause sign has the corner
+	float mx = PORT_PAUSE_BUTTON ? (mode == MODE_ORCHARD ? 82 : 44) : 12;  // the pause and inventory signs have the corner
 	// Coins made this run, just under the score, ahead of any power-up meters.
 	if (mode != MODE_PRACTICE) {
 		float cp = 1.0f + clampf(coinPulse, 0, 1) * 0.3f;
