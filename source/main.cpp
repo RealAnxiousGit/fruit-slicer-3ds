@@ -15,6 +15,7 @@
 #include "render.h"
 #include "progress.h"
 #include "shop.h"
+#include "streetpass.h"
 #include "update.h"
 #include "sprites.h"
 
@@ -446,10 +447,10 @@ static void drawPlank(float x, float y, float w, float h, bool focused, bool pre
 }
 
 // A line centred on x, made smaller only if it would still be wider than room.
-static void fitText(const char* s, float x, float y, float scale, float room, u32 color) {
+static void fitText(const char* s, float x, float y, float scale, float room, u32 color, Align align = ALIGN_CENTER) {
 	const float w = gfx::textWidth(s, scale);
 	if (w > room) scale *= room / w;
-	gfx::text(s, x, y, scale, color, ALIGN_CENTER);
+	gfx::text(s, x, y, scale, color, align);
 }
 
 // A label too wide for room at this scale, split at the space that leaves the two halves most even. False
@@ -507,6 +508,7 @@ static int fruitFor(const char* label) {
 		{"Journal", MF_KIWI}, {"Stats", MF_PEACH}, {"Practice", MF_APPLE}, {"Guides", MF_PEAR}, {"Let's Play", MF_MELON}, {"Mixer", MF_COCONUT},
 		{"Resume", MF_APPLE}, {"Main Menu", MF_PEAR}, {"Again", MF_PEACH}, {"Modes", MF_KIWI}, {"Keep", MF_LEMON}, {"Try Again", MF_PEACH}, {"Share", MF_PLUM},
 		{"Audio", MF_APPLE}, {"Visuals", MF_PEACH}, {"Visuals and Display", MF_PEACH}, {"Gameplay and Controls", MF_PINEAPPLE}, {"Accessibility", MF_PEAR}, {"Scores and Data", MF_PLUM},
+		{"StreetPass", MF_MELON}, {"Enable", MF_MELON}, {"Not Now", MF_APPLE}, {"Challenge", MF_MELON},
 	};
 	if (!label) return MF_BERRY;
 	for (const auto& m : kMap)
@@ -1080,8 +1082,8 @@ static void drawCut(Screen screen, bool corner = false) {
 
 // ---------------------------------------------------------------- settings rows
 enum RowKind { ROW_SLIDER, ROW_CHOICE, ROW_ACTION, ROW_PAGE };  // a page row opens the section numbered by its lo
-enum SectionId { SID_AUDIO, SID_VISUALS, SID_VISUALS_MORE, SID_GAMEPLAY, SID_GAMEPLAY_MORE, SID_ACCESS, SID_ACCESS_MORE, SID_DATA, SID_DEV, SID_MIXER, SID_PASS };
-enum RowAction { ACT_NONE, ACT_RESET_AUDIO, ACT_RESET_VISUALS, ACT_RESET_GAMEPLAY, ACT_RESET_SCORES, ACT_RESET_ALL, ACT_SPEED_TEST, ACT_APPLY_DISPLAY, ACT_RESET_DISPLAY, ACT_RESET_ACCESS, ACT_RESET_CONTROLS, ACT_DEV_ADD_COINS, ACT_DEV_CLEAR_COINS, ACT_DEV_NEXT_DAY, ACT_CHECK_UPDATES, ACT_PASS_NAME, ACT_PASS_START, ACT_LATENCY };
+enum SectionId { SID_AUDIO, SID_VISUALS, SID_VISUALS_MORE, SID_GAMEPLAY, SID_GAMEPLAY_MORE, SID_ACCESS, SID_ACCESS_MORE, SID_DATA, SID_STREETPASS, SID_DEV, SID_MIXER, SID_PASS };
+enum RowAction { ACT_NONE, ACT_RESET_AUDIO, ACT_RESET_VISUALS, ACT_RESET_GAMEPLAY, ACT_RESET_SCORES, ACT_RESET_ALL, ACT_SPEED_TEST, ACT_APPLY_DISPLAY, ACT_RESET_DISPLAY, ACT_RESET_ACCESS, ACT_RESET_CONTROLS, ACT_DEV_ADD_COINS, ACT_DEV_CLEAR_COINS, ACT_DEV_NEXT_DAY, ACT_CHECK_UPDATES, ACT_PASS_NAME, ACT_PASS_START, ACT_LATENCY, ACT_SP_MSG, ACT_SP_SYNC };
 
 struct Row {
 	RowKind kind;
@@ -1137,6 +1139,12 @@ static char sPassNames[kPassMax][kPassNameLen + 1];
 static u32 sPassScores[kPassMax];
 static int sPassTurn = -1;    // whose run it is, or -1 when nobody is playing Pass and Play
 static int sPassTyping = -1;  // the player whose name is being typed
+static bool sSpTypingMsg = false;  // typing the StreetPass greeting message in Options
+static int sStatsTab = 0;          // 0 Personal, 1 StreetPass (PORT_3DS)
+static int sSpStatSel = 0;         // highlighted inbox player in Stats -> StreetPass
+static int sSpStatScroll = 0;
+static int sSpModal = 0;           // 0 none, 1 startup Enable StreetPass prompt, 2 incoming tag challenge
+static int sSpModalFocus = 0;
 static int sNameFocus = 0;
 static Mode sStartMode = MODE_CLASSIC;  // the mode the next game starts in
 static const Button kPassTurnButtons[] = {kBack, {90, 146, 140, 52, "Ready"}};
@@ -1296,6 +1304,14 @@ static const Row kGameplayMoreRows[] = {
 	{ROW_ACTION, "Reset Gameplay", nullptr, 0, 0, nullptr, 0, 0, ACT_RESET_GAMEPLAY, "Puts these back to their defaults.", "Your scores stay."},
 	{ROW_ACTION, "Reset Controls", nullptr, 0, 0, nullptr, 0, 0, ACT_RESET_CONTROLS, "Puts these back to their defaults.", ""},
 };
+#if PORT_3DS
+static const Row kStreetPassRows[] = {
+	{ROW_CHOICE, "StreetPass", &gSave.streetPassOn, 0, 1, kOffOn, 0, 0, ACT_NONE, "Exchange score cards and greetings", "with nearby Nintendo 3DS systems."},
+	{ROW_ACTION, "Greeting Message", nullptr, 0, 0, nullptr, 0, 0, ACT_SP_MSG, "Pre-set message sent when you tag", "someone. Default: Hello! :)"},
+	{ROW_ACTION, "Update Outbox", nullptr, 0, 0, nullptr, 0, 0, ACT_SP_SYNC, "Refresh your shared StreetPass card", "with your current bests and message."},
+};
+#endif
+
 static const Row kDataRows[] = {
 #if PORT_3DS
 	{ROW_ACTION, "Speed Test", nullptr, 0, 0, nullptr, 0, 0, ACT_SPEED_TEST, "A 90 second test of this console.", "Results go in 3ds/FruitSlicer/bench.txt"},
@@ -1371,6 +1387,9 @@ static const Section kSections[] = {
 	{"Advanced Accessibility", SECTION_ROWS(kAccessMoreRows), SID_ACCESS_MORE, SID_ACCESS, true, "", ""},
 	// Mid-game, the data section stays out of reach: its speed test would replace the paused game.
 	{"Scores and Data", SECTION_ROWS(kDataRows), SID_DATA, -1, false, PORT_DATA_HINT, ""},
+#if PORT_3DS
+	{"StreetPass", SECTION_ROWS(kStreetPassRows), SID_STREETPASS, -1, false, "Share your scores and greeting", "message with nearby 3DS players."},
+#endif
 #ifdef DEV_TOOLS
 	{"Developer", SECTION_ROWS(kDevRows), SID_DEV, -1, false, "Testing tools. Not in", "release builds."},
 #endif
@@ -1400,10 +1419,12 @@ static int optionButtons() {
 	sOptionSection[0] = -1;
 	for (int i = 0; i < n; i++) {
 		Button b;
+		const int rows = (n + 1) / 2;
+		const float y0 = n == 6 ? (46 + (194 - (rows * 48 - 4)) * 0.5f) : 46.0f;
 		if (n <= 3) b = {36, 46 + (194 - (n * 48 - 4)) * 0.5f + 48.0f * i, 248, 44, nullptr};
 		else if (n == 4) b = {i & 1 ? 164.0f : 8.0f, 70 + 74.0f * (i / 2), 148, 60, nullptr};
-		else if (i == n - 1 && (n & 1)) b = {86, 46 + 48.0f * (i / 2), 148, 44, nullptr};
-		else b = {i & 1 ? 164.0f : 8.0f, 46 + 48.0f * (i / 2), 148, 44, nullptr};
+		else if (i == n - 1 && (n & 1)) b = {86, y0 + 48.0f * (i / 2), 148, 44, nullptr};
+		else b = {i & 1 ? 164.0f : 8.0f, y0 + 48.0f * (i / 2), 148, 44, nullptr};
 		b.label = kSections[visible[i]].title;
 		sOptionButtons[i + 1] = b;
 		sOptionSection[i + 1] = visible[i];
@@ -1504,6 +1525,10 @@ static bool rowDisabled(const Row& r) {
 
 static void rowValueText(const Row& r, char* buf, size_t size) {
 	buf[0] = 0;
+	if (r.action == ACT_SP_MSG) {
+		snprintf(buf, size, "%s", gSave.streetPassMsg[0] ? gSave.streetPassMsg : "Hello! :)");
+		return;
+	}
 	if (r.kind == ROW_CHOICE) {
 		if ((r.value == &gSave.menuTrack || r.value == &gSave.gameTrack) && *r.value > kTrackCount) {
 #if PORT_CUSTOM_MUSIC
@@ -1554,6 +1579,10 @@ static void changedSetting(const Row& r) {
 	}
 	if (r.value == &gSave.mixer[MIX_GIANT] && *r.value) gSave.mixer[MIX_TINY] = 0;
 	if (r.value == &gSave.mixer[MIX_TINY] && *r.value) gSave.mixer[MIX_GIANT] = 0;
+	if (r.value == &gSave.streetPassOn) {
+		port::spSetEnabled(gSave.streetPassOn != 0);
+		if (gSave.streetPassOn) streetpass::publishNow();
+	}
 	// Hear a track as soon as it is picked. Leaving the section puts the right one back.
 	if (r.value == &gSave.menuTrack) audio::preview(MUSIC_MENU);
 	if (r.value == &gSave.gameTrack) audio::preview(MUSIC_PLAY);
@@ -1610,8 +1639,23 @@ static void rowAction(int index, const Row& r) {
 	if (r.action == ACT_PASS_NAME) {
 		audio::click();
 		sPassTyping = passRowPlayer(r);
+		sSpTypingMsg = false;
 		sNameFocus = 0;
 		port::textStart(sPassNames[sPassTyping], kPassNameLen);
+		return;
+	}
+	if (r.action == ACT_SP_MSG) {
+		audio::click();
+		sPassTyping = -1;
+		sSpTypingMsg = true;
+		sNameFocus = 0;
+		port::textStart(gSave.streetPassMsg, streetpass::kMsgMax);
+		return;
+	}
+	if (r.action == ACT_SP_SYNC) {
+		audio::click();
+		streetpass::publishNow();
+		audio::play(SFX_GOLD, 0.7f);
 		return;
 	}
 	if (r.action == ACT_PASS_START) {
@@ -2269,9 +2313,9 @@ static bool updateModePages(Input& keys, bool wasTouching) {
 
 static const Button kNameButtons[] = {{40, 150, 110, 44, "OK"}, {170, 150, 110, 44, "Cancel"}};
 
-// Typing a Pass and Play name, over the setup list.
+// Typing a Pass and Play name or StreetPass greeting over the list.
 static void updateNameEntry(const Input& in, bool wasTouching) {
-	char typed[32];
+	char typed[48];
 	int result = port::textPoll(typed, sizeof typed);
 	if (result == 0) {
 		int t = touchButtons(kNameButtons, 2, in, wasTouching, sNameFocus);
@@ -2282,13 +2326,23 @@ static void updateNameEntry(const Input& in, bool wasTouching) {
 		audio::click();
 		result = t == 0 ? 1 : -1;
 	}
-	if (result > 0) passSetName(sPassTyping, typed);
+	if (result > 0) {
+		if (sSpTypingMsg) {
+			streetpass::cleanMessage(typed, gSave.streetPassMsg, sizeof gSave.streetPassMsg, "Hello! :)");
+			sDirty = true;
+			saveWrite();
+			streetpass::publishNow();
+		} else if (sPassTyping >= 0) {
+			passSetName(sPassTyping, typed);
+		}
+	}
 	port::textStop();
 	sPassTyping = -1;
+	sSpTypingMsg = false;
 }
 
 static void updateSection(const Input& in, bool wasTouching) {
-	if (sPassTyping >= 0) {
+	if (sPassTyping >= 0 || sSpTypingMsg) {
 		updateNameEntry(in, wasTouching);
 		return;
 	}
@@ -3207,11 +3261,63 @@ static int statsRoomsConquered() {
 	return r < 0 ? 0 : (r > kOrchardRooms ? kOrchardRooms : r);
 }
 
-// Stats: the long view of everything played.
+static const Button kStatsTabs[] = {{16, 42, 138, 20, "Personal"}, {166, 42, 138, 20, "StreetPass"}};
+static const Button kSpChallengeBtn = {90, 200, 140, 34, "Challenge"};
+
+static void launchSpChallenge(int idx) {
+	if (idx < 0 || idx >= streetpass::count()) return;
+	const streetpass::Entry& e = streetpass::entry(idx);
+	sSpModal = 0;
+	sPassTurn = -1;
+	sOptionsFromPause = false;
+	const int tagIdx = idx;
+	const u32 target = e.pkt.classicBest;
+	char rival[16];
+	snprintf(rival, sizeof rival, "%s", e.pkt.name);
+	sStartMode = MODE_CLASSIC;
+	sScreen = SCREEN_GAME;
+	sGame.startStreetPassChallenge(tagIdx, rival, target);
+}
+
+// Stats: the long view of everything played (and on 3DS, a StreetPass inbox tab).
 static void drawStats() {
 	drawHeader("Stats");
-	drawBackArrow(true, sPressed == 0);
-	gfx::sign(sprites_plank_idx, 8, 48, 304, 186, COL_PLANK);
+	drawBackArrow(sFocus[SCREEN_STATS] == 0, sPressed == 0);
+#if PORT_3DS
+	for (int t = 0; t < 2; t++) {
+		drawPlank(kStatsTabs[t].x, kStatsTabs[t].y, kStatsTabs[t].w, kStatsTabs[t].h, sStatsTab == t, false);
+		gfx::text(kStatsTabs[t].label, kStatsTabs[t].x + kStatsTabs[t].w * 0.5f, kStatsTabs[t].y + 3, 0.34f, sStatsTab == t ? COL_ACCENT : COL_CREAM, ALIGN_CENTER);
+	}
+	if (sStatsTab == 1) {
+		const int cnt = streetpass::count();
+		if (cnt == 0) {
+			gfx::sign(sprites_plank_idx, 8, 68, 304, 166, COL_PLANK);
+			gfx::text("No StreetPass tags yet.", 160, 128, 0.44f, COL_CREAM, ALIGN_CENTER);
+			fitText(gSave.streetPassOn ? "Keep 3DS in Sleep Mode or use NetPass." : "Turn StreetPass On in Options to exchange.", 160, 154, 0.32f, 280, COL_DIM);
+			return;
+		}
+		if (sSpStatSel >= cnt) sSpStatSel = cnt - 1;
+		if (sSpStatSel < 0) sSpStatSel = 0;
+		if (sSpStatScroll > sSpStatSel) sSpStatScroll = sSpStatSel;
+		if (sSpStatSel >= sSpStatScroll + 4) sSpStatScroll = sSpStatSel - 3;
+		char line[48];
+		for (int row = 0; row < 4 && sSpStatScroll + row < cnt; row++) {
+			const int idx = sSpStatScroll + row;
+			const streetpass::Entry& e = streetpass::entry(idx);
+			const float y = 68.0f + row * 32.0f;
+			drawPlank(8, y, 304, 29, idx == sSpStatSel, false);
+			snprintf(line, sizeof line, "%s%s", e.pkt.name, e.won ? "  *WON" : "");
+			fitText(line, 18, y + 4, 0.34f, 180, e.won ? rgba(160, 240, 170) : COL_CREAM, ALIGN_LEFT);
+			snprintf(line, sizeof line, "CLASSIC %lu", (unsigned long)e.pkt.classicBest);
+			gfx::text(line, 302, y + 4, 0.31f, COL_ACCENT, ALIGN_RIGHT);
+			fitText(e.pkt.msg, 18, y + 17, 0.27f, 280, COL_DIM, ALIGN_LEFT);
+		}
+		drawSign(kSpChallengeBtn, "Challenge", sFocus[SCREEN_STATS] == 1, sPressed == 1, 0.44f, -1, MF_MELON);
+		return;
+	}
+#endif
+	const float boxY = PORT_3DS ? 68.0f : 48.0f, boxH = PORT_3DS ? 166.0f : 186.0f;
+	gfx::sign(sprites_plank_idx, 8, boxY, 304, boxH, COL_PLANK);
 	constexpr int kRows = 12;
 	char value[kRows][32];
 	snprintf(value[0], 32, "%lu", (unsigned long)gSave.totalFruit);
@@ -3239,15 +3345,18 @@ static void drawStats() {
 	else snprintf(value[11], 32, "Not cleared yet");
 	static const char* const kNames[kRows] = {"FRUIT SLICED", "COINS EARNED", "TIME PLAYED", "FAVOURITE MODE", "LONGEST COMBO", "DAILY STREAK",
 	                                          "HIGHEST ROOM CONQUERED", "ENDLESS BEST ROOM", "RUNS", "BEST LEVEL", "BOSS WINS", "FASTEST BOSS RUSH"};
+	const float rowStep = PORT_3DS ? 12.0f : 13.5f;
+	const float headGap = PORT_3DS ? 10.0f : 11.0f;
+	const float yBase = PORT_3DS ? 71.0f : 52.0f;
 	for (int i = 0; i < kRows; i++) {
 		// The Orchard Blast rows sit under their own heading.
-		const float y = 52 + i * 13.5f + (i >= 6 ? 11 : 0);
-		if (i == 6) gfx::text("ORCHARD BLAST", 160, y - 12, 0.34f, COL_ACCENT, ALIGN_CENTER);
-		float sv = 0.36f, w = gfx::textWidth(value[i], sv);
+		const float y = yBase + i * rowStep + (i >= 6 ? headGap : 0);
+		if (i == 6) gfx::text("ORCHARD BLAST", 160, y - headGap - 1, 0.32f, COL_ACCENT, ALIGN_CENTER);
+		float sv = PORT_3DS ? 0.33f : 0.36f, w = gfx::textWidth(value[i], sv);
 		if (w > 130) sv *= 130 / w;
 		const float valW = gfx::textWidth(value[i], sv);
 		const float nameMax = 296 - valW - 24 - 8;
-		float nl = 0.33f, nw = gfx::textWidth(kNames[i], nl);
+		float nl = PORT_3DS ? 0.30f : 0.33f, nw = gfx::textWidth(kNames[i], nl);
 		if (nw > nameMax) nl *= nameMax / nw;
 		gfx::text(kNames[i], 24, y + 1, nl, COL_DIM);
 		gfx::text(value[i], 296, y, sv, COL_CREAM, ALIGN_RIGHT);
@@ -3255,11 +3364,35 @@ static void drawStats() {
 }
 
 static void drawStatsTop() {
-	char buf[40];
+	char buf[64];
 	gfx::setDepth(1.0f);
 	gfx::sprite(SHEET_LOGO, logo_logo_idx, 200, 44, 0.52f, 0.52f);
 	topPanel(30, 80, 340, 150);
 	gfx::setDepth(0.7f);
+#if PORT_3DS
+	if (sStatsTab == 1) {
+		if (streetpass::count() == 0) {
+			gfx::text("STREETPASS CARD", 200, 88, 0.44f, COL_ACCENT, ALIGN_CENTER);
+			fitText(gSave.streetPassMsg[0] ? gSave.streetPassMsg : "Hello! :)", 200, 118, 0.42f, 300, COL_CREAM);
+			snprintf(buf, sizeof buf, "CLASSIC BEST %lu   WINS %u", (unsigned long)gSave.best[MODE_CLASSIC], (unsigned)gSave.spChallengesWon);
+			gfx::text(buf, 200, 152, 0.35f, COL_DIM, ALIGN_CENTER);
+			gfx::text("L / R TO SWITCH TABS", 200, 206, 0.30f, COL_DIM, ALIGN_CENTER);
+			return;
+		}
+		const streetpass::Entry& e = streetpass::entry(sSpStatSel);
+		gfx::text(e.pkt.name, 200, 88, 0.48f, COL_ACCENT, ALIGN_CENTER);
+		fitText(e.pkt.msg, 200, 114, 0.40f, 310, COL_CREAM);
+		snprintf(buf, sizeof buf, "CLASSIC %lu   ENDLESS ROOM %u", (unsigned long)e.pkt.classicBest, (unsigned)e.pkt.endlessBestRoom);
+		gfx::text(buf, 200, 144, 0.34f, COL_CREAM, ALIGN_CENTER);
+		snprintf(buf, sizeof buf, "FRUIT SLICED %lu   BOSSES %u", (unsigned long)e.pkt.totalFruit, (unsigned)e.pkt.bossesBeaten);
+		gfx::text(buf, 200, 164, 0.34f, COL_DIM, ALIGN_CENTER);
+		if (e.won) snprintf(buf, sizeof buf, "CHALLENGE WON! BEST %lu", (unsigned long)e.bestAttempt);
+		else if (e.challenged) snprintf(buf, sizeof buf, "YOUR BEST ATTEMPT: %lu", (unsigned long)e.bestAttempt);
+		else snprintf(buf, sizeof buf, "PRESS A OR CHALLENGE TO PLAY");
+		gfx::text(buf, 200, 188, 0.34f, e.won ? rgba(160, 240, 170) : COL_ACCENT, ALIGN_CENTER);
+		return;
+	}
+#endif
 	gfx::text("BEST SCORES", 200, 86, 0.42f, COL_ACCENT, ALIGN_CENTER);
 	// The modes on Pick a Game, in two columns: all 14 fit at seven to a column.
 	constexpr int kPerColumn = (MODE_COUNT + 1) / 2;
@@ -4596,6 +4729,14 @@ static void drawTopContent(Screen screen) {
 				gfx::text(buf, 200, 20, 0.5f, COL_CREAM, ALIGN_CENTER);
 				snprintf(buf, sizeof buf, "BEST COMBO %lu", (unsigned long)gSave.bestCombo);
 				gfx::text(buf, 200, 50, 0.5f, COL_CREAM, ALIGN_CENTER);
+			} else if (kSections[sSection].id == SID_STREETPASS) {
+				topPanel(48, 10, 304, 78);
+				gfx::setDepth(0.7f);
+				snprintf(buf, sizeof buf, "STREETPASS: %s", gSave.streetPassOn ? "ON" : "OFF");
+				gfx::text(buf, 200, 18, 0.42f, gSave.streetPassOn ? rgba(150, 240, 170) : COL_DIM, ALIGN_CENTER);
+				fitText(gSave.streetPassMsg[0] ? gSave.streetPassMsg : "Hello! :)", 200, 41, 0.42f, 286, COL_ACCENT);
+				snprintf(buf, sizeof buf, "CLASSIC %lu   TAGS %d   WINS %u", (unsigned long)gSave.best[MODE_CLASSIC], streetpass::count(), (unsigned)gSave.spChallengesWon);
+				gfx::text(buf, 200, 64, 0.32f, COL_CREAM, ALIGN_CENTER);
 			} else {
 				// No preview for this row: the logo fills the space above the hint, as on the Options screen.
 				gfx::setDepth(1.0f);
@@ -4782,6 +4923,9 @@ static void drawTopContent(Screen screen) {
 			gfx::setDepth(1.0f);
 			if (sPassTurn >= 0) {
 				gfx::text(sPassNames[sPassTurn], 200, 78, 0.42f, passColor(sPassTurn), ALIGN_CENTER);
+			} else if (sGame.spChallenge) {
+				snprintf(buf, sizeof buf, sGame.spWon ? "BEAT %s! +50 COINS" : "VS %s (TARGET %lu)", sGame.spRival, (unsigned long)sGame.spTarget);
+				gfx::text(buf, 200, 78, 0.38f, sGame.spWon ? rgba(160, 240, 170) : COL_CREAM, ALIGN_CENTER);
 			} else if (sGame.newBest) {
 				gfx::text("NEW BEST!", 200, 78, 0.40f + sinf(sTime * 6) * 0.02f, COL_CREAM, ALIGN_CENTER);
 			} else {
@@ -5083,7 +5227,7 @@ static void drawRows() {
 		drawPlank(8, y + 1, 304, kRowH - 3, focus == i, pressed);
 		float ty = y + kRowH * 0.5f - 8;
 		u32 labelColor = rowDisabled(r) ? COL_DIM : COL_CREAM;
-		if (r.kind == ROW_ACTION) {
+		if (r.kind == ROW_ACTION && r.action != ACT_SP_MSG) {
 			const char* label = sArmed == i ? PORT_CONFIRM_TEXT : r.label;
 			const int player = passRowPlayer(r);
 			const u32 color = rowDisabled(r) ? COL_DIM : (player >= 0 ? passColor(player) : (sArmed == i ? COL_ACCENT : COL_CREAM));
@@ -5101,6 +5245,13 @@ static void drawRows() {
 			continue;
 		}
 		rowValueText(r, buf, sizeof buf);
+		if (r.kind == ROW_ACTION) {
+			float vs = 0.34f;
+			float w = gfx::textWidth(buf, vs);
+			if (w > 142) vs *= 142 / w;
+			gfx::text(buf, 302, ty + (0.34f - vs) * 10, vs, COL_ACCENT, ALIGN_RIGHT);
+			continue;
+		}
 		if (r.kind == ROW_SLIDER) {
 			float cy = y + kRowH * 0.5f - 1;
 			float t = (*r.value - r.lo) / (float)(r.hi - r.lo);
@@ -5140,6 +5291,29 @@ static void drawBottomContent(Screen screen) {
 #if !PORT_3DS
 			for (int i = kTitleSigns; i < kTitleCount; i++) drawLinkIcon(kTitleButtons[i], i - kTitleSigns, f == i);
 #endif
+			if (sSpModal > 0 && screen == sScreen) {
+				static const Button kSpModalBtns[] = {{36, 134, 108, 78, nullptr}, {176, 134, 108, 78, nullptr}};
+				gfx::rect(0, 0, 320, 240, rgba(14, 10, 8, 215));
+				gfx::sign(sprites_plank_idx, 18, 22, 284, 98, COL_PLANK);
+				if (sSpModal == 1) {
+					gfx::text("Enable StreetPass?", 160, 32, 0.48f, COL_ACCENT, ALIGN_CENTER);
+					fitText("Swap score cards & greetings", 160, 62, 0.34f, 260, COL_CREAM);
+					fitText("with nearby Nintendo 3DS players.", 160, 82, 0.33f, 260, COL_DIM);
+					drawSign(kSpModalBtns[0], "Enable", sSpModalFocus == 0, sPressed == 0, 0.46f, -1, MF_MELON);
+					drawSign(kSpModalBtns[1], "Not Now", sSpModalFocus == 1, sPressed == 1, 0.46f, -1, MF_APPLE);
+				} else {
+					const int pi = streetpass::pendingIndex();
+					const streetpass::Entry& pe = streetpass::entry(pi >= 0 ? pi : 0);
+					gfx::text("New StreetPass!", 160, 30, 0.46f, COL_ACCENT, ALIGN_CENTER);
+					char hdr[48];
+					snprintf(hdr, sizeof hdr, "%s  Classic %lu", pe.pkt.name, (unsigned long)pe.pkt.classicBest);
+					fitText(hdr, 160, 56, 0.35f, 264, COL_CREAM);
+					fitText(pe.pkt.msg, 160, 74, 0.32f, 264, rgba(170, 230, 255));
+					fitText("Challenge their score?", 160, 94, 0.32f, 264, COL_DIM);
+					drawSign(kSpModalBtns[0], "Challenge", sSpModalFocus == 0, sPressed == 0, 0.44f, -1, MF_MELON);
+					drawSign(kSpModalBtns[1], "Not Now", sSpModalFocus == 1, sPressed == 1, 0.44f, -1, MF_APPLE);
+				}
+			}
 			break;
 		}
 		case SCREEN_MODES: {
@@ -5180,14 +5354,14 @@ static void drawBottomContent(Screen screen) {
 			gfx::rect(0, 0, 320, 44, gfx::themeBar());
 			drawHeader(kSections[sSection].title);
 			drawBackArrow(sFocus[SCREEN_SECTION] < 0, sPressed == 0);
-			if (sPassTyping >= 0 && screen == sScreen) {
-				char typed[36];
+			if ((sPassTyping >= 0 || sSpTypingMsg) && screen == sScreen) {
+				char typed[48];
 				port::textPoll(typed, sizeof typed - 1);
 				strcat(typed, "_");
 				gfx::rect(0, 0, 320, 240, rgba(30, 18, 10, 170));
 				gfx::sign(sprites_plank_idx, 20, 60, 280, 146, COL_PLANK);
-				gfx::text("Type a name", 160, 72, 0.5f, COL_ACCENT, ALIGN_CENTER);
-				gfx::text(typed, 160, 108, 0.6f, passColor(sPassTyping), ALIGN_CENTER);
+				gfx::text(sSpTypingMsg ? "StreetPass greeting" : "Type a name", 160, 72, 0.48f, COL_ACCENT, ALIGN_CENTER);
+				fitText(typed, 160, 108, sSpTypingMsg ? 0.44f : 0.6f, 256, sSpTypingMsg ? COL_CREAM : passColor(sPassTyping));
 				for (int i = 0; i < 2; i++) drawSign(kNameButtons[i], kNameButtons[i].label, sNameFocus == i, sPressed == i, 0.5f);
 			}
 #if PORT_HAS_DISPLAY
@@ -5475,6 +5649,7 @@ static void updateFrame(const Input& in, bool wasTouching) {
 	}
 	updateTransitions();
 	updateWatch();
+	streetpass::update(kDt);
 	if (sCut.on) {
 		sCut.t += kDt;
 		if (sCut.t > kCutLife) sCut.on = false;
@@ -5495,6 +5670,43 @@ static void updateFrame(const Input& in, bool wasTouching) {
 		case SCREEN_TITLE: {
 			if (blocked) break;
 			if (sQuitT >= 0) break;  // the game is closing
+#if PORT_3DS
+			if (sSpModal == 0 && !sSliding && sFade == 0 && !update::wantsSign()) {
+				if (!gSave.streetPassPrompted) {
+					sSpModal = 1;
+					sSpModalFocus = 0;
+				} else if (streetpass::hasPending()) {
+					sSpModal = 2;
+					sSpModalFocus = 0;
+				}
+			}
+#endif
+			if (sSpModal > 0) {
+				static const Button kSpModalBtns[] = {{36, 134, 108, 78, nullptr}, {176, 134, 108, 78, nullptr}};
+				if (in.repeat & (KEY_LEFT | KEY_RIGHT)) sSpModalFocus ^= 1;
+				int pick = touchButtons(kSpModalBtns, 2, in, wasTouching, sSpModalFocus);
+				if (pick < 0 && (in.down & KEY_A)) pick = sSpModalFocus;
+				if (pick < 0 && (in.down & KEY_B)) pick = 1;
+				if (pick >= 0) {
+					audio::click();
+					if (sSpModal == 1) {
+						gSave.streetPassPrompted = 1;
+						gSave.streetPassOn = pick == 0 ? 1 : 0;
+						port::spSetEnabled(gSave.streetPassOn != 0);
+						if (gSave.streetPassOn) streetpass::publishNow();
+						saveWrite();
+						sSpModal = 0;
+					} else {
+						const int pi = streetpass::pendingIndex();
+						if (pick == 0 && pi >= 0) launchSpChallenge(pi);
+						else {
+							streetpass::dismissPending();
+							sSpModal = 0;
+						}
+					}
+				}
+				break;
+			}
 			if (holdQuit(in, sFocus[SCREEN_TITLE])) {
 				startQuit();
 				break;
@@ -5785,6 +5997,55 @@ static void updateFrame(const Input& in, bool wasTouching) {
 		}
 		case SCREEN_STATS: {
 			if (blocked) break;
+#if PORT_3DS
+			if (in.down & (KEY_L | KEY_R)) {
+				audio::click(0.6f);
+				sStatsTab ^= 1;
+				sFocus[sScreen] = 0;
+			}
+			if (in.touching && !wasTouching) {
+				for (int t = 0; t < 2; t++) {
+					if (hit(kStatsTabs[t], in.tx, in.ty)) {
+						audio::click(0.6f);
+						sStatsTab = t;
+						sFocus[sScreen] = 0;
+					}
+				}
+			}
+			if (sStatsTab == 1 && streetpass::count() > 0) {
+				const int cnt = streetpass::count();
+				if (in.repeat & KEY_DOWN) {
+					sSpStatSel = (sSpStatSel + 1) % cnt;
+					audio::click(0.5f);
+				}
+				if (in.repeat & KEY_UP) {
+					sSpStatSel = sSpStatSel > 0 ? sSpStatSel - 1 : cnt - 1;
+					audio::click(0.5f);
+				}
+				if (in.touching && !wasTouching) {
+					for (int row = 0; row < 4 && sSpStatScroll + row < cnt; row++) {
+						const float y = 68.0f + row * 32.0f;
+						if (in.tx >= 8 && in.tx < 312 && in.ty >= y && in.ty < y + 29) {
+							sSpStatSel = sSpStatScroll + row;
+							audio::click(0.5f);
+						}
+					}
+				}
+				Button spBtns[2] = {kBack, kSpChallengeBtn};
+				int t = menuInput(spBtns, 2, sScreen, in, wasTouching);
+				if (in.down & KEY_A && sFocus[sScreen] != 0) t = 1;
+				if (t == 1) {
+					audio::click();
+					launchSpChallenge(sSpStatSel);
+					break;
+				}
+				if (t == 0 || (in.down & KEY_B)) {
+					if (t != 0) audio::click();
+					goTo(SCREEN_TITLE, -1);
+				}
+				break;
+			}
+#endif
 			int& f = sFocus[sScreen];
 			f = 0;
 			int t = menuInput(kOnlyBack, 1, sScreen, in, wasTouching);
@@ -6172,6 +6433,10 @@ bool app::init() {
 #if defined(AUTOTEST) && !defined(TEST_PRACTICE) && !defined(LAB)  // the Lab plays the lessons too
 	gSave.practiceDone = 1;
 #endif
+#if defined(AUTOTEST)
+	gSave.streetPassPrompted = 1;  // avoid blocking automated test menus unless explicitly tested
+#endif
+	streetpass::init();
 #ifdef TEST_FX
 	gSave.effects = TEST_FX;
 #endif
@@ -6414,6 +6679,7 @@ bool app::frame(Input& in, int steps) {
 void app::shutdown() {
 	if (sScreen == SCREEN_GAME || sScreen == SCREEN_PAUSE || sOptionsFromPause) sGame.commitScore();
 	if (sDirty) saveWrite();
+	streetpass::shutdown();
 	jobs::shutdown();
 	m3d::shutdown();
 	audio::shutdown();

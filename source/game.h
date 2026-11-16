@@ -199,6 +199,12 @@ struct Game {
 #endif
 
 	void start(Mode m);
+	void startStreetPassChallenge(int tagIdx, const char* rivalName, u32 targetScore);
+	bool spChallenge;
+	bool spWon;
+	int spTagIdx;
+	u32 spTarget;
+	char spRival[16];
 	void commitScore();
 	void finishRun();   // Zen has no end of its own: the pause menu finishes the run
 #ifdef AUTOTEST

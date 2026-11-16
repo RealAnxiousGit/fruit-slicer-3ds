@@ -13,6 +13,7 @@
 #include "sprites.h"
 #include "boom.h"
 #include "fruitids.h"
+#include "streetpass.h"
 
 Rng gRng;
 Rng gSpawn;
@@ -297,6 +298,16 @@ void Game::start(Mode m) {
 #endif
 	if (m == MODE_BEAT) beatStart();  // plays its own track, from the first beat
 	else audio::music(m == MODE_ZEN ? MUSIC_ZEN : MUSIC_PLAY);
+}
+
+void Game::startStreetPassChallenge(int tagIdx, const char* rivalName, u32 targetScore) {
+	start(MODE_CLASSIC);
+	spChallenge = true;
+	spWon = false;
+	spTagIdx = tagIdx;
+	spTarget = targetScore;
+	snprintf(spRival, sizeof spRival, "%s", rivalName && rivalName[0] ? rivalName : "RIVAL");
+	setCallout("STREETPASS CHALLENGE!", rgba(150, 240, 170), 0.66f);
 }
 
 int Game::diffIndex() const { return mode == MODE_DAILY ? DIFF_NORMAL : gSave.difficulty % DIFF_COUNT; }
@@ -997,12 +1008,23 @@ void Game::commitScore() {
 			if (orc.level > gSave.orchardBestLevel) gSave.orchardBestLevel = (u16)orc.level;
 		}
 	}
+	if (spChallenge) {
+		const bool won = spTarget > 0 ? score >= spTarget : score > 0;
+		const bool newlyWon = won && !streetpass::entry(spTagIdx).won;
+		streetpass::markAttempt(spTagIdx, score, won);
+		if (newlyWon) {
+			coinsBonus += 50;
+			spWon = true;
+			if (gSave.spChallengesWon < 0xFFFFu) gSave.spChallengesWon++;
+		}
+	}
 	coinsEarned = runCoins() + (u32)coinsBonus + journalCoins + dailyCoins;
 	u32 earned = coinsEarned;
 	gSave.coins = gSave.coins + earned < gSave.coins ? 0xFFFFFFFFu : gSave.coins + earned;
 	gSave.coinsLifetime += earned;
 	if ((u32)bestCombo > gSave.bestCombo) gSave.bestCombo = bestCombo;
 	saveWrite();
+	if (gSave.streetPassOn) streetpass::publishNow();
 }
 
 void Game::addStrike(float x) {
@@ -2361,9 +2383,10 @@ void Game::drawHud() const {
 	if (orchardLike()) {
 		drawOrchardHud(380, 44, 240, 1);
 	} else {
-		if (passName) snprintf(buf, sizeof buf, "%s", passName);
+		if (spChallenge) snprintf(buf, sizeof buf, "BEAT %s: %lu", spRival, (unsigned long)spTarget);
+		else if (passName) snprintf(buf, sizeof buf, "%s", passName);
 		else snprintf(buf, sizeof buf, mixed ? "MIXER BEST %lu" : (assisted ? "ASSISTED BEST %lu" : "BEST %lu"), (unsigned long)(score > best ? score : best));
-		gfx::text(buf, 380, 31, 0.40f, COL_DIM, ALIGN_RIGHT);
+		gfx::text(buf, 380, 31, 0.40f, spChallenge ? rgba(160, 240, 170) : COL_DIM, ALIGN_RIGHT);
 	}
 
 	if (maxStrikes > 0) {

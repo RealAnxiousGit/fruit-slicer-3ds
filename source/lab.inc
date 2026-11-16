@@ -486,7 +486,7 @@ static void labMenus() {
 				sOptionsFromPause = pauseWas;
 				labCheck(grid2x2, "Pause Options uses a centred 2x2 grid without Scores and Data");
 			}
-			labCheck(optionButtons() == 7, "Options shows five signs, plus Developer in a test build");
+			labCheck(optionButtons() == (PORT_3DS ? 8 : 7), "Options shows every section sign cleanly, plus Developer in a test build");
 			botTap(optionButtonFor(SID_VISUALS));
 			return;
 		case 21:
@@ -685,6 +685,64 @@ static void labHoldQuit(Input& in, bool first) {
 
 // After the last mode. Windows, Linux and Android: hold Escape briefly (nothing happens), then for 3 seconds
 // (the bomb goes off and the game closes). The 3DS just ends.
+static void labStreetPass() {
+	char savedMsg[28];
+	snprintf(savedMsg, sizeof savedMsg, "%s", gSave.streetPassMsg);
+	const u16 winsWas = gSave.spChallengesWon;
+	const u64 idWas = gSave.leaderboardId;
+	const u8 onWas = gSave.streetPassOn;
+	const u32 coinsWas = gSave.coins, classicWas = gSave.best[MODE_CLASSIC];
+	streetpass::resetInbox();
+
+	char cleaned[28];
+	streetpass::cleanMessage("  Hello! :)  ", cleaned, sizeof cleaned);
+	labCheck(strcmp(cleaned, "Hello! :)") == 0, "StreetPass greeting preserves Hello! :) cleanly");
+	streetpass::cleanMessage("@@@", cleaned, sizeof cleaned);
+	labCheck(strcmp(cleaned, "Hello! :)") == 0, "Empty StreetPass greeting falls back to Hello! :)");
+	labCheck(fruitFor("StreetPass") == MF_MELON, "Options StreetPass button uses a green Melon");
+#if PORT_3DS
+	labCheck(optionButtonFor(SID_STREETPASS).label != nullptr && strcmp(optionButtonFor(SID_STREETPASS).label, "StreetPass") == 0,
+	         "StreetPass has its own Options section on 3DS");
+#endif
+
+	gSave.leaderboardId = 0x1122334455667788ull;
+	snprintf(gSave.streetPassMsg, sizeof gSave.streetPassMsg, "Hello! :)");
+	u8 pkt[sizeof(streetpass::Packet)];
+	const int len = streetpass::pack("Rival", pkt, sizeof pkt);
+	streetpass::Packet out = {};
+	labCheck(len == (int)sizeof(streetpass::Packet) && streetpass::unpack(pkt, len, &out) &&
+	         strcmp(out.name, "Rival") == 0 && strcmp(out.msg, "Hello! :)") == 0,
+	         "StreetPass packet packs and unpacks player card with greeting intact");
+	pkt[20] ^= 0x55;
+	labCheck(!streetpass::unpack(pkt, len, &out), "Corrupted StreetPass packet is rejected by CRC");
+
+	// Foreign card arrives: pending alert fires, challenge win pays +50 coins and marks entry won.
+	pkt[20] ^= 0x55;  // restore valid CRC packet from Rival (senderId 0x1122334455667788)
+	gSave.leaderboardId = 0x9988776655443322ull;
+	const u64 idBefore = gSave.leaderboardId;
+	(void)idBefore;
+	gSave.best[MODE_CLASSIC] = 25;
+	u8 foreignPkt[sizeof(streetpass::Packet)];
+	gSave.leaderboardId = 0x1122334455667788ull;
+	const int flen = streetpass::pack("MiiPal", foreignPkt, sizeof foreignPkt);
+	gSave.leaderboardId = 0x9988776655443322ull;
+	const int ing = streetpass::ingestPacket(foreignPkt, flen);
+	labCheck(ing == 0 && streetpass::count() == 1 && streetpass::hasPending(), "Incoming StreetPass card is stored and flagged pending");
+	sGame.startStreetPassChallenge(0, streetpass::entry(0).pkt.name, streetpass::entry(0).pkt.classicBest);
+	sGame.score = 30;
+	sGame.commitScore();
+	labCheck(sGame.spWon && gSave.spChallengesWon == winsWas + 1 && streetpass::entry(0).won && !streetpass::hasPending(),
+	         "Beating a StreetPass challenge score awards +50 coins and marks it won");
+
+	streetpass::resetInbox();
+	snprintf(gSave.streetPassMsg, sizeof gSave.streetPassMsg, "%s", savedMsg);
+	gSave.spChallengesWon = winsWas;
+	gSave.leaderboardId = idWas;
+	gSave.streetPassOn = onWas;
+	gSave.coins = coinsWas;
+	gSave.best[MODE_CLASSIC] = classicWas;
+}
+
 static void labFinish(Input& in) {
 	static int step = 0, held = 0;
 #ifdef LAB_QUICK
@@ -694,6 +752,7 @@ static void labFinish(Input& in) {
 	if (step == 0) {
 		step = 1;
 		labInventory();
+		labStreetPass();
 		sGame.labOrchard(labCheck);
 		sGame.labModes12(labCheck);
 		labSummary();
@@ -702,6 +761,7 @@ static void labFinish(Input& in) {
 	return;
 #endif
 	if (step == 0) {
+		labStreetPass();
 		labCheck(sLabBlastSeen && !sLabBlastMissed, "every bomb hit sets off a blast");
 		labCheck(gfx::fontImageCount() == gfx::fontLetterCount() * 2, "the font table matches the font sheet");
 		{

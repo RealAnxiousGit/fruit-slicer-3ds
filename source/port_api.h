@@ -48,4 +48,11 @@ void openLink(const char* url);
 // Android hands it to the share sheet. shareCardPoll: 0 still waiting, 1 done, -1 failed, with a line to show.
 void shareCard(float x, float y, float w, float h);
 int shareCardPoll(const char** note);
+
+// 3DS StreetPass mailbox service hooks (stubbed out on Universal ports).
+bool spSupported();
+void spUserName(char* out, size_t size);
+void spSetEnabled(bool on);
+bool spPublish(const void* data, int size);
+bool spPopInbox(void* outBuf, int cap, int* outLen);
 }  // namespace port
