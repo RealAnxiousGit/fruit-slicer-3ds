@@ -2127,27 +2127,27 @@ static void drawShop() {
 		const bool locked = shopLocked(sShopTab, k);
 		// A name too long for one line goes on two, so it stays as big as its neighbours. The icon moves up for it.
 		char top[32], bottom[32];
-		const bool two = splitLine(locked ? "Boss Track" : it.name, 0.3f, b.w - 10, top, bottom, sizeof top);
-		if (locked) drawPadlock(b.x + b.w / 2, b.y + (two ? 13 : 17), two ? 0.72f : 0.8f);
-		else drawShopIcon(sShopTab, k, b.x + b.w / 2, b.y + (two ? 11 : 15));
+		const bool two = splitLine(locked ? "Boss Track" : it.name, 0.32f, b.w - 8, top, bottom, sizeof top);
+		if (locked) drawPadlock(b.x + b.w / 2, b.y + (two ? 12 : 16), two ? 0.72f : 0.8f);
+		else drawShopIcon(sShopTab, k, b.x + b.w / 2, b.y + (two ? 10 : 14));
 		if (two) {
-			fitText(top, b.x + b.w / 2, b.y + 19.5f, 0.26f, b.w - 8, COL_CREAM);
-			fitText(bottom, b.x + b.w / 2, b.y + 28.5f, 0.26f, b.w - 8, COL_CREAM);
+			fitText(top, b.x + b.w / 2, b.y + 18.0f, 0.29f, b.w - 8, COL_CREAM);
+			fitText(bottom, b.x + b.w / 2, b.y + 28.0f, 0.29f, b.w - 8, COL_CREAM);
 		} else {
-			fitText(locked ? "Boss Track" : it.name, b.x + b.w / 2, b.y + 26, 0.3f, b.w - 10, COL_CREAM);
+			fitText(locked ? "Boss Track" : it.name, b.x + b.w / 2, b.y + 25.0f, 0.33f, b.w - 8, COL_CREAM);
 		}
-		const float priceY = b.y + 40.5f;
+		const float priceY = b.y + 39.5f;
 		if (locked) {
-			gfx::text("LOCKED", b.x + b.w / 2, priceY, 0.27f, COL_DIM, ALIGN_CENTER);
+			gfx::text("LOCKED", b.x + b.w / 2, priceY, 0.30f, COL_DIM, ALIGN_CENTER);
 		} else if (shopInUse(sShopTab, k)) {
-			gfx::text("IN USE", b.x + b.w / 2, priceY, 0.27f, COL_ACCENT, ALIGN_CENTER);
+			gfx::text("IN USE", b.x + b.w / 2, priceY, 0.30f, COL_ACCENT, ALIGN_CENTER);
 		} else if (shopOwned(sShopTab, k)) {
-			gfx::text("OWNED", b.x + b.w / 2, priceY, 0.27f, COL_DIM, ALIGN_CENTER);
+			gfx::text("OWNED", b.x + b.w / 2, priceY, 0.30f, COL_DIM, ALIGN_CENTER);
 		} else {
 			snprintf(buf, sizeof buf, "%u", (unsigned)it.price);
-			float pw = gfx::textWidth(buf, 0.28f);
-			gfx::sprite(SHEET_SPRITES, sprites_coin_idx, b.x + b.w / 2 - pw / 2 - 5, priceY + 4.5f, 0.28f, 0.28f);
-			gfx::text(buf, b.x + b.w / 2 + 4, priceY, 0.28f, gSave.coins >= it.price ? COL_CREAM : COL_DIM, ALIGN_CENTER);
+			float pw = gfx::textWidth(buf, 0.31f);
+			gfx::sprite(SHEET_SPRITES, sprites_coin_idx, b.x + b.w / 2 - pw / 2 - 5, priceY + 5.0f, 0.30f, 0.30f);
+			gfx::text(buf, b.x + b.w / 2 + 4, priceY, 0.31f, gSave.coins >= it.price ? COL_CREAM : COL_DIM, ALIGN_CENTER);
 		}
 	}
 	gfx::clearClip();
@@ -2176,12 +2176,12 @@ static void drawShopPreview() {
 		gfx::text(shopUnlockLine(sShopItem), 200, 46, 0.36f, COL_CREAM, ALIGN_CENTER);
 		gfx::setDepth(0.5f);
 		drawPadlock(200, 110, 2.0f);
-		fitText("Its music stays a surprise until then.", 200, 150, 0.35f, 290, COL_DIM);
+		fitText("Its music stays a surprise until then.", 200, 150, 0.38f, 304, COL_DIM);
 		if (sShopNoteT > 0) gfx::text(sShopNote, 200, 192, 0.40f, withAlpha(COL_CREAM, clampf(sShopNoteT * 2, 0, 1)), ALIGN_CENTER);
 		return;
 	}
-	fitText(it.name, 200, 20, 0.54f, 320, COL_ACCENT);
-	fitText(it.line, 200, 46, 0.35f, 330, COL_CREAM);
+	fitText(it.name, 200, 20, 0.56f, 320, COL_ACCENT);
+	fitText(it.line, 200, 46, 0.39f, 330, COL_CREAM);
 	if (sShopTab == SHOP_THEMES) {
 		gfx::setDepth(0.5f);
 		gfx::image(SHEET_BOARD, 0, 130, 66, 140, 96);
@@ -2195,8 +2195,8 @@ static void drawShopPreview() {
 		const char* now = shopInUse(sShopTab, sShopItem) ? "Playing in the menus and in games"
 		                  : sPreviewOver ? "Preview over, your music is back"
 		                  : sPreviewT >= 0 ? "Now playing as a preview" : "Your Menu Music, not your Game Music.";
-		fitText(now, 200, 108, 0.35f, 290, COL_DIM);
-		if (!shopInUse(sShopTab, sShopItem)) fitText("Use it for the Menu and Game Music.", 200, 128, 0.35f, 290, COL_DIM);
+		fitText(now, 200, 108, 0.38f, 310, COL_DIM);
+		if (!shopInUse(sShopTab, sShopItem)) fitText("Use it for the Menu and Game Music.", 200, 129, 0.38f, 310, COL_DIM);
 	}
 	// What the item costs against the purse, or that it is already yours.
 	char buf[48];
@@ -3056,7 +3056,7 @@ static void drawJournalBossTile(const Button& b, int boss, bool focused, bool pr
 	char buf[16];
 	if (beaten) snprintf(buf, sizeof buf, "%lu WIN%s", (unsigned long)wins, wins == 1 ? "" : "S");
 	else snprintf(buf, sizeof buf, "?");
-	gfx::text(buf, cx, b.y + 29, 0.26f, focused ? COL_ACCENT : COL_CREAM, ALIGN_CENTER);
+	fitText(buf, cx, b.y + 28, 0.30f, b.w - 6, focused ? COL_ACCENT : COL_CREAM);
 	const int level = progress::bossLevel(wins);
 	for (int k = 0; k < progress::kBossLevels; k++) gfx::rect(cx - 14 + k * 8, b.y + 39, 4, 3, k < level ? rgba(255, 210, 80) : rgba(0, 0, 0, 90));
 }
@@ -3079,10 +3079,10 @@ static void drawJournal() {
 		const bool focused = f == p + 1;
 		drawPlank(b.x, b.y, b.w, b.h, focused, sPressed == p + 1);
 		const float cx = b.x + b.w * 0.5f;
-		gfx::sprite(SHEET_FRUIT, fruitSprite(fruit), cx, b.y + 16, 0.56f, 0.56f, 0, count ? WHITE : kUnfound);
+		gfx::sprite(SHEET_FRUIT, fruitSprite(fruit), cx, b.y + 15, 0.56f, 0.56f, 0, count ? WHITE : kUnfound);
 		if (count) snprintf(buf, sizeof buf, "%lu", (unsigned long)(count > 999999 ? 999999 : count));
 		else snprintf(buf, sizeof buf, "?");
-		gfx::text(buf, cx, b.y + 27, 0.28f, focused ? COL_ACCENT : COL_CREAM, ALIGN_CENTER);
+		fitText(buf, cx, b.y + 26, 0.32f, b.w - 6, focused ? COL_ACCENT : COL_CREAM);
 		const int level = progress::journalLevel(count);
 		for (int k = 0; k < progress::kJournalLevels; k++) gfx::rect(cx - 14 + k * 8, b.y + 39, 4, 3, k < level ? COL_ACCENT : rgba(0, 0, 0, 90));
 	}
@@ -3097,33 +3097,33 @@ static void drawJournalBossTop(int boss) {
 	gfx::setDepth(1.0f);
 	gfx::sprite(SHEET_SPRITES, bossSprite(boss), 200, 42, 0.76f, 0.76f, gSave.calmFx ? 0 : sinf(sTime * 1.3f) * 0.1f, beaten ? WHITE : kUnfound);
 	gfx::setDepth(0.7f);
-	gfx::text(beaten ? kBosses[boss].name : "Not beaten yet", 200, 72, 0.52f, COL_ACCENT, ALIGN_CENTER);
+	gfx::text(beaten ? kBosses[boss].name : "Not beaten yet", 200, 72, 0.54f, COL_ACCENT, ALIGN_CENTER);
 	snprintf(buf, sizeof buf, "ORCHARD BLAST, ROOM %d", boss == BOSS_MELON ? 5 : 10);
-	gfx::text(buf, 200, 94, 0.36f, COL_CREAM, ALIGN_CENTER);
+	gfx::text(buf, 200, 94, 0.38f, COL_CREAM, ALIGN_CENTER);
 	const u32 wins = gSave.bossWins[boss];
 	snprintf(buf, sizeof buf, "%d SLICES TO BEAT   BEATEN %lu", kBosses[boss].slices, (unsigned long)wins);
-	gfx::text(buf, 200, 110, 0.32f, COL_CREAM, ALIGN_CENTER);
-	if (beaten) fitText(boss == BOSS_MELON ? "Spits seeds and flops. Slice it when its guard drops." : "Fires cannonballs and lights its fuse. Snuff the fuse in three swipes.", 200, 126, 0.28f, 320, COL_DIM);
-	else fitText("Reach it in Orchard Blast and beat it to fill this page.", 200, 126, 0.28f, 320, COL_DIM);
+	gfx::text(buf, 200, 110, 0.35f, COL_CREAM, ALIGN_CENTER);
+	if (beaten) fitText(boss == BOSS_MELON ? "Spits seeds and flops. Slice it when its guard drops." : "Fires cannonballs and lights its fuse. Snuff the fuse in three swipes.", 200, 126, 0.34f, 326, COL_DIM);
+	else fitText("Reach it in Orchard Blast and beat it to fill this page.", 200, 126, 0.34f, 326, COL_DIM);
 	// Win milestones, worth far more than a fruit's.
 	const int level = progress::bossLevel(wins);
 	for (int k = 1; k <= progress::kBossLevels; k++) {
-		const float x = 200 + (k - 2.5f) * 74;
+		const float x = 200 + (k - 2.5f) * 76;
 		const bool reached = k <= level;
 		gfx::sprite(SHEET_SPRITES, sprites_coin_idx, x, 146, 0.38f, 0.38f, 0, reached ? WHITE : rgba(90, 80, 70, 200));
 		snprintf(buf, sizeof buf, "%lu WIN%s  +%lu", (unsigned long)progress::bossMilestone(k), k == 1 ? "" : "S", (unsigned long)progress::bossReward(k));
-		gfx::text(buf, x, 156, 0.25f, reached ? COL_ACCENT : COL_DIM, ALIGN_CENTER);
+		fitText(buf, x, 156, 0.31f, 70, reached ? COL_ACCENT : COL_DIM);
 	}
 	const int tracks = bossTrackCount(boss);
 	if (level < progress::kBossLevels)
 		snprintf(buf, sizeof buf, "%lu more win%s for %lu coins", (unsigned long)(progress::bossMilestone(level + 1) - wins), progress::bossMilestone(level + 1) - wins == 1 ? "" : "s", (unsigned long)progress::bossReward(level + 1));
 	else
 		snprintf(buf, sizeof buf, "Every boss milestone reached!");
-	gfx::text(buf, 200, 172, 0.32f, COL_CREAM, ALIGN_CENTER);
+	fitText(buf, 200, 173, 0.36f, 324, COL_CREAM);
 	if (tracks > 0) {
 		if (beaten) snprintf(buf, sizeof buf, "Its %d tracks are in the Shop", tracks);
 		else snprintf(buf, sizeof buf, "Unlocks %d tracks in the Shop", tracks);
-		gfx::text(buf, 200, 188, 0.30f, beaten ? COL_ACCENT : COL_DIM, ALIGN_CENTER);
+		gfx::text(buf, 200, 190, 0.35f, beaten ? COL_ACCENT : COL_DIM, ALIGN_CENTER);
 	}
 }
 
@@ -3148,7 +3148,7 @@ static void drawJournalTop() {
 		for (int k = 0; k < BOSS_COUNT; k++) beaten += bossBeaten(k);
 		snprintf(buf, sizeof buf, "BOSSES BEATEN %d OF %d", beaten, (int)BOSS_COUNT);
 		gfx::text(buf, 200, 138, 0.44f, COL_CREAM, ALIGN_CENTER);
-		gfx::text("Every milestone pays coins, a boss's the most.", 200, 166, 0.36f, COL_DIM, ALIGN_CENTER);
+		gfx::text("Every milestone pays coins, a boss's the most.", 200, 166, 0.39f, COL_DIM, ALIGN_CENTER);
 		gfx::text("Back to the title", 200, 196, 0.42f, COL_CREAM, ALIGN_CENTER);
 		return;
 	}
@@ -3163,22 +3163,22 @@ static void drawJournalTop() {
 	gfx::setDepth(0.7f);
 	gfx::text(count ? progress::fruitName(fruit) : "Not found yet", 200, 84, 0.54f, COL_ACCENT, ALIGN_CENTER);
 	snprintf(buf, sizeof buf, "SLICED %lu", (unsigned long)count);
-	gfx::text(buf, 200, 110, 0.40f, COL_CREAM, ALIGN_CENTER);
+	gfx::text(buf, 200, 110, 0.42f, COL_CREAM, ALIGN_CENTER);
 	const int level = progress::journalLevel(count);
 	for (int k = 1; k <= progress::kJournalLevels; k++) {
-		const float x = 200 + (k - 2.5f) * 74;
+		const float x = 200 + (k - 2.5f) * 76;
 		const bool reached = k <= level;
-		gfx::sprite(SHEET_SPRITES, sprites_coin_idx, x, 150, 0.44f, 0.44f, 0, reached ? WHITE : rgba(90, 80, 70, 200));
+		gfx::sprite(SHEET_SPRITES, sprites_coin_idx, x, 146, 0.44f, 0.44f, 0, reached ? WHITE : rgba(90, 80, 70, 200));
 		snprintf(buf, sizeof buf, "%lu", (unsigned long)progress::journalMilestone(k));
-		gfx::text(buf, x, 161, 0.30f, reached ? COL_CREAM : COL_DIM, ALIGN_CENTER);
+		fitText(buf, x, 158, 0.35f, 68, reached ? COL_CREAM : COL_DIM);
 		snprintf(buf, sizeof buf, "+%lu", (unsigned long)progress::journalReward(k));
-		gfx::text(buf, x, 174, 0.28f, reached ? COL_ACCENT : COL_DIM, ALIGN_CENTER);
+		fitText(buf, x, 173, 0.33f, 68, reached ? COL_ACCENT : COL_DIM);
 	}
 	if (level < progress::kJournalLevels)
 		snprintf(buf, sizeof buf, "%lu more for %lu coins", (unsigned long)(progress::journalMilestone(level + 1) - count), (unsigned long)progress::journalReward(level + 1));
 	else
 		snprintf(buf, sizeof buf, "Every milestone reached!");
-	gfx::text(buf, 200, 194, 0.34f, COL_CREAM, ALIGN_CENTER);
+	fitText(buf, 200, 194, 0.38f, 324, COL_CREAM);
 }
 
 // Orchard Blast's best room is saved as the room the run reached (one past the last on a win),
@@ -3221,11 +3221,15 @@ static void drawStats() {
 	for (int i = 0; i < kRows; i++) {
 		// The Orchard Blast rows sit under their own heading.
 		const float y = 52 + i * 14.5f + (i >= 6 ? 12 : 0);
-		if (i == 6) gfx::text("ORCHARD BLAST", 160, y - 13, 0.30f, COL_ACCENT, ALIGN_CENTER);
-		gfx::text(kNames[i], 24, y + 2, 0.28f, COL_DIM);
-		float s = 0.35f, w = gfx::textWidth(value[i], s);
-		if (w > 140) s *= 140 / w;
-		gfx::text(value[i], 296, y, s, COL_CREAM, ALIGN_RIGHT);
+		if (i == 6) gfx::text("ORCHARD BLAST", 160, y - 13, 0.34f, COL_ACCENT, ALIGN_CENTER);
+		float sv = 0.36f, w = gfx::textWidth(value[i], sv);
+		if (w > 130) sv *= 130 / w;
+		const float valW = gfx::textWidth(value[i], sv);
+		const float nameMax = 296 - valW - 24 - 8;
+		float nl = 0.33f, nw = gfx::textWidth(kNames[i], nl);
+		if (nw > nameMax) nl *= nameMax / nw;
+		gfx::text(kNames[i], 24, y + 1, nl, COL_DIM);
+		gfx::text(value[i], 296, y, sv, COL_CREAM, ALIGN_RIGHT);
 	}
 }
 
@@ -3235,7 +3239,7 @@ static void drawStatsTop() {
 	gfx::sprite(SHEET_LOGO, logo_logo_idx, 200, 44, 0.52f, 0.52f);
 	topPanel(30, 80, 340, 150);
 	gfx::setDepth(0.7f);
-	gfx::text("BEST SCORES", 200, 86, 0.38f, COL_ACCENT, ALIGN_CENTER);
+	gfx::text("BEST SCORES", 200, 86, 0.42f, COL_ACCENT, ALIGN_CENTER);
 	// The modes on Pick a Game, in two columns: all 14 fit at seven to a column.
 	constexpr int kPerColumn = (MODE_COUNT + 1) / 2;
 	static_assert(kPerColumn <= 7, "the best scores need a second page");
@@ -3243,11 +3247,15 @@ static void drawStatsTop() {
 	for (int i = 0; i < (int)sizeof kModeOrder; i++) {
 		const int m = kModeOrder[i];
 		if (m >= MODE_COUNT) continue;
-		const float x = shown < kPerColumn ? 46 : 214, y = 106 + (shown % kPerColumn) * 16.0f;
+		const float x = shown < kPerColumn ? 44 : 214, y = 107 + (shown % kPerColumn) * 16.0f;
 		shown++;
-		gfx::text(kModes[m].name, x, y, 0.3f, COL_DIM);
 		snprintf(buf, sizeof buf, "%lu", (unsigned long)gSave.best[m]);
-		gfx::text(buf, x + 140, y - 1, 0.33f, COL_CREAM, ALIGN_RIGHT);
+		const float vw = gfx::textWidth(buf, 0.35f);
+		float ns = 0.34f, nw = gfx::textWidth(kModes[m].name, ns);
+		const float maxNW = 140.0f - vw - 6.0f;
+		if (nw > maxNW) ns *= maxNW / nw;
+		gfx::text(kModes[m].name, x, y, ns, COL_DIM);
+		gfx::text(buf, x + 140, y - 1, 0.35f, COL_CREAM, ALIGN_RIGHT);
 	}
 }
 
@@ -3446,9 +3454,9 @@ static void drawBeatScreen() {
 	if (sAddNoteT > 0) hint = sAddNote;
 	if (sFolderNote > 0) hint = custom::folder();
 #endif
-	float s = 0.28f, w = gfx::textWidth(hint, s);
+	float s = 0.32f, w = gfx::textWidth(hint, s);
 	if (w > 304) s *= 304 / w;
-	gfx::text(hint, 160, 224, s, COL_DIM, ALIGN_CENTER);
+	gfx::text(hint, 160, 223, s, COL_DIM, ALIGN_CENTER);
 }
 
 #if PORT_CUSTOM_MUSIC
@@ -3973,19 +3981,25 @@ static void updateGuides(const Input& in, bool wasTouching) {
 
 // Draws a labelled callout tag inside the top-screen screenshot preview, with an optional pointer line.
 static void drawGuideCallout(float x, float y, const char* text, u32 col = COL_ACCENT, float tx = -1, float ty = -1) {
-	const float s = 0.27f, w = gfx::textWidth(text, s) + 10, h = 15;
+	float s = 0.31f, w = gfx::textWidth(text, s) + 12;
+	if (w > 348) {
+		s = 336.0f / gfx::textWidth(text, 1.0f);
+		w = gfx::textWidth(text, s) + 12;
+	}
+	const float h = 18;
+	const float bx = clampf(x, 24 + w * 0.5f, 376 - w * 0.5f);
 	if (tx >= 0 && ty >= 0) {
-		const float dx = tx - x, dy = ty - y, len = sqrtf(dx * dx + dy * dy);
+		const float dx = tx - bx, dy = ty - y, len = sqrtf(dx * dx + dy * dy);
 		if (len > 2) {
 			const float nx = -dy / len * 1.1f, ny = dx / len * 1.1f;
 			const u32 lc = withAlpha(col, 0.85f);
-			gfx::tri(x + nx, y + ny, lc, x - nx, y - ny, lc, tx, ty, lc);
+			gfx::tri(bx + nx, y + ny, lc, bx - nx, y - ny, lc, tx, ty, lc);
 			gfx::rect(tx - 2.5f, ty - 2.5f, 5, 5, col);
 		}
 	}
-	gfx::rect(x - w * 0.5f - 1, y - h * 0.5f - 1, w + 2, h + 2, withAlpha(col, 0.9f));
-	gfx::rect(x - w * 0.5f, y - h * 0.5f, w, h, rgba(22, 16, 14, 235));
-	gfx::text(text, x, y - 6, s, col, ALIGN_CENTER);
+	gfx::rect(bx - w * 0.5f - 1, y - h * 0.5f - 1, w + 2, h + 2, withAlpha(col, 0.9f));
+	gfx::rect(bx - w * 0.5f, y - h * 0.5f, w, h, rgba(22, 16, 14, 235));
+	gfx::text(text, bx, y - 20.0f * s, s, col, ALIGN_CENTER);
 }
 
 // Annotated in-engine screenshot diagram on the top screen showing what's what in the selected mode.
@@ -4114,12 +4128,12 @@ static void drawGuidesTop() {
 			break;
 		}
 		case MODE_ORCHARD: {
-			gfx::text("4", vx + 10, vy + 4, 0.36f, COL_ACCENT);
-			gfx::text("LV 3", 96, vy + 5, 0.3f, COL_CREAM);
-			gfx::rect(134, vy + 7, 96, 10, rgba(40, 22, 18, 220));
-			gfx::rect(134, vy + 7, 96, 10, rgba(110, 215, 115));
-			gfx::text("HP 20/20", 182, vy + 5, 0.26f, COL_CREAM, ALIGN_CENTER);
-			gfx::text("ROOM 5/10", vx + vw - 8, vy + 5, 0.3f, COL_ACCENT, ALIGN_RIGHT);
+			gfx::text("4", vx + 10, vy + 4, 0.38f, COL_ACCENT);
+			gfx::text("LV 3", 96, vy + 5, 0.34f, COL_CREAM);
+			gfx::rect(134, vy + 6, 96, 12, rgba(40, 22, 18, 220));
+			gfx::rect(134, vy + 6, 96, 12, rgba(110, 215, 115));
+			gfx::text("HP 20/20", 182, vy + 5, 0.30f, COL_CREAM, ALIGN_CENTER);
+			gfx::text("ROOM 5/10", vx + vw - 8, vy + 5, 0.34f, COL_ACCENT, ALIGN_RIGHT);
 			gfx::sprite(SHEET_FRUIT, fruit_apple_idx, 96, 112, 0.68f, 0.68f, wob);
 			gfx::sprite(SHEET_SPRITES, sprites_cd_health_idx, 200, 112, 0.85f, 0.85f);
 			gfx::sprite(SHEET_SPRITES, sprites_boss_melon_guard_idx, 304, 112, 0.56f, 0.56f);
@@ -4130,10 +4144,10 @@ static void drawGuidesTop() {
 			break;
 		}
 		case MODE_BOSSRUSH: {
-			gfx::text("2", vx + 10, vy + 4, 0.36f, COL_ACCENT);
-			gfx::rect(118, vy + 7, 104, 10, rgba(110, 215, 115));
-			gfx::text("HP 20/20", 170, vy + 5, 0.26f, COL_CREAM, ALIGN_CENTER);
-			gfx::text("BOSS 3/4", vx + vw - 8, vy + 5, 0.3f, COL_ACCENT, ALIGN_RIGHT);
+			gfx::text("2", vx + 10, vy + 4, 0.38f, COL_ACCENT);
+			gfx::rect(118, vy + 6, 104, 12, rgba(110, 215, 115));
+			gfx::text("HP 20/20", 170, vy + 5, 0.30f, COL_CREAM, ALIGN_CENTER);
+			gfx::text("BOSS 3/4", vx + vw - 8, vy + 5, 0.34f, COL_ACCENT, ALIGN_RIGHT);
 			gfx::sprite(SHEET_SPRITES, sprites_ring_idx, 124, 110, 1.15f, 1.15f, 0, rgba(120, 200, 255));
 			gfx::sprite(SHEET_SPRITES, sprites_boss_melon_guard_idx, 124, 110, 0.68f, 0.68f);
 			gfx::sprite(SHEET_SPRITES, sprites_ring_idx, 276, 110, 1.15f, 1.15f, 0, rgba(255, 220, 90));
@@ -4761,12 +4775,12 @@ static void drawTopContent(Screen screen) {
 				tracks = o.newTracks;
 				if (o.won) snprintf(buf, sizeof buf, "RUSH CLEARED IN %d:%02d", (int)sGame.elapsed / 60, (int)sGame.elapsed % 60);
 				else snprintf(buf, sizeof buf, "BEAT %d OF %d BOSSES", m.rushStage, kRushStages);
-				gfx::text(buf, 200, 104, 0.38f, o.won ? rgba(255, 230, 140) : COL_CREAM, ALIGN_CENTER);
+				gfx::text(buf, 200, 104, 0.39f, o.won ? rgba(255, 230, 140) : COL_CREAM, ALIGN_CENTER);
 				snprintf(buf, sizeof buf, "BUILD: %s", m.rushBuild < BUILD_COUNT ? kRushBuilds[m.rushBuild].name : "NONE");
-				gfx::text(buf, 200, 124, 0.32f, COL_DIM, ALIGN_CENTER);
+				gfx::text(buf, 200, 124, 0.35f, COL_DIM, ALIGN_CENTER);
 				if (tracks > 0) {
 					snprintf(buf, sizeof buf, "NEW IN THE SHOP: %d BOSS TRACK%s", tracks, tracks == 1 ? "" : "S");
-					gfx::text(buf, 200, 144, 0.32f, COL_ACCENT, ALIGN_CENTER);
+					gfx::text(buf, 200, 144, 0.35f, COL_ACCENT, ALIGN_CENTER);
 					coinY = 168; extraY = 190;
 				}
 			} else if (sGame.mode == MODE_ORCHARD) {
@@ -4774,12 +4788,12 @@ static void drawTopContent(Screen screen) {
 				tracks = o.newTracks;
 				if (o.won) snprintf(buf, sizeof buf, "ORCHARD CLEARED!");
 				else snprintf(buf, sizeof buf, "REACHED ROOM %d OF %d", o.room, kOrchardRooms);
-				gfx::text(buf, 200, 104, 0.38f, o.won ? rgba(255, 230, 140) : COL_CREAM, ALIGN_CENTER);
+				gfx::text(buf, 200, 104, 0.39f, o.won ? rgba(255, 230, 140) : COL_CREAM, ALIGN_CENTER);
 				snprintf(buf, sizeof buf, "LEVEL %d   BOSSES %d   SLICED %d", o.level, o.bossesBeaten, sGame.sliced);
-				gfx::text(buf, 200, 124, 0.32f, COL_DIM, ALIGN_CENTER);
+				gfx::text(buf, 200, 124, 0.35f, COL_DIM, ALIGN_CENTER);
 				if (tracks > 0) {
 					snprintf(buf, sizeof buf, "NEW IN THE SHOP: %d BOSS TRACK%s", tracks, tracks == 1 ? "" : "S");
-					gfx::text(buf, 200, 144, 0.32f, COL_ACCENT, ALIGN_CENTER);
+					gfx::text(buf, 200, 144, 0.35f, COL_ACCENT, ALIGN_CENTER);
 					coinY = 168; extraY = 190;
 				}
 			} else {
@@ -4788,7 +4802,7 @@ static void drawTopContent(Screen screen) {
 				else if (sGame.mode == MODE_SHARP) snprintf(buf, sizeof buf, "ON CALL %d   WRONG %d", sGame.m12.calledHits, sGame.m12.wrongHits);
 				else if (sGame.mode == MODE_JUGGLE) snprintf(buf, sizeof buf, "KNOCKS %d   MOST IN THE AIR %d", sGame.m12.knocks, sGame.m12.bestAir);
 				else snprintf(buf, sizeof buf, "SLICED %d   BEST COMBO %d", sGame.sliced, sGame.bestCombo);
-				gfx::text(buf, 200, 112, 0.38f, COL_CREAM, ALIGN_CENTER);
+				gfx::text(buf, 200, 112, 0.39f, COL_CREAM, ALIGN_CENTER);
 				coinY = 148; extraY = 174;
 			}
 			if (sCardFrame) {
@@ -4805,7 +4819,7 @@ static void drawTopContent(Screen screen) {
 				if (sGame.dailyCoins && sGame.journalCoins) snprintf(buf, sizeof buf, "DAILY +%lu  JOURNAL +%lu", (unsigned long)sGame.dailyCoins, (unsigned long)sGame.journalCoins);
 				else if (sGame.dailyCoins) snprintf(buf, sizeof buf, "DAILY BONUS +%lu", (unsigned long)sGame.dailyCoins);
 				else if (sGame.journalCoins) snprintf(buf, sizeof buf, "JOURNAL MILESTONE +%lu", (unsigned long)sGame.journalCoins);
-				if (buf[0]) gfx::text(buf, 200, extraY, 0.30f, COL_DIM, ALIGN_CENTER);
+				if (buf[0]) fitText(buf, 200, extraY, 0.35f, 326, COL_DIM);
 			}
 			break;
 		}
@@ -5072,7 +5086,7 @@ static void drawRows() {
 			gfx::rect(kTrackX0, cy - 3, kTrackX1 - kTrackX0, 6, gfx::themeBar());
 			gfx::rect(kTrackX0, cy - 3, (kTrackX1 - kTrackX0) * t, 6, rowDisabled(r) ? COL_DIM : COL_ACCENT);
 			gfx::sprite(SHEET_SPRITES, sprites_knob_idx, lerpf(kTrackX0, kTrackX1, t), cy, 0.72f, 0.72f);
-			gfx::text(buf, 306, ty + 1, 0.3f, COL_CREAM, ALIGN_RIGHT);
+			gfx::text(buf, 306, ty, 0.35f, COL_CREAM, ALIGN_RIGHT);
 		} else {
 			float cy = y + kRowH * 0.5f - 1;
 			gfx::sprite(SHEET_SPRITES, sprites_arrow_idx, 164, cy, 0.5f, 0.5f, 0, COL_ACCENT);

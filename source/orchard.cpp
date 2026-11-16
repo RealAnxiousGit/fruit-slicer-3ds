@@ -734,7 +734,7 @@ float Game::orcStat(int card) const {
 
 // ---------------------------------------------------------------- on screen
 void Game::orcSlotRect(int slot, float* x, float* y, float* w, float* h) {
-	const float s = PORT_3DS ? 40.0f : 46.0f * uiScale();
+	const float s = PORT_3DS ? 52.0f : 58.0f * uiScale();
 	*w = *h = s;
 	*y = kFieldH - s - 8;
 	*x = slot == 0 ? 8.0f : kFieldW - s - 8;
@@ -748,36 +748,41 @@ void Game::drawOrchardField() const {
 void Game::drawOrchardHud(float x, float y, float w, float u) const {
 	char buf[40];
 	const Boss& b = orc.boss;
-	const float titleScale = (PORT_3DS ? 0.38f : 0.3f) * u;
-	const float hpScale = (PORT_3DS ? 0.28f : 0.22f) * u;
-	const float lvScale = (PORT_3DS ? 0.28f : 0.22f) * u;
-	const float yOff = PORT_3DS ? (y + 6.0f) : y;
+	const float titleScale = (PORT_3DS ? 0.36f : 0.30f) * u;
+	const float hpScale = (PORT_3DS ? 0.30f : 0.24f) * u;
+	const float lvScale = (PORT_3DS ? 0.30f : 0.24f) * u;
+	const float yOff = PORT_3DS ? y : (y + 2.5f * u);
+	float titleW = 0, pipsW = 0;
 	// The room, or the boss and the slices it still needs.
 	if (b.on && !b.beaten) {
 		snprintf(buf, sizeof buf, "%s", b.id == BOSS_MELON ? (b.royal ? "ROYAL MELON" : "BIG MELON") : (b.royal ? "ROYAL KING" : "BOMB KING"));
-		gfx::text(buf, x, yOff + 4.0f * u, titleScale, rgba(255, 200, 140), ALIGN_RIGHT);
+		titleW = gfx::textWidth(buf, titleScale);
+		gfx::text(buf, x, yOff + (PORT_3DS ? 2.0f : 3.0f) * u, titleScale, rgba(255, 200, 140), ALIGN_RIGHT);
 		const int all = b.total;
+		const float pw = (PORT_3DS ? 9.0f : 8.0f) * u, ph = (PORT_3DS ? 7.0f : 6.0f) * u, gap = (PORT_3DS ? 3.0f : 3.5f) * u;
+		pipsW = all > 0 ? all * pw + (all - 1) * gap : 0;
 		for (int i = 0; i < all; i++) {
 			const bool cut = i < all - b.left;
 			// One mark per slice it needs: bright while still to do, dim once landed.
-			const float pw = (PORT_3DS ? 11.0f : 9.0f) * u, ph = (PORT_3DS ? 8.0f : 7.0f) * u;
-			const float px = x - 10 * u - (all - 1 - i) * (pw + 4 * u);
-			gfx::rect(px, yOff + (PORT_3DS ? 20.0f : 19.0f) * u, pw, ph, cut ? rgba(90, 70, 60, 200) : rgba(255, 110, 90));
+			const float px = x - pw - (all - 1 - i) * (pw + gap);
+			gfx::rect(px, yOff + (PORT_3DS ? 19.0f : 18.0f) * u, pw, ph, cut ? rgba(90, 70, 60, 200) : rgba(255, 110, 90));
 		}
 	} else {
 		if (mode == MODE_BOSSRUSH) snprintf(buf, sizeof buf, "BOSS %d/%d", m12.rushStage + 1 > kRushStages ? kRushStages : m12.rushStage + 1, kRushStages);
 		else snprintf(buf, sizeof buf, "ROOM %d/%d", orc.room > kOrchardRooms ? kOrchardRooms : orc.room, kOrchardRooms);
-		gfx::text(buf, x, yOff + 4.0f * u, titleScale, COL_CREAM, ALIGN_RIGHT);
+		titleW = gfx::textWidth(buf, titleScale);
+		gfx::text(buf, x, yOff + (PORT_3DS ? 2.0f : 3.0f) * u, titleScale, COL_CREAM, ALIGN_RIGHT);
 		if (!orc.bossRoom) {
 			const float k = clampf(1 - orc.roomT / kRoomSeconds, 0, 1);
-			const float rw = 56 * u, rh = (PORT_3DS ? 6.0f : 4.0f) * u;
-			gfx::rect(x - rw, yOff + (PORT_3DS ? 21.0f : 19.0f) * u, rw, rh, rgba(0, 0, 0, 110));
-			gfx::rect(x - rw, yOff + (PORT_3DS ? 21.0f : 19.0f) * u, rw * k, rh, COL_DIM);
+			const float rw = 56 * u, rh = (PORT_3DS ? 6.0f : 4.5f) * u;
+			pipsW = rw;
+			gfx::rect(x - rw, yOff + (PORT_3DS ? 20.0f : 18.0f) * u, rw, rh, rgba(0, 0, 0, 110));
+			gfx::rect(x - rw, yOff + (PORT_3DS ? 20.0f : 18.0f) * u, rw * k, rh, COL_DIM);
 		}
 	}
-	const float roomW = (PORT_3DS ? 80.0f : 72.0f) * u;
+	const float roomW = fmaxf((PORT_3DS ? 84.0f : 74.0f) * u, fmaxf(titleW, pipsW) + 8.0f * u);
 	float bw = w - roomW - 8 * u;
-	if (bw > (PORT_3DS ? 140.0f : 130.0f) * u) bw = (PORT_3DS ? 140.0f : 130.0f) * u;
+	if (bw > (PORT_3DS ? 118.0f : 124.0f) * u) bw = (PORT_3DS ? 118.0f : 124.0f) * u;
 	if (bw < 50 * u) bw = 50 * u;
 	const float bx = x - roomW - bw, bh = (PORT_3DS ? 16.0f : 13.0f) * u;
 	// HP: red, flashing when hit; blue while a Rind Wall or Last Stand holds.
@@ -785,7 +790,7 @@ void Game::drawOrchardHud(float x, float y, float w, float u) const {
 	const bool guarded = orc.invulnT > 0 || orc.lastStandT > 0;
 	u32 hpCol = guarded ? rgba(130, 200, 255) : (hpK < 0.3f ? rgba(255, 90, 80) : rgba(240, 70, 80));
 	if (orc.hurtFlash > 0 && !gSave.calmFx) hpCol = rgba(255, 230, 230);
-	const float yHp = yOff + (mode == MODE_BOSSRUSH ? 8.0f : (PORT_3DS ? 6.0f : 5.5f)) * u;
+	const float yHp = yOff + (mode == MODE_BOSSRUSH ? 6.0f : (PORT_3DS ? 4.0f : 4.0f)) * u;
 	gfx::rect(bx - 1, yHp - 1, bw + 2, bh + 2, gfx::themeBar());
 	gfx::rect(bx, yHp, bw * hpK, bh, hpCol);
 	if (orc.peelShield) gfx::rect(bx, yHp, 3 * u, bh, rgba(190, 240, 150));
@@ -813,19 +818,19 @@ void Game::drawOrchardOverlay() const {
 		gfx::rect(x, y, w, 2, ready ? rgba(150, 230, 255) : rgba(90, 90, 110));
 		if (card != CARD_NONE) {
 			const CardInfo& info = kCards[card];
-			const float is = (PORT_3DS ? 0.44f : 0.60f) * (w / 40.0f);
+			const float is = (PORT_3DS ? 0.50f : 0.62f) * (w / 40.0f);
 			gfx::sprite(SHEET_SPRITES, cardIcon(card), x + w * 0.5f, y + h * 0.5f + 1, is, is, 0, ready ? WHITE : rgba(150, 150, 160, 200));
 			if (orc.slotCool[s] > 0 && info.cooldown > 0) {
 				const float k = clampf(orc.slotCool[s] / info.cooldown, 0, 1);
 				gfx::rect(x, y + h * (1 - k), w, h * k, rgba(0, 0, 0, 120));
 				snprintf(buf, sizeof buf, "%d", (int)ceilf(orc.slotCool[s]));
-				gfx::text(buf, x + w * 0.5f, y + h - 14, 0.26f, COL_DIM, ALIGN_CENTER);
+				gfx::text(buf, x + w * 0.5f, y + h - 18, 0.32f, COL_DIM, ALIGN_CENTER);
 			} else if (orc.slotOn[s] > 0) {
 				gfx::rect(x, y + h - 3, w * clampf(orc.slotOn[s] / (info.lasts > 0 ? info.lasts : 1), 0, 1), 3, rgba(150, 230, 255));
 			}
 		}
 		const char* key = PORT_3DS ? (s == 0 ? "L" : "R") : (gStickInUse ? (s == 0 ? "LB" : "RB") : (s == 0 ? "Q" : "E"));
-		gfx::text(key, x + 3, y + 2, 0.22f, COL_DIM);
+		gfx::text(key, x + 4, y + 3, 0.28f, COL_DIM);
 	}
 	if (!orc.choosing && orc.resumeT > 0 && !gHudPaused) {
 		snprintf(buf, sizeof buf, "%d", (int)ceilf(orc.resumeT));
@@ -907,6 +912,22 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 		check(!audio::bossMusicOn() && audio::musicTime() >= 0, "and it fades back up to full volume, playing", d);
 		gSave.bossMusic = musicWas;
 		gSave.bossTrackLast[BOSS_MELON] = lastWas;
+
+		// Auto music stays continuous between menus and gameplay (without restarting), unless boss music overrides it.
+		const u8 menuTrackWas = gSave.menuTrack, gameTrackWas = gSave.gameTrack;
+		gSave.menuTrack = gSave.gameTrack = 0;
+		audio::music(MUSIC_MENU);
+		for (int i = 0; i < 60; i++) audio::update(kDt);
+		const int autoMenuTrack = audio::currentTrack();
+		audio::music(MUSIC_PLAY);
+		const int autoPlayTrack = audio::currentTrack();
+		audio::music(MUSIC_MENU);
+		const int autoBackTrack = audio::currentTrack();
+		snprintf(d, sizeof d, "menu %d -> play %d -> menu %d", autoMenuTrack, autoPlayTrack, autoBackTrack);
+		check(autoMenuTrack >= 0 && autoPlayTrack == autoMenuTrack && autoBackTrack == autoMenuTrack,
+		      "Auto music keeps playing without resetting between menu and play", d);
+		gSave.menuTrack = menuTrackWas;
+		gSave.gameTrack = gameTrackWas;
 
 		// The Shop keeps each boss track locked until that track is discovered in a boss fight.
 		const u32 beatenNow = gSave.bossesBeaten, seenNow = gSave.bossTracksSeen, ownedNow = gSave.ownedTracks, coinsNow = gSave.coins;
@@ -1059,6 +1080,11 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 	const int levelBefore = orc.level;
 	orcUse(0);
 	check(orc.level == levelBefore + 1 && orc.slot[0] == CARD_NONE, "A single-use charm works once and leaves its slot", "");
+	float sx, sy, sw, sh;
+	orcSlotRect(0, &sx, &sy, &sw, &sh);
+	snprintf(d, sizeof d, "%.0fx%.0f", sw, sh);
+	check(sw == sh && sw >= (PORT_3DS ? 50.0f : 56.0f * uiScale()) && sx >= 0 && sy + sh <= kFieldH,
+	      "Active charm slots are enlarged and fit cleanly inside the field", d);
 
 	// Offers never repeat a maxed upgrade or a charm already slotted.
 	setup();

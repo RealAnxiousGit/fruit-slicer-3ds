@@ -64,10 +64,10 @@ static float orcWrap(const char* s, float cx, float y, float scale, float maxW, 
 }
 
 static void orcCardRect(int i, int n, float* x, float* y, float* w, float* h) {
-	const float gap = n >= 5 ? 5.0f : 8.0f, margin = n >= 5 ? 12.0f : 24.0f, top = kFieldTop + 35;
+	const float gap = n >= 5 ? 5.0f : 8.0f, margin = n >= 5 ? 12.0f : 24.0f, top = kFieldTop + 28;
 	float cw = (kFieldW - margin - gap * (n - 1)) / n;
 	if (cw > 132) cw = 132;
-	float ch = kFieldH - top - 38;
+	float ch = kFieldH - top - 42;
 	if (ch > 170) ch = 170;
 	const float total = cw * n + gap * (n - 1);
 	*x = (kFieldW - total) * 0.5f + i * (cw + gap);
@@ -75,7 +75,7 @@ static void orcCardRect(int i, int n, float* x, float* y, float* w, float* h) {
 	*w = cw;
 	*h = ch;
 }
-static Button orcRerollButton() { return {kFieldW * 0.5f - 60, kFieldH - 36.0f, 120, 30, "Reroll"}; }
+static Button orcRerollButton() { return {kFieldW * 0.5f - 60, kFieldH - 34.0f, 120, 28, "Reroll"}; }
 static Button orcKeepButton() { return {kFieldW * 0.5f - 70, kFieldH - 42.0f, 140, 32, "Keep Mine"}; }
 
 static void drawOrcCard(int card, float x, float y, float w, float h, bool focused) {
@@ -89,21 +89,21 @@ static void drawOrcCard(int card, float x, float y, float w, float h, bool focus
 	char buf[128];
 	const float cx = x + w * 0.5f, maxW = w - 8;
 	snprintf(buf, sizeof buf, "%s %s", rarityName(info.rarity), cardKindName(info.kind));
-	float ty = orcWrap(buf, cx, y + 31, 0.26f, maxW, 10.0f, rc, 2);
+	float ty = orcWrap(buf, cx, y + 31, 0.30f, maxW, 10.5f, rc, 2);
 	ty += 2;
-	orcFit(info.name, cx, ty, 0.38f, maxW, COL_CREAM);
+	orcFit(info.name, cx, ty, 0.39f, maxW, COL_CREAM);
 	ty += 15;
 	snprintf(buf, sizeof buf, "%s%s%s", info.line1, info.line2[0] ? " " : "", info.line2);
 
 	// Dynamic text scaling: ensure description + footer never overflow card bottom.
-	float descScale = 0.28f, descStep = 11.0f;
-	float footScale = 0.26f, footStep = 10.0f;
+	float descScale = 0.31f, descStep = 11.5f;
+	float footScale = 0.28f, footStep = 10.5f;
 	const float safeBottom = y + h - 8.0f;
 	const float footerReserve = (info.kind == KIND_UPGRADE ? 22.0f : (info.kind == KIND_REUSABLE ? 18.0f : 12.0f));
 	const float descBudget = safeBottom - footerReserve - ty;
-	if (descBudget < 36.0f) {
-		descScale = 0.24f;
-		descStep = 9.5f;
+	if (descBudget < 38.0f) {
+		descScale = 0.27f;
+		descStep = 10.0f;
 	}
 
 	ty = orcWrap(buf, cx, ty, descScale, maxW, descStep, COL_CREAM, 4);
@@ -158,7 +158,7 @@ static void drawOrcSlotBox(int s, float x, float y, float w, float h, bool focus
 	gfx::sign(sprites_plank_idx, x, y, w, h, focused ? COL_ACCENT : COL_PLANK);
 	char buf[24];
 	snprintf(buf, sizeof buf, "Slot %d", s + 1);
-	gfx::text(buf, x + w * 0.5f, y + 6, 0.26f, COL_DIM, ALIGN_CENTER);
+	gfx::text(buf, x + w * 0.5f, y + 5, 0.31f, COL_DIM, ALIGN_CENTER);
 	if (card == CARD_NONE) {
 		orcFit("Empty", x + w * 0.5f, y + h * 0.5f - 6, 0.36f, w - 10, COL_DIM);
 	} else {
@@ -237,11 +237,11 @@ static int orcInvItems(OrcInvItem* out) {
 	const OrcInvLayout L = orcInvLayout();
 	int n = 0;
 	const float bw = (L.cw - 6) * 0.5f;
-	for (int s = 0; s < kSlots; s++) out[n++] = {INV_SLOT, (u8)s, L.cx + s * (bw + 6), L.cy + 14, bw, 40};
-	const float icon = 20;
+	for (int s = 0; s < kSlots; s++) out[n++] = {INV_SLOT, (u8)s, L.cx + s * (bw + 6), L.cy + 14, bw, 44};
+	const float icon = 22;
 	const int perRow = (int)(L.cw / icon) > 0 ? (int)(L.cw / icon) : 1;
 	for (int i = 0; i < o.passiveCount; i++)
-		out[n++] = {INV_PASSIVE, (u8)i, L.cx + (i % perRow) * icon, L.cy + 72 + (i / perRow) * icon, icon, icon};
+		out[n++] = {INV_PASSIVE, (u8)i, L.cx + (i % perRow) * icon, L.cy + 75 + (i / perRow) * icon, icon, icon};
 	int u = 0;
 	for (int c = 0; c < CARD_COUNT; c++) {
 		if (kCards[c].kind != KIND_UPGRADE) continue;
@@ -322,44 +322,44 @@ static void drawOrcInventory() {
 	const int mins = (int)sGame.elapsed / 60, secs = (int)sGame.elapsed % 60;
 	if (!L.runCol) {
 		snprintf(buf, sizeof buf, "Room %d of %d   Level %d   %d:%02d   %d sliced", room, kOrchardRooms, o.level, mins, secs, sGame.sliced);
-		orcFit(buf, kFieldW * 0.5f, kFieldTop + 21, 0.26f, kFieldW - 16, COL_CREAM);
+		orcFit(buf, kFieldW * 0.5f, kFieldTop + 21, 0.30f, kFieldW - 16, COL_CREAM);
 	}
 	// Stats: HP, then each upgrade with its level as pips.
-	gfx::text("Stats", L.sx, L.sy, 0.3f, head);
+	gfx::text("Stats", L.sx, L.sy, 0.33f, head);
 	snprintf(buf, sizeof buf, "HP %d of %d", (int)ceilf(o.hp), (int)o.maxHp);
-	orcBar(L.sx, L.sy + 14, L.sw, 10, o.maxHp > 0 ? o.hp / o.maxHp : 0, rgba(230, 80, 80));
-	orcFit(buf, L.sx + L.sw * 0.5f, L.sy + 14, 0.24f, L.sw - 4, COL_CREAM);
+	orcBar(L.sx, L.sy + 14, L.sw, 11, o.maxHp > 0 ? o.hp / o.maxHp : 0, rgba(230, 80, 80));
+	orcFit(buf, L.sx + L.sw * 0.5f, L.sy + 14, 0.27f, L.sw - 4, COL_CREAM);
 	// Run: where you are and how it is going.
 	if (L.runCol) {
 		float y = L.ry;
-		gfx::text("Run", L.rx, y, 0.3f, head);
+		gfx::text("Run", L.rx, y, 0.33f, head);
 		y += 15;
 		snprintf(buf, sizeof buf, "Room %d of %d", room, kOrchardRooms);
-		orcFit(buf, L.rx, y, 0.26f, L.rw, COL_CREAM, ALIGN_LEFT);
+		orcFit(buf, L.rx, y, 0.29f, L.rw, COL_CREAM, ALIGN_LEFT);
 		y += 12;
 		snprintf(buf, sizeof buf, "Level %d", o.level);
-		orcFit(buf, L.rx, y, 0.26f, L.rw, COL_CREAM, ALIGN_LEFT);
+		orcFit(buf, L.rx, y, 0.29f, L.rw, COL_CREAM, ALIGN_LEFT);
 		y += 12;
 		const int need = sGame.orcXpNeed();
 		orcBar(L.rx, y + 1, L.rw, 6, need > 0 ? o.xp / need : 0, rgba(110, 190, 255));
 		y += 9;
 		snprintf(buf, sizeof buf, "%d XP to level %d", (int)ceilf(need - o.xp), o.level + 1);
-		orcFit(buf, L.rx, y, 0.22f, L.rw, COL_DIM, ALIGN_LEFT);
+		orcFit(buf, L.rx, y, 0.25f, L.rw, COL_DIM, ALIGN_LEFT);
 		y += 14;
 		snprintf(buf, sizeof buf, "Time %d:%02d", mins, secs);
-		orcFit(buf, L.rx, y, 0.24f, L.rw, COL_CREAM, ALIGN_LEFT);
+		orcFit(buf, L.rx, y, 0.27f, L.rw, COL_CREAM, ALIGN_LEFT);
 		y += 11;
 		snprintf(buf, sizeof buf, "Fruit sliced %d", sGame.sliced);
-		orcFit(buf, L.rx, y, 0.24f, L.rw, COL_CREAM, ALIGN_LEFT);
+		orcFit(buf, L.rx, y, 0.27f, L.rw, COL_CREAM, ALIGN_LEFT);
 		y += 11;
 		snprintf(buf, sizeof buf, "Bosses beaten %d", o.bossesBeaten);
-		orcFit(buf, L.rx, y, 0.24f, L.rw, COL_CREAM, ALIGN_LEFT);
+		orcFit(buf, L.rx, y, 0.27f, L.rw, COL_CREAM, ALIGN_LEFT);
 		y += 11;
 		snprintf(buf, sizeof buf, "Charms used %d", o.charmsUsed);
-		orcFit(buf, L.rx, y, 0.24f, L.rw, COL_CREAM, ALIGN_LEFT);
+		orcFit(buf, L.rx, y, 0.27f, L.rw, COL_CREAM, ALIGN_LEFT);
 	}
-	gfx::text("Charm slots", L.cx, L.cy, 0.3f, head);
-	gfx::text(o.passiveCount ? "Passive charms" : "No passive charms yet", L.cx, L.cy + 58, 0.26f, o.passiveCount ? head : COL_DIM);
+	gfx::text("Charm slots", L.cx, L.cy, 0.33f, head);
+	gfx::text(o.passiveCount ? "Passive charms" : "No passive charms yet", L.cx, L.cy + 61, 0.29f, o.passiveCount ? head : COL_DIM);
 	const int focus = sOrcInvFocus >= 0 && sOrcInvFocus < n ? sOrcInvFocus : n - INVB_COUNT;
 	for (int i = 0; i < n; i++) {
 		const OrcInvItem& it = items[i];
@@ -369,33 +369,33 @@ static void drawOrcInventory() {
 				const int card = o.slot[it.index];
 				gfx::sign(sprites_plank_idx, it.x, it.y, it.w, it.h, f ? COL_ACCENT : COL_PLANK);
 				snprintf(buf, sizeof buf, "%d  %s", it.index + 1, orcSlotKey(it.index));
-				gfx::text(buf, it.x + 4, it.y + 3, 0.22f, COL_DIM);
+				gfx::text(buf, it.x + 4, it.y + 3, 0.26f, COL_DIM);
 				if (card == CARD_NONE) {
-					orcFit("Empty slot", it.x + it.w * 0.5f, it.y + 18, 0.24f, it.w - 6, COL_DIM);
+					orcFit("Empty slot", it.x + it.w * 0.5f, it.y + 19, 0.28f, it.w - 6, COL_DIM);
 					break;
 				}
-				gfx::sprite(SHEET_SPRITES, cardIcon(card), it.x + 13, it.y + 25, 0.5f, 0.5f);
-				orcFit(kCards[card].name, it.x + 25, it.y + 15, 0.22f, it.w - 28, COL_CREAM, ALIGN_LEFT);
+				gfx::sprite(SHEET_SPRITES, cardIcon(card), it.x + 14, it.y + 27, 0.54f, 0.54f);
+				orcFit(kCards[card].name, it.x + 26, it.y + 15, 0.26f, it.w - 29, COL_CREAM, ALIGN_LEFT);
 				if (kCards[card].kind == KIND_SINGLE) {
-					orcFit("Used once", it.x + 25, it.y + 26, 0.2f, it.w - 28, COL_DIM, ALIGN_LEFT);
+					orcFit("Used once", it.x + 26, it.y + 27, 0.24f, it.w - 29, COL_DIM, ALIGN_LEFT);
 				} else if (o.slotCool[it.index] > 0) {
 					snprintf(buf, sizeof buf, "Ready in %ds", (int)ceilf(o.slotCool[it.index]));
-					orcFit(buf, it.x + 25, it.y + 26, 0.2f, it.w - 28, rgba(170, 230, 255), ALIGN_LEFT);
+					orcFit(buf, it.x + 26, it.y + 27, 0.24f, it.w - 29, rgba(170, 230, 255), ALIGN_LEFT);
 				} else {
-					orcFit("Ready", it.x + 25, it.y + 26, 0.2f, it.w - 28, rgba(170, 255, 170), ALIGN_LEFT);
+					orcFit("Ready", it.x + 26, it.y + 27, 0.24f, it.w - 29, rgba(170, 255, 170), ALIGN_LEFT);
 				}
 				break;
 			}
 			case INV_PASSIVE:
 				if (f) gfx::rect(it.x, it.y, it.w, it.h, withAlpha(COL_ACCENT, 0.5f));
-				gfx::sprite(SHEET_SPRITES, cardIcon(o.passiveOrder[it.index]), it.x + it.w * 0.5f, it.y + it.h * 0.5f, 0.42f, 0.42f);
+				gfx::sprite(SHEET_SPRITES, cardIcon(o.passiveOrder[it.index]), it.x + it.w * 0.5f, it.y + it.h * 0.5f, 0.46f, 0.46f);
 				break;
 			case INV_UPGRADE: {
 				const int lv = o.upgrade[it.index];
 				if (f) gfx::rect(it.x - 2, it.y, it.w + 4, it.h, withAlpha(COL_ACCENT, 0.45f));
-				gfx::sprite(SHEET_SPRITES, cardIcon(it.index), it.x + 5, it.y + it.h * 0.5f, 0.26f, 0.26f);
+				gfx::sprite(SHEET_SPRITES, cardIcon(it.index), it.x + 5, it.y + it.h * 0.5f, 0.28f, 0.28f);
 				const int max = kCards[it.index].maxLevel;
-				orcFit(kCards[it.index].name, it.x + 12, it.y + (it.h - 9) * 0.5f, 0.22f, it.w - 14 - max * 7, lv ? COL_CREAM : COL_DIM, ALIGN_LEFT);
+				orcFit(kCards[it.index].name, it.x + 12, it.y + (it.h - 9) * 0.5f, 0.26f, it.w - 14 - max * 7, lv ? COL_CREAM : COL_DIM, ALIGN_LEFT);
 				orcPips(it.x + it.w - max * 7, it.y + (it.h - 5) * 0.5f, lv, max, rgba(255, 220, 110));
 				break;
 			}
@@ -559,19 +559,19 @@ static void drawOrchardMenus() {
 			return;
 		}
 		snprintf(buf, sizeof buf, "LEVEL %d! PICK A CARD", o.level - o.levelsWaiting + 1);
-		orcFit(buf, kFieldW * 0.5f, kFieldTop + 1 - (1.0f - ease) * 16.0f, 0.52f, kFieldW - 20, rgba(255, 230, 140));
+		orcFit(buf, kFieldW * 0.5f, kFieldTop + 4 - (1.0f - ease) * 6.0f, 0.50f, kFieldW - 20, rgba(255, 230, 140));
 		for (int i = 0; i < o.offerCount; i++) {
 			float x, y, w, h;
 			orcCardRect(i, o.offerCount, &x, &y, &w, &h);
 			const float ct = gSave.transitions && !gSave.calmFx ? clampf((sOrcOpenT - i * 0.03f) / 0.22f, 0.0f, 1.0f) : 1.0f;
 			const float ce = ct * ct * (3.0f - 2.0f * ct);
-			drawOrcCard(o.offer[i], x, y + (1.0f - ce) * 34.0f, w, h, o.focus == i);
+			drawOrcCard(o.offer[i], x, y + (1.0f - ce) * 14.0f, w, h, o.focus == i);
 		}
 		if (o.rerolls > 0) {
 			Button r = orcRerollButton();
-			r.y += (1.0f - ease) * 24.0f;
+			r.y += (1.0f - ease) * 14.0f;
 			snprintf(buf, sizeof buf, "Reroll (%d)", o.rerolls);
-			drawSign(r, buf, o.focus == o.offerCount, false, 0.46f);
+			drawSign(r, buf, o.focus == o.offerCount, false, 0.44f);
 		}
 		return;
 	}

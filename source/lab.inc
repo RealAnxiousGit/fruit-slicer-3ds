@@ -251,6 +251,7 @@ static void labInventory() {
 	char d[48];
 	snprintf(d, sizeof d, "%d upgrades, %d signs on a %.0f by %.0f field", upgrades, buttons, (double)kFieldW, (double)kFieldH);
 	labCheck(upgrades == 9 && buttons == INVB_COUNT, "the Inventory lists every upgrade, and its signs fit the field", d);
+	labCheck(items[0].kind == INV_SLOT && items[0].h >= 44, "the Inventory charm slot boxes are enlarged");
 	// Details strip on an Upgrade with a long description + Next line must clear the action buttons even with Larger Text on.
 	const u8 largeWas = gSave.largeText;
 	const u8 bladeWas = o.upgrade[CARD_BLADE];

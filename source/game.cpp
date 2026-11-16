@@ -2330,22 +2330,33 @@ void Game::drawHud() const {
 	char buf[32];
 	// Status panel plane.
 	gfx::setDepth(0.5f);
-	gfx::sign(sprites_plank_idx, 6, 2, 388, 76, COL_PLANK);
+	gfx::sign(sprites_plank_idx, 6, 2, 388, 86, COL_PLANK);
 
 	// Score: closest plane.
 	gfx::setDepth(1.3f);
 	float pulse = 1.0f + clampf(scorePulse, 0, 1) * 0.16f;
 	snprintf(buf, sizeof buf, "%lu", (unsigned long)score);
-	gfx::text(buf, 24, 14 - (pulse - 1) * 20, 1.25f * pulse, feverT > 0 ? cycleColor(elapsed * 0.6f) : COL_ACCENT);
+	float ss = 1.05f;
+	const float sw = gfx::textWidth(buf, ss);
+	if (sw > 112) ss *= 112 / sw;
+	gfx::text(buf, 20, 8 - (pulse - 1) * 16, ss * pulse, feverT > 0 ? cycleColor(elapsed * 0.6f) : COL_ACCENT);
+
+	// Coins made this run sit cleanly under the score on the left, independent of combo width.
+	if (mode != MODE_PRACTICE) {
+		float cp = 1.0f + clampf(coinPulse, 0, 1) * 0.3f;
+		snprintf(buf, sizeof buf, "%lu", (unsigned long)runCoins());
+		gfx::sprite(SHEET_SPRITES, sprites_coin_idx, 27, 67, 0.42f * cp, 0.42f * cp);
+		gfx::text(buf, 39, 59, 0.42f, COL_CREAM);
+	}
 
 	gfx::setDepth(0.9f);
-	gfx::text(modeName(mode), 380, 10, 0.5f, COL_CREAM, ALIGN_RIGHT);
+	gfx::text(modeName(mode), 380, orchardLike() ? 9.0f : 10.0f, orchardLike() ? 0.44f : 0.48f, COL_CREAM, ALIGN_RIGHT);
 	if (orchardLike()) {
-		drawOrchardHud(380, 24, 225, 1);
+		drawOrchardHud(380, 44, 240, 1);
 	} else {
-	if (passName) snprintf(buf, sizeof buf, "%s", passName);
-	else snprintf(buf, sizeof buf, mixed ? "MIXER BEST %lu" : (assisted ? "ASSISTED BEST %lu" : "BEST %lu"), (unsigned long)(score > best ? score : best));
-	gfx::text(buf, 380, 28, 0.42f, COL_DIM, ALIGN_RIGHT);
+		if (passName) snprintf(buf, sizeof buf, "%s", passName);
+		else snprintf(buf, sizeof buf, mixed ? "MIXER BEST %lu" : (assisted ? "ASSISTED BEST %lu" : "BEST %lu"), (unsigned long)(score > best ? score : best));
+		gfx::text(buf, 380, 31, 0.40f, COL_DIM, ALIGN_RIGHT);
 	}
 
 	if (maxStrikes > 0) {
@@ -2353,44 +2364,43 @@ void Game::drawHud() const {
 			bool used = i < strikes;
 			float s = 0.7f + (used && i == strikes - 1 ? clampf(strikePulse, 0, 1) * 0.6f : 0);
 			gfx::sprite(SHEET_SPRITES, used ? sprites_pip_on_idx : sprites_pip_off_idx,
-			            368 - (maxStrikes - 1 - i) * 24, 57, s, s);
+			            368 - (maxStrikes - 1 - i) * 24, 60, s, s);
 		}
 	}
-	if (mode == MODE_BEAT) drawBeat(326, 60, 1.0f);
+	if (mode == MODE_BEAT) drawBeat(326, 62, 1.0f);
 	if (timed()) {
 		int secs = (int)ceilf(timeLeft);
 		snprintf(buf, sizeof buf, "%d:%02d", secs / 60, secs % 60);
 		bool urgent = secs <= 10 && phase == PHASE_PLAY;
 		float s = urgent ? 0.62f + 0.06f * sinf(elapsed * 12) : 0.56f;
-		gfx::text(buf, 380, 46, s, urgent ? (gSave.colorBlind == 1 || gSave.colorBlind == 2 ? rgba(255, 200, 40) : rgba(255, 110, 100)) : COL_CREAM, ALIGN_RIGHT);
+		gfx::text(buf, 380, 50, s, urgent ? (gSave.colorBlind == 1 || gSave.colorBlind == 2 ? rgba(255, 200, 40) : rgba(255, 110, 100)) : COL_CREAM, ALIGN_RIGHT);
 	}
 
-	// Streak and combo sit to the right of the score, stacked so they never overlap it.
+	// Combo & swipe readouts: centered horizontally in the open middle lane, always above the Orchard HUD row.
 	gfx::setDepth(0.7f);
-	snprintf(buf, sizeof buf, "%lu", (unsigned long)score);
-	float px = 24 + gfx::textWidth(buf, 1.25f) + 14;
+	const float comboX = orchardLike() ? 188.0f : 195.0f;
+	const float comboMaxW = orchardLike() ? 96.0f : 106.0f;
 	if ((chain >= 2 || comboFadeT > 0) && meterLive()) {
 		const int shown = chain >= 2 ? chain : fadingChain;
 		char line[20];
 		snprintf(line, sizeof line, "COMBO %d", shown);
-		gfx::text(line, px, 16, 0.5f + clampf(shown * 0.004f, 0, 0.14f), chain >= 2 ? COL_CREAM : withAlpha(COL_CREAM, comboFadeT / kComboFade));
+		float cs = (orchardLike() ? 0.42f : 0.48f) + clampf(shown * 0.004f, 0, 0.12f);
+		const float cw = gfx::textWidth(line, cs);
+		if (cw > comboMaxW) cs *= comboMaxW / cw;
+		gfx::text(line, comboX, orchardLike() ? 8.0f : 14.0f, cs, chain >= 2 ? COL_CREAM : withAlpha(COL_CREAM, comboFadeT / kComboFade), ALIGN_CENTER);
 	}
 	if (comboCount >= 2) {
 		char line[20];
 		snprintf(line, sizeof line, "SWIPE X%d", comboCount);
-		gfx::text(line, px, 38, 0.42f, cycleColor(comboCount * 0.09f));
-	}
-	// Coins made this run: to the right of the score, under the combo lines, so they never sit on its digits.
-	if (mode != MODE_PRACTICE) {
-		float cp = 1.0f + clampf(coinPulse, 0, 1) * 0.3f;
-		snprintf(buf, sizeof buf, "%lu", (unsigned long)runCoins());
-		gfx::sprite(SHEET_SPRITES, sprites_coin_idx, px + 7, 62, 0.42f * cp, 0.42f * cp);
-		gfx::text(buf, px + 19, 55, 0.44f, COL_CREAM);
+		float sws = orchardLike() ? 0.34f : 0.40f;
+		const float sww = gfx::textWidth(line, sws);
+		if (sww > comboMaxW) sws *= comboMaxW / sww;
+		gfx::text(line, comboX, orchardLike() ? 25.0f : 38.0f, sws, cycleColor(comboCount * 0.09f), ALIGN_CENTER);
 	}
 
 	// The Fruit Frenzy meter (hidden in the lessons before the Frenzy one).
 	gfx::setDepth(0.6f);
-	const float bx = 24, by = 80, bw = 352;
+	const float bx = 24, by = 91, bw = 352;
 	if (meterLive()) gfx::rect(bx - 2, by - 2, bw + 4, 11, gfx::themeBar());
 	if (!meterLive()) {
 		// No meter yet: the lessons before the Frenzy one leave it out.
@@ -2407,9 +2417,9 @@ void Game::drawHud() const {
 	float mx = 24;
 	for (const auto& m : meters) {
 		if (m.t <= 0) continue;
-		gfx::sprite(SHEET_SPRITES, m.spr, mx + 8, 112, 0.42f, 0.42f);
-		gfx::rect(mx + 22, 108, 60, 8, rgba(0, 0, 0, 120));
-		gfx::rect(mx + 22, 108, 60 * clampf(m.t / m.max, 0, 1), 8, COL_CREAM);
+		gfx::sprite(SHEET_SPRITES, m.spr, mx + 8, 121, 0.42f, 0.42f);
+		gfx::rect(mx + 22, 117, 60, 8, rgba(0, 0, 0, 120));
+		gfx::rect(mx + 22, 117, 60 * clampf(m.t / m.max, 0, 1), 8, COL_CREAM);
 		mx += 94;
 	}
 
@@ -2444,51 +2454,47 @@ void Game::drawHud() const {
 	char buf[32];
 	const float u = uiScale();
 	const float right = kFieldW - (PORT_PAUSE_BUTTON ? 38 : 22);  // clear of the sign's screws
-	gfx::sign(sprites_plank_idx, 2, 1, kFieldW - 4, 29 * u, COL_PLANK);
+	gfx::sign(sprites_plank_idx, 2, 1, kFieldW - 4, 34 * u, COL_PLANK);
 
 	float pulse = 1.0f + clampf(scorePulse, 0, 1) * 0.16f;
 	snprintf(buf, sizeof buf, "%lu", (unsigned long)score);
-	gfx::text(buf, 16, 3 * u - (pulse - 1) * 10, 0.58f * u * pulse, feverT > 0 ? cycleColor(elapsed * 0.6f) : COL_ACCENT);
-	float px = 16 + gfx::textWidth(buf, 0.58f * u) + 10;
-	if ((chain >= 2 || comboFadeT > 0) && meterLive()) {
-		snprintf(buf, sizeof buf, "COMBO %d", chain >= 2 ? chain : fadingChain);
-		gfx::text(buf, px, 9 * u, 0.32f * u, chain >= 2 ? COL_CREAM : withAlpha(COL_CREAM, comboFadeT / kComboFade));
-		px += gfx::textWidth(buf, 0.32f * u) + 10;
-	}
-	if (comboCount >= 2) {
-		snprintf(buf, sizeof buf, "SWIPE X%d", comboCount);
-		gfx::text(buf, px, 9 * u, 0.32f * u, cycleColor(comboCount * 0.09f));
-	}
+	gfx::text(buf, 16, 5 * u - (pulse - 1) * 10, 0.58f * u * pulse, feverT > 0 ? cycleColor(elapsed * 0.6f) : COL_ACCENT);
+	const float px = 16 + gfx::textWidth(buf, 0.58f * u) + 10;
 
 	float rx = right;
 	if (timed()) {
 		int secs = (int)ceilf(timeLeft);
 		snprintf(buf, sizeof buf, "%d:%02d", secs / 60, secs % 60);
 		bool urgent = secs <= 10 && phase == PHASE_PLAY;
-		gfx::text(buf, rx, 5 * u, 0.46f * u, urgent ? (gSave.colorBlind == 1 || gSave.colorBlind == 2 ? rgba(255, 200, 40) : rgba(255, 110, 100)) : COL_CREAM, ALIGN_RIGHT);
+		gfx::text(buf, rx, 7 * u, 0.46f * u, urgent ? (gSave.colorBlind == 1 || gSave.colorBlind == 2 ? rgba(255, 200, 40) : rgba(255, 110, 100)) : COL_CREAM, ALIGN_RIGHT);
 		rx -= 62 * u;
 	}
 	if (maxStrikes > 0) {
 		for (int i = 0; i < maxStrikes; i++) {
 			bool used = i < strikes;
 			float s = (0.5f + (used && i == strikes - 1 ? clampf(strikePulse, 0, 1) * 0.4f : 0)) * u;
-			gfx::sprite(SHEET_SPRITES, used ? sprites_pip_on_idx : sprites_pip_off_idx, rx - 8 * u - (maxStrikes - 1 - i) * 17 * u, 15 * u, s, s);
+			gfx::sprite(SHEET_SPRITES, used ? sprites_pip_on_idx : sprites_pip_off_idx, rx - 8 * u - (maxStrikes - 1 - i) * 17 * u, 17 * u, s, s);
 		}
 		rx -= (maxStrikes * 17 + 6) * u;
 	}
 	if (mode == MODE_BEAT) {
-		drawBeat(rx - 50 * u, 14 * u, u);
+		drawBeat(rx - 50 * u, 16 * u, u);
 		rx -= 60 * u;
 	}
+	float rightHudLeft = rx;
 	if (orchardLike()) {
-		drawOrchardHud(rx, 0, rx - 16 - gfx::textWidth("00000", 0.58f * u) - 20, u);
+		const float hudMaxW = fmaxf(140.0f * u, rx - px - 8 * u);
+		drawOrchardHud(rx, 2.5f * u, hudMaxW, u);
+		// Reserve full Orchard HUD span (room/boss + HP/XP bar + LV label) so combos never cover LV/HP/Room.
+		rightHudLeft = rx - fminf(hudMaxW, 245.0f * u);
 	} else {
-	if (passName) snprintf(buf, sizeof buf, "%s", passName);
-	else snprintf(buf, sizeof buf, mixed ? "MIXER BEST %lu" : (assisted ? "ASSISTED BEST %lu" : "BEST %lu"), (unsigned long)(score > best ? score : best));
-	gfx::text(buf, rx, 9 * u, 0.3f * u, COL_DIM, ALIGN_RIGHT);
+		if (passName) snprintf(buf, sizeof buf, "%s", passName);
+		else snprintf(buf, sizeof buf, mixed ? "MIXER BEST %lu" : (assisted ? "ASSISTED BEST %lu" : "BEST %lu"), (unsigned long)(score > best ? score : best));
+		gfx::text(buf, rx, 10 * u, 0.32f * u, COL_DIM, ALIGN_RIGHT);
+		rightHudLeft = rx - gfx::textWidth(buf, 0.32f * u) - 8 * u;
 	}
 
-	const float bx = 12, by = 28 * u, bw = kFieldW - 24;
+	const float bx = 12, by = 32 * u, bw = kFieldW - 24;
 	if (meterLive()) gfx::rect(bx - 1, by - 1, bw + 2, 6, gfx::themeBar());
 	if (!meterLive()) {
 		// No meter yet: the lessons before the Frenzy one leave it out.
@@ -2497,6 +2503,29 @@ void Game::drawHud() const {
 		gfx::text("FRUIT FRENZY X2", kFieldW * 0.5f, by + 6, 0.3f, cycleColor(elapsed * 0.7f), ALIGN_CENTER);
 	} else {
 		gfx::rect(bx, by, bw * clampf(feverMeter, 0, 1), 4, COL_ACCENT);
+	}
+
+	// Combo & swipe readouts: centered between Score and the right HUD when room allows;
+	// otherwise dropped cleanly below the Frenzy meter so they never overlap LV, HP or ROOM.
+	const bool showChain = (chain >= 2 || comboFadeT > 0) && meterLive();
+	const bool showSwipe = comboCount >= 2;
+	if (showChain || showSwipe) {
+		char chainBuf[20] = "", swipeBuf[20] = "";
+		if (showChain) snprintf(chainBuf, sizeof chainBuf, "COMBO %d", chain >= 2 ? chain : fadingChain);
+		if (showSwipe) snprintf(swipeBuf, sizeof swipeBuf, "SWIPE X%d", comboCount);
+		const float cs = 0.32f * u;
+		const float w1 = showChain ? gfx::textWidth(chainBuf, cs) : 0;
+		const float w2 = showSwipe ? gfx::textWidth(swipeBuf, cs) : 0;
+		const float gap = (showChain && showSwipe) ? 10.0f * u : 0;
+		const float totalW = w1 + gap + w2;
+		const bool fitsBar = px + totalW <= rightHudLeft - 6 * u;
+		float cx = fitsBar ? ((px + rightHudLeft - totalW) * 0.5f) : (kFieldW * 0.5f - totalW * 0.5f);
+		const float cy = fitsBar ? (10.5f * u) : (by + (feverT > 0 ? 30.0f : 26.0f));
+		if (showChain) {
+			gfx::text(chainBuf, cx, cy, cs, chain >= 2 ? COL_CREAM : withAlpha(COL_CREAM, comboFadeT / kComboFade));
+			cx += w1 + gap;
+		}
+		if (showSwipe) gfx::text(swipeBuf, cx, cy, cs, cycleColor(comboCount * 0.09f));
 	}
 
 	struct Meter { float t, max; int spr; };

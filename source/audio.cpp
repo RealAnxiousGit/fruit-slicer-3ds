@@ -253,7 +253,7 @@ static int resolveTrack(int context, bool* autoPick) {
 	// A song that has left the Custom Music folder plays as Auto, keeping the choice in case it comes back.
 	if (choice > 0 && choice - 1 < trackCount()) return choice - 1;
 	*autoPick = true;
-	if (sAutoPick && sAutoContext == context && inAutoPool(context, sCurrent)) return sCurrent;
+	if (sAutoPick && inAutoPool(context, sCurrent)) return sCurrent;
 	return pickAuto(context, sCurrent);
 }
 
