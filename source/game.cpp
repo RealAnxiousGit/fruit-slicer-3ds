@@ -30,7 +30,7 @@ const ModeInfo kModes[MODE_COUNT] = {
 	{"Combo Rush", "Only combos score. Bigger is better.", "One bomb or an empty meter ends it."},
 	{"Daily Fruit", "60 seconds, the same run for everyone.", "A new one every day. Bombs cost 10."},
 	{"Beat Slice", "Slice to the music. 60 seconds.", "Only slices on the beat score!"},
-	{"Orchard Blast", "A roguelike run through 10 rooms.", "Level up, pick upgrades, beat bosses."},
+	{"Orchard Blast", "Endless rooms with seeded bosses.", "Level up, pick upgrades, pause & resume."},
 	{"Boss Rush", "Every boss, back to back.", "Pick a build. Fastest time wins."},
 	{"Recipe", "Slice what the smoothie needs.", "A wrong fruit spoils the cup."},
 	{"Sharpshooter", "Only the called colour scores.", "The call changes. Watch the shapes."},
@@ -995,18 +995,11 @@ void Game::commitScore() {
 		if (secs < 0xFFFF && (gSave.rushBestSecs == 0 || secs < gSave.rushBestSecs)) gSave.rushBestSecs = (u16)secs;
 	}
 	if (mode == MODE_ORCHARD) {
-		if (orc.endless) {
-			if (gSave.endlessRuns < 0xFFFFFFFFu) gSave.endlessRuns++;
-			const u16 bestRoom = (u16)(orc.room > 0xFFFF ? 0xFFFF : (orc.room < 1 ? 1 : orc.room));
-			if (bestRoom > gSave.endlessBestRoom) gSave.endlessBestRoom = bestRoom;
-			if (orc.level > gSave.endlessBestLevel) gSave.endlessBestLevel = (u16)orc.level;
-		} else {
-			if (gSave.orchardRuns < 0xFFFF) gSave.orchardRuns++;
-			if (orc.won && gSave.orchardWins < 0xFFFF) gSave.orchardWins++;
-			const int room = orc.won ? kOrchardRooms + 1 : orc.room;
-			if (room > gSave.orchardBestRoom) gSave.orchardBestRoom = (u16)room;
-			if (orc.level > gSave.orchardBestLevel) gSave.orchardBestLevel = (u16)orc.level;
-		}
+		if (gSave.endlessRuns < 0xFFFFFFFFu) gSave.endlessRuns++;
+		const u16 bestRoom = (u16)(orc.room > 0xFFFF ? 0xFFFF : (orc.room < 1 ? 1 : orc.room));
+		if (bestRoom > gSave.endlessBestRoom) gSave.endlessBestRoom = bestRoom;
+		if (orc.level > gSave.endlessBestLevel) gSave.endlessBestLevel = (u16)orc.level;
+		orchardClearSave();
 	}
 	if (spChallenge) {
 		const bool won = spTarget > 0 ? score >= spTarget : score > 0;
@@ -2379,7 +2372,7 @@ void Game::drawHud() const {
 	}
 
 	gfx::setDepth(0.9f);
-	gfx::text(mode == MODE_ORCHARD && orc.endless ? "ENDLESS ORCHARD" : modeName(mode), 380, orchardLike() ? 9.0f : 10.0f, orchardLike() ? 0.44f : 0.48f, COL_CREAM, ALIGN_RIGHT);
+	gfx::text(modeName(mode), 380, orchardLike() ? 9.0f : 10.0f, orchardLike() ? 0.44f : 0.48f, COL_CREAM, ALIGN_RIGHT);
 	if (orchardLike()) {
 		drawOrchardHud(380, 44, 240, 1);
 	} else {

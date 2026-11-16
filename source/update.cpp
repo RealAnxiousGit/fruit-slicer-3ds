@@ -174,6 +174,7 @@ void boot(const char* version) {
 #ifdef AUTOTEST
 	return;  // test runs never reach the network
 #endif
+	if (PORT_WEB) return;  // the page itself is always the newest version
 	if (gSave.updConsent == 0) sState = ASK;
 	else if (gSave.updConsent == 1 && gSave.updLastDay != progress::today()) startCheck(false);  // at most once a day
 }

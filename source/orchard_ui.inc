@@ -342,11 +342,10 @@ static void drawOrcInventory() {
 	gfx::rect(kFillX, kFillX, kFillW, kFillW, rgba(20, 12, 8, 200));
 	gfx::text("INVENTORY", kFieldW * 0.5f, kFieldTop + 1, 0.46f, rgba(255, 230, 140), ALIGN_CENTER);
 	const u32 head = rgba(255, 210, 150);
-	const int room = o.endless ? o.room : (o.room > kOrchardRooms ? kOrchardRooms : o.room);
+	const int room = o.room;
 	const int mins = (int)sGame.elapsed / 60, secs = (int)sGame.elapsed % 60;
 	if (!L.runCol) {
-		if (o.endless) snprintf(buf, sizeof buf, "Endless Room %d   Level %d   %d:%02d   %d sliced", room, o.level, mins, secs, sGame.sliced);
-		else snprintf(buf, sizeof buf, "Room %d of %d   Level %d   %d:%02d   %d sliced", room, kOrchardRooms, o.level, mins, secs, sGame.sliced);
+		snprintf(buf, sizeof buf, "Room %d   Level %d   %d:%02d   %d sliced", room, o.level, mins, secs, sGame.sliced);
 		orcFit(buf, kFieldW * 0.5f, kFieldTop + 21, 0.30f, kFieldW - 16, COL_CREAM);
 	}
 	// Stats: HP, then each upgrade with its level as pips.
@@ -359,8 +358,7 @@ static void drawOrcInventory() {
 		float y = L.ry;
 		gfx::text("Run", L.rx, y, 0.33f, head);
 		y += 15;
-		if (o.endless) snprintf(buf, sizeof buf, "Endless Room %d", room);
-		else snprintf(buf, sizeof buf, "Room %d of %d", room, kOrchardRooms);
+		snprintf(buf, sizeof buf, "Room %d", room);
 		orcFit(buf, L.rx, y, 0.29f, L.rw, COL_CREAM, ALIGN_LEFT);
 		y += 12;
 		snprintf(buf, sizeof buf, "Level %d", o.level);
@@ -623,7 +621,7 @@ static bool updateOrcInventory(const Input& in, bool wasTouching) {
 
 static bool newModeOn() { return sGame.mode >= MODE_ORCHARD && sGame.mode <= MODE_JUGGLE; }
 static void drawRushPick();
-static void drawVariantPick();
+static void drawResumePrompt();
 
 static void drawOrchardMenus() {
 	if (!newModeOn() || !sGame.orchardLike()) return;
@@ -632,8 +630,8 @@ static void drawOrchardMenus() {
 		return;
 	}
 	const Orchard& o = sGame.orc;
-	if (o.variantPicking) {
-		drawVariantPick();
+	if (o.resumePrompt) {
+		drawResumePrompt();
 		return;
 	}
 	char buf[64];
@@ -731,58 +729,57 @@ static bool updateRushPick(const Input& in, bool wasTouching) {
 	return true;
 }
 
-static void drawVariantPick() {
+static void resumeButtons(Button out[2], float* px, float* py, float* pw, float* ph) {
+	const float w = fminf(kFieldW - 24.0f, 296.0f), h = fminf(kFieldH - kFieldTop - 26.0f, 152.0f);
+	const float x = (kFieldW - w) * 0.5f, y = kFieldTop + (kFieldH - kFieldTop - h) * 0.5f;
+	if (px) *px = x;
+	if (py) *py = y;
+	if (pw) *pw = w;
+	if (ph) *ph = h;
+	const float bw = (w - 36.0f) * 0.5f;
+	out[0] = {x + 12.0f, y + h - 46.0f, bw, 34.0f, "Continue"};
+	out[1] = {x + w - 12.0f - bw, y + h - 46.0f, bw, 34.0f, "Start Over"};
+}
+
+static void drawResumePrompt() {
 	const Orchard& o = sGame.orc;
 	const float openK = gSave.transitions && !gSave.calmFx ? clampf(sOrcOpenT / 0.24f, 0.0f, 1.0f) : 1.0f;
 	const float ease = openK * openK * (3.0f - 2.0f * openK);
-	gfx::rect(kFillX, kFillX, kFillW, kFillW, rgba(20, 12, 8, (u8)(175 * ease)));
-	orcFit("ORCHARD BLAST", kFieldW * 0.5f, kFieldTop + 4 - (1.0f - ease) * 14.0f, 0.52f, kFieldW - 20, rgba(255, 230, 140));
-	char buf[96];
+	gfx::rect(kFillX, kFillX, kFillW, kFillW, rgba(20, 12, 8, (u8)(180 * ease)));
+	float x, y, w, h;
+	Button btns[2];
+	resumeButtons(btns, &x, &y, &w, &h);
+	const float slide = (1.0f - ease) * 18.0f;
+	drawPlank(x, y + slide, w, h, false, false);
+	orcFit("ORCHARD BLAST", x + w * 0.5f, y + 14.0f + slide, 0.46f, w - 20.0f, COL_ACCENT);
+	char msg[160];
+	snprintf(msg, sizeof msg, "Hey! Looks like you have a saved game up to room %u! Would you like to continue this run?", (unsigned)o.savedRoom);
+	orcWrap(msg, x + w * 0.5f, y + 40.0f + slide, PORT_3DS ? 0.30f : 0.33f, w - 24.0f, 13.0f, COL_CREAM, 5);
 	for (int i = 0; i < 2; i++) {
-		float x, y, w, h;
-		orcCardRect(i, 2, &x, &y, &w, &h);
-		const float ct = gSave.transitions && !gSave.calmFx ? clampf((sOrcOpenT - i * 0.035f) / 0.22f, 0.0f, 1.0f) : 1.0f;
-		const float ce = ct * ct * (3.0f - 2.0f * ct);
-		y += (1.0f - ce) * 28.0f;
-		drawPlank(x, y, w, h, o.variantFocus == i, false);
-		const float cx = x + w * 0.5f;
-		const float is = i == 0 ? (PORT_3DS ? 0.34f : 0.36f) : (PORT_3DS ? 1.05f : 1.12f);
-		gfx::sprite(SHEET_SPRITES, i == 0 ? sprites_boss_melon_guard_idx : sprites_ic_endless_idx, cx, y + 23, is, is);
-		orcFit(i == 0 ? "10 ROOMS" : "ENDLESS", cx, y + 48, 0.44f, w - 10, i == 0 ? COL_CREAM : rgba(170, 230, 255));
-		if (i == 0) {
-			if (gSave.orchardWins) snprintf(buf, sizeof buf, "Won %u time%s", (unsigned)gSave.orchardWins, gSave.orchardWins == 1 ? "" : "s");
-			else if (gSave.orchardBestRoom) snprintf(buf, sizeof buf, "Best: Room %u", (unsigned)gSave.orchardBestRoom);
-			else snprintf(buf, sizeof buf, "10-Room Adventure");
-		} else {
-			if (gSave.endlessBestRoom) snprintf(buf, sizeof buf, "Best: Room %u", (unsigned)gSave.endlessBestRoom);
-			else snprintf(buf, sizeof buf, "No Limit");
-		}
-		orcFit(buf, cx, y + 66, 0.28f, w - 12, COL_ACCENT);
-		const char* desc = i == 0 ? "Clear Room 10 and beat 2 bosses to win." : "Keep climbing past Room 10 with Royal bosses every lap.";
-		orcWrap(desc, cx, y + 84, 0.29f, w - 12, 12.0f, COL_CREAM, 4);
+		Button b = btns[i];
+		b.y += slide;
+		drawSign(b, b.label, o.resumeFocus == i, false, 0.42f);
 	}
-	snprintf(buf, sizeof buf, "SEED %08X   %s", (unsigned)o.runSeed, PORT_3DS ? "A OR TAP TO START" : "CLICK OR ENTER TO START");
-	orcFit(buf, kFieldW * 0.5f, kFieldH - 28, 0.28f, kFieldW - 20, COL_DIM);
 }
 
-static bool updateVariantPick(const Input& in, bool wasTouching) {
+static bool updateResumePrompt(const Input& in, bool wasTouching) {
 	Orchard& o = sGame.orc;
 	sOrcOpenT += kDt;
 	if (sOrcOpenT < 0.16f) return true;
-	if (in.down & (KEY_LEFT | KEY_RIGHT)) o.variantFocus ^= 1;
+	if (in.down & (KEY_LEFT | KEY_RIGHT)) o.resumeFocus ^= 1;
+	Button btns[2];
+	resumeButtons(btns, nullptr, nullptr, nullptr, nullptr);
 	int pick = -1;
 	for (int i = 0; i < 2; i++) {
-		float x, y, w, h;
-		orcCardRect(i, 2, &x, &y, &w, &h);
-		if (tapped(in, wasTouching, x, y, w, h)) pick = i;
+		if (tapped(in, wasTouching, btns[i].x, btns[i].y, btns[i].w, btns[i].h)) pick = i;
 #if PORT_MOUSE
-		if (in.hovering && in.tx >= x && in.tx < x + w && in.ty >= y && in.ty < y + h) o.variantFocus = (u8)i;
+		if (in.hovering && in.tx >= btns[i].x && in.tx < btns[i].x + btns[i].w && in.ty >= btns[i].y && in.ty < btns[i].y + btns[i].h) o.resumeFocus = (u8)i;
 #endif
 	}
-	if (in.down & KEY_A) pick = o.variantFocus;
+	if (in.down & KEY_A) pick = o.resumeFocus;
 	if (pick >= 0) {
 		audio::click();
-		sGame.orchardPickVariant(pick == 1);
+		sGame.orchardResumeChoice(pick == 0);
 		sOrcOpenT = 0;
 	}
 	return true;
@@ -799,9 +796,9 @@ static bool updateOrchardMenus(const Input& in, bool wasTouching) {
 		return updateRushPick(in, wasTouching);
 	}
 	Orchard& o = sGame.orc;
-	if (o.variantPicking) {
+	if (o.resumePrompt) {
 		sOrcInv = false;
-		return updateVariantPick(in, wasTouching);
+		return updateResumePrompt(in, wasTouching);
 	}
 	if (o.choosing) {
 		sOrcInv = false;

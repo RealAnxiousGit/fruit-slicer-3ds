@@ -48,6 +48,8 @@ const char* modeSlug(int mode, bool endless) {
 const char* platformTag() {
 #if PORT_3DS
 	return "3ds";
+#elif PORT_WEB
+	return "web";
 #elif PORT_ANDROID
 	return "android";
 #elif defined(_WIN32)

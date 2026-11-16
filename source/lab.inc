@@ -203,12 +203,15 @@ static void labShopPreview() {
 static void labInventory() {
 	const u8 seenWas = gSave.howToSeen;
 	gSave.howToSeen |= 3;
+	Game::orchardClearSave();
 	sGame.start(MODE_ORCHARD);
-	sGame.orchardPickVariant(false, 12345u);
 	sGame.phase = PHASE_PLAY;
 	Orchard& o = sGame.orc;
 	o.choosing = false;
 	o.boss.on = false;
+	o.room = 6;
+	o.level = 3;
+	o.xp = 11.0f;
 	o.slot[0] = CARD_BLENDER;
 	o.slot[1] = CARD_GOLDAPPLE;
 	Input in = {};
@@ -217,13 +220,22 @@ static void labInventory() {
 		in.down = key;
 		updateOrchardMenus(in, false);
 	};
+	labCheck(o.endless && !o.resumePrompt, "Orchard Blast enters directly in Endless mode when no run save exists");
+	const bool savedMid = sGame.orcSaveRun();
+	sGame.start(MODE_ORCHARD);
+	sGame.phase = PHASE_PLAY;
+	sOrcOpenT = 0.25f;
+	labCheck(savedMid && o.resumePrompt && o.savedRoom == 6, "Saved Orchard Blast run triggers Continue / Start Over modal on re-entry");
+	press(KEY_A);
+	labCheck(!o.resumePrompt && o.room == 6 && o.level == 3 && (int)o.xp == 11 && o.slot[0] == CARD_BLENDER, "Continue button resumes exact saved room, level, XP, and slots");
+	sGame.orcSaveRun();
 	sGame.start(MODE_ORCHARD);
 	sGame.phase = PHASE_PLAY;
 	sOrcOpenT = 0.25f;
 	press(KEY_RIGHT);
 	press(KEY_A);
-	labCheck(o.endless && !o.variantPicking, "Orchard Blast variant picker lets D-pad switch to Endless and A starts it");
-	sGame.orchardPickVariant(false, 12345u);
+	labCheck(!o.resumePrompt && !Game::orchardHasSave() && o.room == 1 && o.level == 1 && o.xp == 0 && o.slot[0] == CARD_NONE,
+	         "Start Over button clears save, resets inventory/XP/level, and restarts at Room 1");
 	sGame.phase = PHASE_PLAY;
 	o.choosing = false;
 	o.boss.on = false;
@@ -387,16 +399,18 @@ static void labMenus() {
 		case 4: labExpect(SCREEN_TITLE, "Journal back arrow cuts its berry and goes back"); botTap(kTitleButtons[3]); return;
 		case 5: {
 			labExpect(SCREEN_STATS, "Stats opens");
-			// Highest room conquered: the room a run reached, less one; a won run conquered all 10.
 			const u16 roomWas = gSave.orchardBestRoom;
+			const u16 endWas = gSave.endlessBestRoom;
 			gSave.orchardBestRoom = 0;
+			gSave.endlessBestRoom = 0;
 			const int none = statsRoomsConquered();
 			gSave.orchardBestRoom = 7;
 			const int six = statsRoomsConquered();
-			gSave.orchardBestRoom = kOrchardRooms + 1;
-			const int all = statsRoomsConquered();
+			gSave.endlessBestRoom = 14;
+			const int fourteen = statsRoomsConquered();
 			gSave.orchardBestRoom = roomWas;
-			labCheck(none == 0 && six == 6 && all == kOrchardRooms, "Stats shows the highest Orchard Blast room conquered: none, room 6 when room 7 was reached, all 10 on a win");
+			gSave.endlessBestRoom = endWas;
+			labCheck(none == 0 && six == 6 && fourteen == 14, "Stats shows best room across Endless runs and legacy saves");
 			botTap(kBack);
 			return;
 		}

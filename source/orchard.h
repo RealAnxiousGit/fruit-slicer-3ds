@@ -143,9 +143,10 @@ struct Orchard {
 	float roomT;         // seconds into the room
 	bool bossRoom;
 	bool won;
-	bool endless;        // true = Endless Orchard (continues past Room 10, scores rooms conquered)
-	bool variantPicking; // choosing between 10 Rooms and Endless on Orchard Blast start
-	u8 variantFocus;     // 0 = 10 Rooms, 1 = Endless
+	bool endless;        // always true: Orchard Blast is Endless by default
+	bool resumePrompt;   // asking whether to Continue a saved run or Start Over
+	u8 resumeFocus;      // 0 = Continue, 1 = Start Over
+	u16 savedRoom;       // room shown in the Continue prompt
 	u32 runSeed;         // deterministic seed determining boss order & wave variety for this run
 	u8 bossOrder[BOSS_COUNT];
 	// Health.

@@ -1253,7 +1253,7 @@ static const Row kVisualRows[] = {
 #if PORT_3DS
 	{ROW_SLIDER, "3D Depth", &gSave.depth, 0, 100, nullptr, 0, 100, ACT_NONE, "How far things stand out,", "with the console's 3D slider."},
 #endif
-#if PORT_HAS_DISPLAY && !PORT_ANDROID
+#if PORT_HAS_DISPLAY && !PORT_ANDROID && !PORT_WEB  // a phone fills its screen; a web page sizes the game itself
 	{ROW_CHOICE, "Display Mode", &gSave.windowMode, 0, 2, kWindowModeNames, 0, 0, ACT_NONE, "Borderless fills the screen.", "Fullscreen takes it over."},
 	{ROW_ACTION, "Apply", nullptr, 0, 0, nullptr, 0, 0, ACT_APPLY_DISPLAY, "Tries the mode and resolution.", "Undone in 10 seconds unless kept."},
 #endif
@@ -1266,13 +1266,15 @@ static const Row kVisualRows[] = {
 };
 // Not const: the Resolution row's last choice depends on the screen and the Display Mode.
 static Row kVisualMoreRows[] = {
-#if PORT_HAS_DISPLAY && !PORT_ANDROID
+#if PORT_HAS_DISPLAY && !PORT_ANDROID && !PORT_WEB
 	{ROW_CHOICE, "Resolution", &port::gResChoice, 0, 0, port::gResNames, 0, 0, ACT_NONE, "Window size, or the screen mode", "in Fullscreen."},
 	{ROW_ACTION, "Apply", nullptr, 0, 0, nullptr, 0, 0, ACT_APPLY_DISPLAY, "Tries the mode and resolution.", "Undone in 10 seconds unless kept."},
 	{ROW_CHOICE, "V-Sync", &gSave.vsync, 0, 1, kOffOn, 0, 0, ACT_NONE, "Waits for the screen: no tearing.", "Works on 60 and 120 Hz screens."},
 #endif
-#if PORT_HAS_DISPLAY
+#if PORT_HAS_DISPLAY && !PORT_WEB  // a browser only has WebGL
 	{ROW_CHOICE, "Renderer", &gSave.renderer, 0, (u8)(kRendererCount - 1), kRendererNames, 0, 0, ACT_NONE, "How the game draws. Takes effect", "the next time the game starts."},
+#endif
+#if PORT_HAS_DISPLAY
 	{ROW_CHOICE, "Textures", &gSave.texQuality, 0, PORT_ULTRA ? 3 : 2, kTextureNames, 0, 0, ACT_NONE, PORT_ULTRA ? "Sharpness of the art. Ultra is" : "Sharpness of the art.", PORT_ULTRA ? "for 4K screens and uses more memory." : "Lower uses less memory."},
 	{ROW_CHOICE, "Shadows", &gSave.shadowQuality, 0, 2, kShadowNames, 0, 0, ACT_NONE, "Shadows under 3D fruit.", ""},
 	{ROW_CHOICE, "Ambient Occlusion", &gSave.ambientOcc, 0, 1, kOffOn, 0, 0, ACT_NONE, "Shaded undersides on 3D fruit.", ""},
@@ -1327,8 +1329,10 @@ static const Row kDataRows[] = {
 #if PORT_3DS
 	{ROW_ACTION, "Speed Test", nullptr, 0, 0, nullptr, 0, 0, ACT_SPEED_TEST, "A 90 second test of this console.", "Results go in 3ds/FruitSlicer/bench.txt"},
 #endif
+#if !PORT_WEB  // the browser version is always the newest one
 	{ROW_CHOICE, "Check for Updates", &gSave.updConsent, 1, 2, kUpdateNames, 0, 0, ACT_NONE, "Looks on GitHub once a day", "for a new version."},
 	{ROW_ACTION, "Check Now", nullptr, 0, 0, nullptr, 0, 0, ACT_CHECK_UPDATES, "Looks on GitHub right away.", ""},
+#endif
 	{ROW_ACTION, "Reset Scores", nullptr, 0, 0, nullptr, 0, 0, ACT_RESET_SCORES, "Erases best scores and totals.", "Settings stay."},
 	{ROW_ACTION, "Reset Leaderboard Name", nullptr, 0, 0, nullptr, 0, 0, ACT_RESET_LB_NAME, "Clears your online leaderboard name.", "Prompts again on your next score."},
 	{ROW_ACTION, "Reset Everything", nullptr, 0, 0, nullptr, 0, 0, ACT_RESET_ALL, "Erases scores and all settings.", ""},
@@ -3180,8 +3184,8 @@ static void drawJournalBossTop(int boss) {
 	static const char* const kBossWhere[BOSS_COUNT] = {
 		"ORCHARD BLAST & BOSS RUSH",
 		"ORCHARD BLAST & BOSS RUSH",
-		"ENDLESS ORCHARD & BOSS RUSH",
-		"ENDLESS ORCHARD & BOSS RUSH",
+		"ORCHARD BLAST & BOSS RUSH",
+		"ORCHARD BLAST & BOSS RUSH",
 	};
 	gfx::text(boss >= 0 && boss < BOSS_COUNT ? kBossWhere[boss] : "ORCHARD BLAST", 200, 94, 0.38f, COL_CREAM, ALIGN_CENTER);
 	const u32 wins = gSave.bossWins[boss];
@@ -3271,11 +3275,11 @@ static void drawJournalTop() {
 	fitText(buf, 200, 194, 0.38f, 324, COL_CREAM);
 }
 
-// Orchard Blast's best room is saved as the room the run reached (one past the last on a win),
-// so the highest conquered is the one before it.
+// Best room reached in Orchard Blast (keeps compatibility with legacy pre-endless saves).
 static int statsRoomsConquered() {
-	const int r = (int)gSave.orchardBestRoom - 1;
-	return r < 0 ? 0 : (r > kOrchardRooms ? kOrchardRooms : r);
+	const int leg = (int)gSave.orchardBestRoom - 1;
+	const int legClamped = leg < 0 ? 0 : (leg > kOrchardRooms ? kOrchardRooms : leg);
+	return (int)gSave.endlessBestRoom > legClamped ? (int)gSave.endlessBestRoom : legClamped;
 }
 
 static const Button kStatsTabs[] = {{16, 42, 138, 20, "Personal"}, {166, 42, 138, 20, "StreetPass"}};
@@ -3335,7 +3339,7 @@ static void drawStats() {
 #endif
 	const float boxY = PORT_3DS ? 68.0f : 48.0f, boxH = PORT_3DS ? 166.0f : 186.0f;
 	gfx::sign(sprites_plank_idx, 8, boxY, 304, boxH, COL_PLANK);
-	constexpr int kRows = 12;
+	constexpr int kRows = 11;
 	char value[kRows][32];
 	snprintf(value[0], 32, "%lu", (unsigned long)gSave.totalFruit);
 	snprintf(value[1], 32, "%lu", (unsigned long)gSave.coinsLifetime);
@@ -3346,23 +3350,21 @@ static void drawStats() {
 	snprintf(value[3], 32, "%s", fav < MODE_COUNT ? modeName(fav) : "None yet");
 	snprintf(value[4], 32, "%lu", (unsigned long)gSave.bestCombo);
 	snprintf(value[5], 32, "%d (best %d)", progress::dailyStreak(progress::today()), (int)gSave.dailyBestStreak);
-	// Orchard Blast: the highest room conquered (cleared), Endless best, runs and the bosses.
-	const int conquered = statsRoomsConquered();
-	if (conquered >= kOrchardRooms) snprintf(value[6], 32, "All %d, run won", kOrchardRooms);
-	else if (conquered > 0) snprintf(value[6], 32, "Room %d", conquered);
+	const int bestRoom = statsRoomsConquered();
+	if (bestRoom > 0) snprintf(value[6], 32, "Room %d", bestRoom);
 	else snprintf(value[6], 32, "None yet");
-	if (gSave.endlessBestRoom > 0) snprintf(value[7], 32, "Room %u", (unsigned)gSave.endlessBestRoom);
-	else snprintf(value[7], 32, "None yet");
-	snprintf(value[8], 32, "%u runs, %u won", (unsigned)gSave.orchardRuns, (unsigned)gSave.orchardWins);
-	snprintf(value[9], 32, "%u", (unsigned)gSave.orchardBestLevel);
+	const unsigned long runs = (unsigned long)gSave.endlessRuns + gSave.orchardRuns;
+	snprintf(value[7], 32, "%lu", runs);
+	const unsigned bestLv = gSave.endlessBestLevel > gSave.orchardBestLevel ? gSave.endlessBestLevel : gSave.orchardBestLevel;
+	snprintf(value[8], 32, "%u", bestLv);
 	unsigned long bossWins = 0;
 	for (u16 w : gSave.bossWins) bossWins += w;
-	snprintf(value[10], 32, "%lu", bossWins);
-	if (gSave.rushBestSecs) snprintf(value[11], 32, "%u:%02u", gSave.rushBestSecs / 60u, gSave.rushBestSecs % 60u);
-	else snprintf(value[11], 32, "Not cleared yet");
+	snprintf(value[9], 32, "%lu", bossWins);
+	if (gSave.rushBestSecs) snprintf(value[10], 32, "%u:%02u", gSave.rushBestSecs / 60u, gSave.rushBestSecs % 60u);
+	else snprintf(value[10], 32, "Not cleared yet");
 	static const char* const kNames[kRows] = {"FRUIT SLICED", "COINS EARNED", "TIME PLAYED", "FAVOURITE MODE", "LONGEST COMBO", "DAILY STREAK",
-	                                          "HIGHEST ROOM CONQUERED", "ENDLESS BEST ROOM", "RUNS", "BEST LEVEL", "BOSS WINS", "FASTEST BOSS RUSH"};
-	const float rowStep = PORT_3DS ? 12.0f : 13.5f;
+	                                          "BEST ROOM", "RUNS", "BEST LEVEL", "BOSS WINS", "FASTEST BOSS RUSH"};
+	const float rowStep = PORT_3DS ? 13.0f : 14.5f;
 	const float headGap = PORT_3DS ? 10.0f : 11.0f;
 	const float yBase = PORT_3DS ? 71.0f : 52.0f;
 	for (int i = 0; i < kRows; i++) {
@@ -3399,7 +3401,7 @@ static void drawStatsTop() {
 		const streetpass::Entry& e = streetpass::entry(sSpStatSel);
 		gfx::text(e.pkt.name, 200, 88, 0.48f, COL_ACCENT, ALIGN_CENTER);
 		fitText(e.pkt.msg, 200, 114, 0.40f, 310, COL_CREAM);
-		snprintf(buf, sizeof buf, "CLASSIC %lu   ENDLESS ROOM %u", (unsigned long)e.pkt.classicBest, (unsigned)e.pkt.endlessBestRoom);
+		snprintf(buf, sizeof buf, "CLASSIC %lu   ORCHARD ROOM %u", (unsigned long)e.pkt.classicBest, (unsigned)e.pkt.endlessBestRoom);
 		gfx::text(buf, 200, 144, 0.34f, COL_CREAM, ALIGN_CENTER);
 		snprintf(buf, sizeof buf, "FRUIT SLICED %lu   BOSSES %u", (unsigned long)e.pkt.totalFruit, (unsigned)e.pkt.bossesBeaten);
 		gfx::text(buf, 200, 164, 0.34f, COL_DIM, ALIGN_CENTER);
@@ -4069,11 +4071,11 @@ static const GuideEntry kGuides[] = {
 	 "Watch the 4 beat lights at the top and slice right on the beat.",
 	 "On-beat slices build your rhythm chain and score bonus points.",
 	 "Use Audio -> Latency Test to calibrate Beat Timing to your setup."},
-	{MODE_ORCHARD, nullptr, sprites_ic_tree_idx, "CONQUER 10 ROOMS & 2 BOSSES",
-	 "Each room cleared in succession scores +1 (up to 10 for a full win).",
+	{MODE_ORCHARD, nullptr, sprites_ic_tree_idx, "ENDLESS ROOMS & SEEDED BOSSES",
+	 "Each room cleared scores +1. Rooms keep scaling with no limit.",
 	 "Slicing fruit gives XP (not score) to level up right away, even in Frenzy.",
-	 "Each level-up lets you pick an Upgrade, Passive, or Charm for Q / E.",
-	 "Bosses guard Rooms 5 & 10. Press Select / Tab to manage your Inventory."},
+	 "Every 5 rooms a seeded boss arrives (Royal variants after a full cycle).",
+	 "Runs only end on 0 HP or completion; quitting saves your run to continue!"},
 	{MODE_BOSSRUSH, nullptr, sprites_ic_crown_idx, "4 BOSSES BACK TO BACK, NO FRUIT WAVES",
 	 "Pick a starting Build, then face 4 escalating bosses in a row.",
 	 "Each boss defeated scores +1 (up to 4). Regular fruit never spawns.",
@@ -4304,14 +4306,14 @@ static void drawGuidesTop() {
 			gfx::rect(134, vy + 6, 96, 12, rgba(40, 22, 18, 220));
 			gfx::rect(134, vy + 6, 96, 12, rgba(110, 215, 115));
 			gfx::text("HP 20/20", 182, vy + 5, 0.30f, COL_CREAM, ALIGN_CENTER);
-			gfx::text("ROOM 5/10", vx + vw - 8, vy + 5, 0.34f, COL_ACCENT, ALIGN_RIGHT);
+			gfx::text("ROOM 5", vx + vw - 8, vy + 5, 0.34f, COL_ACCENT, ALIGN_RIGHT);
 			gfx::sprite(SHEET_FRUIT, fruit_apple_idx, 96, 112, 0.68f, 0.68f, wob);
 			gfx::sprite(SHEET_SPRITES, sprites_cd_health_idx, 200, 112, 0.85f, 0.85f);
 			gfx::sprite(SHEET_SPRITES, sprites_boss_melon_guard_idx, 304, 112, 0.56f, 0.56f);
 			drawGuideCallout(96, 60, "+1 SCORE PER ROOM CLEARED", COL_ACCENT, vx + 16, vy + 16);
 			drawGuideCallout(96, 154, "FRUIT = XP ONLY", rgba(150, 245, 160), 96, 120);
 			drawGuideCallout(200, 192, "LEVEL-UP CARDS", COL_ACCENT, 200, 124);
-			drawGuideCallout(298, 154, "BOSSES AT ROOM 5 & 10", rgba(255, 140, 120), 304, 126);
+			drawGuideCallout(298, 154, "BOSSES EVERY 5 ROOMS", rgba(255, 140, 120), 304, 126);
 			break;
 		}
 		case MODE_BOSSRUSH: {
@@ -4657,7 +4659,7 @@ static void onResultEntered() {
 		lb::clearView();
 		return;
 	}
-	const bool endless = sGame.mode == MODE_ORCHARD && sGame.orc.endless;
+	const bool endless = false;
 	if (!gSave.leaderboardName[0]) {
 #ifndef AUTOTEST
 		if (sGame.score > 0 || sGame.best > 0) {
@@ -4686,7 +4688,7 @@ static void updateLbNameEntry(const Input& in, bool wasTouching) {
 		audio::click();
 		result = t == 0 ? 1 : -1;
 	}
-	const bool endless = sGame.mode == MODE_ORCHARD && sGame.orc.endless;
+	const bool endless = false;
 	if (result > 0) {
 		lb::cleanName(typed, gSave.leaderboardName, sizeof gSave.leaderboardName);
 		saveWrite();
@@ -4987,9 +4989,8 @@ static void drawTopContent(Screen screen) {
 			gfx::sign(sprites_plank_idx, 28, 8, 344, 224, withAlpha(COL_PLANK, in));
 			gfx::setDepth(1.0f);
 			if (sResultBoard && !sCardFrame && lbEligible()) {
-				const bool endless = sGame.mode == MODE_ORCHARD && sGame.orc.endless;
 				gfx::text("ONLINE TOP 10", 200, 14, 0.48f, COL_ACCENT, ALIGN_CENTER);
-				gfx::text(endless ? "Endless Orchard" : modeName(sGame.mode), 48, 34, 0.33f, COL_CREAM);
+				gfx::text(modeName(sGame.mode), 48, 34, 0.33f, COL_CREAM);
 				if (gSave.leaderboardName[0]) {
 					snprintf(buf, sizeof buf, "YOU: %s", gSave.leaderboardName);
 					gfx::text(buf, 352, 34, 0.32f, COL_DIM, ALIGN_RIGHT);
@@ -5075,10 +5076,8 @@ static void drawTopContent(Screen screen) {
 			} else if (sGame.mode == MODE_ORCHARD) {
 				const Orchard& o = sGame.orc;
 				tracks = o.newTracks;
-				if (o.endless) snprintf(buf, sizeof buf, "ENDLESS: ROOM %d", o.room);
-				else if (o.won) snprintf(buf, sizeof buf, "ORCHARD CLEARED!");
-				else snprintf(buf, sizeof buf, "REACHED ROOM %d OF %d", o.room, kOrchardRooms);
-				gfx::text(buf, 200, 104, 0.39f, o.won ? rgba(255, 230, 140) : (o.endless ? rgba(170, 230, 255) : COL_CREAM), ALIGN_CENTER);
+				snprintf(buf, sizeof buf, "REACHED ROOM %d", o.room);
+				gfx::text(buf, 200, 104, 0.39f, rgba(170, 230, 255), ALIGN_CENTER);
 				snprintf(buf, sizeof buf, "LEVEL %d   BOSSES %d   SEED %08X", o.level, o.bossesBeaten, (unsigned)o.runSeed);
 				gfx::text(buf, 200, 124, 0.33f, COL_DIM, ALIGN_CENTER);
 				if (tracks > 0) {
@@ -5737,7 +5736,11 @@ static void toTitle() {
 }
 
 static void quitRun() {
-	sGame.commitScore();
+	if (sGame.mode == MODE_ORCHARD && !sGame.passName) {
+		if (!sGame.orc.resumePrompt && sGame.phase != PHASE_OVER && sGame.phase != PHASE_DYING) sGame.orcSaveRun();
+	} else {
+		sGame.commitScore();
+	}
 	toTitle();
 }
 
@@ -6375,7 +6378,7 @@ static void updateFrame(const Input& in, bool wasTouching) {
 			} else if (elig && t == kResultTopIdx) {
 				sResultBoard = !sResultBoard;
 				if (sResultBoard && (lb::view().status == lb::STATUS_IDLE || lb::view().status == lb::STATUS_OFFLINE)) {
-					lb::fetch(sGame.mode, sGame.mode == MODE_ORCHARD && sGame.orc.endless);
+					lb::fetch(sGame.mode, false);
 				}
 			}
 #if !PORT_3DS

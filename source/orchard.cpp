@@ -1,6 +1,7 @@
 // Orchard Blast: rooms, HP, XP, level-up cards and charms. The bosses are in boss.cpp,
 // and the level-up screen and Inventory in orchard_ui.inc.
 #include <math.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -8,6 +9,7 @@
 #include "audio_port.h"  // the Lab gives the 3DS music reader real time
 #include "fruitids.h"
 #include "game.h"
+#include "port_api.h"
 #include "render.h"
 #include "shop.h"
 #include "sprites.h"
@@ -168,9 +170,171 @@ static RoomPlan plan(int room) {
 
 static const ObjKind kOrchardPowers[] = {OBJ_FREEZE, OBJ_DOUBLE, OBJ_FRENZY, OBJ_MAGNET, OBJ_WIDE, OBJ_SHIELD};
 
+// Mid-run save for Orchard Blast (Continue / Start Over when re-entering after Pause -> Quit).
+struct OrcRunSave {
+	u32 magic;
+	u32 size;
+	u32 spawnSeed;
+	u32 score, bestCombo, journalCoins;
+	int sliced, coinsCaught, coinsThrown;
+	float elapsed, waveTimer, gravity;
+	bool assisted, mixed;
+	bool mix[MIX_COUNT];
+	u32 journalStart[kMaxFruitKinds];
+	Orchard orc;
+	Obj objs[Game::kMaxObjs];
+	Pending pending[Game::kMaxPending];
+	u32 sum;
+};
+static constexpr u32 kOrcSaveMagic = 0x4F524332u;
+
+static u32 orcSaveHash(const void* data, size_t n) {
+	const u8* p = (const u8*)data;
+	u32 h = 2166136261u;
+	for (size_t i = 0; i < n; i++) h = (h ^ p[i]) * 16777619u;
+	return h;
+}
+
+static bool orcReadSaveFile(OrcRunSave* out) {
+	char file[256], temp[256];
+	port::dataPath(file, sizeof file, "orc_run.bin");
+	port::dataPath(temp, sizeof temp, "orc_run.tmp");
+	const char* paths[2] = {file, temp};
+	for (const char* path : paths) {
+		FILE* f = fopen(path, "rb");
+		if (!f) continue;
+		OrcRunSave buf = {};
+		const bool readOk = fread(&buf, sizeof buf, 1, f) == 1;
+		fclose(f);
+		if (!readOk || buf.magic != kOrcSaveMagic || buf.size != sizeof buf) continue;
+		if (buf.sum != orcSaveHash(&buf, offsetof(OrcRunSave, sum))) continue;
+		if (buf.orc.room < 1 || buf.orc.level < 1 || buf.orc.hp <= 0) continue;
+		*out = buf;
+		return true;
+	}
+	return false;
+}
+
+bool Game::orchardHasSave(int* savedRoomOut) {
+	OrcRunSave s = {};
+	if (!orcReadSaveFile(&s)) return false;
+	if (savedRoomOut) *savedRoomOut = s.orc.room;
+	return true;
+}
+
+void Game::orchardClearSave() {
+	char file[256], temp[256];
+	port::dataPath(file, sizeof file, "orc_run.bin");
+	port::dataPath(temp, sizeof temp, "orc_run.tmp");
+	remove(file);
+	remove(temp);
+}
+
+bool Game::orcSaveRun() const {
+	if (mode != MODE_ORCHARD || phase == PHASE_OVER || phase == PHASE_DYING || orc.resumePrompt || passName) return false;
+	port::ensureDataDir();
+	char file[256], temp[256];
+	port::dataPath(file, sizeof file, "orc_run.bin");
+	port::dataPath(temp, sizeof temp, "orc_run.tmp");
+	OrcRunSave s = {};
+	s.magic = kOrcSaveMagic;
+	s.size = (u32)sizeof s;
+	s.spawnSeed = gSpawn.s ? gSpawn.s : (orc.runSeed ? orc.runSeed : 1u);
+	s.score = score;
+	s.bestCombo = bestCombo;
+	s.journalCoins = journalCoins;
+	s.sliced = sliced;
+	s.coinsCaught = coinsCaught;
+	s.coinsThrown = coinsThrown;
+	s.elapsed = elapsed;
+	s.waveTimer = waveTimer;
+	s.gravity = gravity;
+	s.assisted = assisted;
+	s.mixed = mixed;
+	memcpy(s.mix, mix, sizeof mix);
+	memcpy(s.journalStart, journalStart, sizeof journalStart);
+	s.orc = orc;
+	s.orc.resumePrompt = false;
+	s.orc.resumeFocus = 0;
+	s.orc.savedRoom = 0;
+	s.orc.hurtFlash = 0;
+	memset(s.orc.echoOn, 0, sizeof s.orc.echoOn);
+	memcpy(s.objs, objs, sizeof objs);
+	memcpy(s.pending, pending, sizeof pending);
+	s.sum = orcSaveHash(&s, offsetof(OrcRunSave, sum));
+
+	FILE* f = fopen(temp, "wb");
+	if (!f) return false;
+	bool ok = fwrite(&s, sizeof s, 1, f) == 1;
+	if (fflush(f) != 0) ok = false;
+	if (fclose(f) != 0) ok = false;
+	if (!ok) {
+		remove(temp);
+		return false;
+	}
+	if (rename(temp, file) != 0) {
+		remove(file);
+		if (rename(temp, file) != 0) {
+			remove(temp);
+			return false;
+		}
+	}
+	return true;
+}
+
+bool Game::orcLoadRun() {
+	OrcRunSave s = {};
+	if (!orcReadSaveFile(&s)) return false;
+	gSpawn.s = s.spawnSeed ? s.spawnSeed : 1u;
+	score = s.score;
+	bestCombo = (int)s.bestCombo;
+	journalCoins = s.journalCoins;
+	sliced = s.sliced;
+	coinsCaught = s.coinsCaught;
+	coinsThrown = s.coinsThrown;
+	elapsed = s.elapsed;
+	waveTimer = s.waveTimer;
+	gravity = s.gravity > 0 ? s.gravity : gravity;
+	assisted = s.assisted;
+	mixed = s.mixed;
+	memcpy(mix, s.mix, sizeof mix);
+	memcpy(journalStart, s.journalStart, sizeof journalStart);
+	orc = s.orc;
+	orc.endless = true;
+	orc.won = false;
+	orc.resumePrompt = false;
+	orc.resumeFocus = 0;
+	orc.savedRoom = 0;
+	orc.resumeT = 0;
+	if (orc.runSeed == 0) orc.runSeed = gSpawn.s ? gSpawn.s : 1u;
+	memcpy(objs, s.objs, sizeof objs);
+	memcpy(pending, s.pending, sizeof pending);
+	for (auto& h : halves) h = {};
+	for (auto& pt : parts) pt = {};
+	for (auto& po : popups) po = {};
+	for (auto& r : rings) r = {};
+	chain = 0;
+	comboCount = 0;
+	comboTimer = 0;
+	flash = 0;
+	shake = 0;
+	maxStrikes = 0;
+	strikes = 0;
+	phase = PHASE_PLAY;
+	phaseT = 0;
+	if (orc.bossRoom && orc.boss.on && orc.boss.enterT <= 0) orc.boss.y = orc.boss.baseY;
+	if (!orc.choosing && !orc.bossRoom) {
+		char buf[32];
+		snprintf(buf, sizeof buf, "ROOM %d", orc.room);
+		setCallout(buf, rgba(255, 230, 140));
+	}
+	return true;
+}
+
 // ---------------------------------------------------------------- the run
 void Game::orcStart() {
 	const OrchardLevel& lv = orchardLevel(gSave.difficulty);
+	orc.endless = true;
 	orc.room = 1;
 	orc.maxHp = orc.hp = (float)lv.startHp;
 	orc.level = 1;
@@ -181,12 +345,24 @@ void Game::orcStart() {
 	orchardBuildBossOrder(orc.runSeed, orc.bossOrder);
 	gravity = lerpf(300, 430, plan(1).d) * kFieldK * levelGravity(gSave.difficulty) * (mix[MIX_LOW_GRAVITY] ? 0.6f : 1.0f);
 	if (mode == MODE_ORCHARD) {
-		orc.variantPicking = true;
-		orc.variantFocus = 0;
-		phase = PHASE_PLAY;
+		int savedRoom = 0;
+#ifndef TEST_ORCHARD
+		if (!passName && orchardHasSave(&savedRoom)) {
+			orc.resumePrompt = true;
+			orc.resumeFocus = 0;
+			orc.savedRoom = (u16)(savedRoom < 1 ? 1 : savedRoom);
+			phase = PHASE_PLAY;
+			return;
+		}
+#endif
+		orc.resumePrompt = false;
+		orc.savedRoom = 0;
+		phase = PHASE_READY;
+		phaseT = 0;
+		setCallout("ROOM 1", rgba(255, 230, 140));
 	}
 #ifdef TEST_ORCHARD
-	orc.variantPicking = false;
+	orc.resumePrompt = false;
 	orc.level = 2;
 	orc.levelsWaiting = 1;
 	orc.slot[0] = CARD_BLENDER;
@@ -201,18 +377,28 @@ void Game::orcStart() {
 #endif
 }
 
-void Game::orchardPickVariant(bool endless, u32 seed) {
+void Game::orchardResumeChoice(bool continueRun, u32 seed) {
 	if (mode != MODE_ORCHARD) return;
-	orc.endless = endless;
-	orc.variantPicking = false;
-	if (seed != 0) {
-		orc.runSeed = seed;
-		gSpawn.s = seed;
-		orchardBuildBossOrder(seed, orc.bossOrder);
-	}
-	phase = PHASE_READY;
-	phaseT = 0;
-	setCallout(endless ? "ENDLESS ROOM 1" : "ROOM 1", rgba(255, 230, 140));
+	if (continueRun && orcLoadRun()) return;
+	orchardClearSave();
+	score = 0;
+	sliced = 0;
+	bestCombo = 0;
+	coinsCaught = 0;
+	coinsThrown = 0;
+	journalCoins = 0;
+	elapsed = 0;
+	waveTimer = 0;
+	chain = 0;
+	comboCount = 0;
+	comboTimer = 0;
+	orc = {};
+	for (auto& o : objs) o = {};
+	for (auto& p : pending) p = {};
+	for (auto& h : halves) h = {};
+	for (auto& pt : parts) pt = {};
+	gSpawn.s = seed != 0 ? seed : (gRng.next() | 1);
+	orcStart();
 }
 
 float Game::orcDifficulty() const { return plan(orc.room).d; }
@@ -428,10 +614,6 @@ void Game::orcNextRoom() {
 		addPopup("CLEAN SWEEP +3 HP", kFieldW * 0.5f, kFieldTop + 70, rgba(160, 240, 170), 0.6f);
 	}
 	award(1);
-	if (!orc.endless && orc.room >= kOrchardRooms) {
-		orcFinish(true);
-		return;
-	}
 	orc.room++;
 	orc.roomT = 0;
 	orc.bombSquadUsed = false;
@@ -446,8 +628,7 @@ void Game::orcNextRoom() {
 		const int bid = orchardBossForEncounter(enc, orc.bossOrder, &royal);
 		bossStart(bid, royal);
 	} else {
-		if (orc.endless) snprintf(buf, sizeof buf, "ENDLESS ROOM %d", orc.room);
-		else snprintf(buf, sizeof buf, orc.room == 6 ? "ROOM 6: TRICK FRUIT!" : "ROOM %d", orc.room);
+		snprintf(buf, sizeof buf, orc.room == 6 ? "ROOM 6: TRICK FRUIT!" : "ROOM %d", orc.room);
 		setCallout(buf, rgba(255, 230, 140));
 		audio::play(SFX_GO, 0.8f);
 	}
@@ -828,8 +1009,7 @@ void Game::drawOrchardHud(float x, float y, float w, float u) const {
 		}
 	} else {
 		if (mode == MODE_BOSSRUSH) snprintf(buf, sizeof buf, "BOSS %d/%d", m12.rushStage + 1 > kRushStages ? kRushStages : m12.rushStage + 1, kRushStages);
-		else if (orc.endless) snprintf(buf, sizeof buf, "ROOM %d", orc.room);
-		else snprintf(buf, sizeof buf, "ROOM %d/%d", orc.room > kOrchardRooms ? kOrchardRooms : orc.room, kOrchardRooms);
+		else snprintf(buf, sizeof buf, "ROOM %d", orc.room);
 		titleW = gfx::textWidth(buf, titleScale);
 		gfx::text(buf, x, yOff + (PORT_3DS ? 2.0f : 3.0f) * u, titleScale, COL_CREAM, ALIGN_RIGHT);
 		if (!orc.bossRoom) {
@@ -910,8 +1090,9 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 	memcpy(winsWas, gSave.bossWins, sizeof winsWas);
 	gSave.difficulty = DIFF_NORMAL;
 	const auto setup = [this]() {
+		orchardClearSave();
+		gSpawn.s = 12345u;
 		start(MODE_ORCHARD);
-		orchardPickVariant(false, 12345u);
 		orc.bossOrder[0] = BOSS_MELON;
 		orc.bossOrder[1] = BOSS_KING;
 		phase = PHASE_PLAY;
@@ -1273,35 +1454,63 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 		const int b4 = orchardBossForEncounter(BOSS_COUNT, ordA, &royalLap2);
 		check(!royalFirst && royalLap2 && b0 == b4, "Endless lap 2 repeats the seeded boss order with Royal variants", "");
 
+		orchardClearSave();
+		gSpawn.s = 999u;
 		start(MODE_ORCHARD);
-		check(orc.variantPicking, "Orchard Blast asks between 10 Rooms and Endless on start", "");
-		orchardPickVariant(true, 999u);
+		check(orc.endless && !orc.resumePrompt && orc.room == 1, "Orchard Blast starts in Endless Room 1 by default without variant picker", "");
 		phase = PHASE_PLAY;
 		phaseT = 0;
 		waveTimer = 999;
-		check(orc.endless && !orc.variantPicking, "Picking Endless enables Endless mode for the run", "");
 		orc.room = 10;
 		orc.bossRoom = false;
 		orc.roomT = kRoomSeconds;
 		orcUpdate(none);
-		check(orc.room == 11 && !orc.won && phase == PHASE_PLAY, "Endless Orchard continues into Room 11 instead of stopping at Room 10", "");
+		check(orc.room == 11 && !orc.won && phase == PHASE_PLAY, "Orchard Blast continues past Room 10 into Room 11", "");
 		orc.room = 14;
 		orc.roomT = kRoomSeconds;
 		orcUpdate(none);
-		check(orc.room == 15 && orc.bossRoom && orc.boss.on, "Endless Room 15 brings in the next seeded boss", "");
+		check(orc.room == 15 && orc.bossRoom && orc.boss.on, "Room 15 brings in the next seeded boss", "");
 		orc.room = 24;
 		orc.bossRoom = false;
 		orc.roomT = kRoomSeconds;
 		orcUpdate(none);
-		check(orc.room == 25 && orc.bossRoom && orc.boss.on && orc.boss.royal, "Endless lap 2 brings Royal boss variants (Room 25)", "");
+		check(orc.room == 25 && orc.bossRoom && orc.boss.on && orc.boss.royal, "Lap 2 brings Royal boss variants (Room 25)", "");
 		const u16 bestEndWas = gSave.endlessBestRoom;
-		const u16 endRunsWas = gSave.endlessRuns;
+		const u32 endRunsWas = gSave.endlessRuns;
 		gSave.endlessBestRoom = 0;
 		orc.room = 17;
 		commitScore();
-		check(gSave.endlessBestRoom == 17 && gSave.endlessRuns == endRunsWas + 1, "Finishing an Endless run records endlessBestRoom", "");
+		check(gSave.endlessBestRoom == 17 && gSave.endlessRuns == endRunsWas + 1, "Finishing an Orchard Blast run records best room", "");
 		gSave.endlessBestRoom = bestEndWas;
 		gSave.endlessRuns = endRunsWas;
+
+		// Mid-run Save, Continue, and Start Over flow.
+		orchardClearSave();
+		start(MODE_ORCHARD);
+		orc.runSeed = gSpawn.s = 0x77771111u;
+		orchardBuildBossOrder(orc.runSeed, orc.bossOrder);
+		orc.room = 7;
+		orc.roomT = 8.5f;
+		orc.level = 5;
+		orc.xp = 19.0f;
+		orc.upgrade[CARD_BLADE] = 3;
+		orc.slot[0] = CARD_SMOOTHIE;
+		score = 6;
+		const bool savedOk = orcSaveRun();
+		int savedRoom = 0;
+		check(savedOk && orchardHasSave(&savedRoom) && savedRoom == 7, "orcSaveRun saves current seed, room, level, XP, and upgrades", "");
+		start(MODE_ORCHARD);
+		check(orc.resumePrompt && orc.savedRoom == 7, "Re-entering Orchard Blast with a saved run prompts Continue vs Start Over with exact room", "");
+		orchardResumeChoice(true);
+		check(!orc.resumePrompt && orc.room == 7 && orc.roomT > 8.0f && orc.level == 5 && (int)orc.xp == 19 &&
+		      orc.upgrade[CARD_BLADE] == 3 && orc.slot[0] == CARD_SMOOTHIE && orc.runSeed == 0x77771111u && score == 6,
+		      "Continue restores exact room, timer, seed, score, level/XP, and inventory", "");
+		start(MODE_ORCHARD);
+		orchardResumeChoice(false, 0x22223333u);
+		check(!orc.resumePrompt && !orchardHasSave() && orc.room == 1 && orc.level == 1 && orc.xp == 0 &&
+		      orc.upgrade[CARD_BLADE] == 0 && orc.slot[0] == CARD_NONE && score == 0,
+		      "Start Over clears saved run, resets inventory/XP/level, and restarts at Room 1", "");
+		orchardClearSave();
 
 		// New boss 1: The Pineapple Guard (spikes + 4 slices).
 		setup();

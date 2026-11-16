@@ -5,6 +5,7 @@
 #include <citro3d.h>
 
 #define PORT_3DS 1
+#define PORT_WEB 0
 #define PORT_TWO_SCREENS 1
 #define PORT_CUSTOM_MUSIC 0  // Custom Music is for Windows, Linux and Android only
 #define PORT_QUIT_BOMB 0     // no Quit Game bomb: HOME closes the game here

@@ -66,6 +66,11 @@ void saveResetScores() {
 	memset(gSave.dailyScore, 0, sizeof gSave.dailyScore);
 	gSave.dailyStreak = gSave.dailyBestStreak = 0;
 	memset(gSave.beatBest, 0, sizeof gSave.beatBest);
+	char orcPath[256];
+	port::dataPath(orcPath, sizeof orcPath, "orc_run.bin");
+	remove(orcPath);
+	port::dataPath(orcPath, sizeof orcPath, "orc_run.tmp");
+	remove(orcPath);
 }
 
 void saveDefaults(bool keepScores, int section) {
