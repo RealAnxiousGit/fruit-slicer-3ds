@@ -566,8 +566,8 @@ static void autotestInput(Input& in) {
 			return;
 		}
 	}
-	if (sGame.orchardLike() && (sGame.orc.choosing || sGame.m12.rushPicking) && sBotModeFrames % 90 == 0) {
-		in.down |= KEY_A;  // past a level-up card, or Boss Rush's build
+	if (sGame.orchardLike() && (sGame.orc.choosing || sGame.m12.rushPicking || sGame.orc.variantPicking) && sBotModeFrames % 90 == 0) {
+		in.down |= KEY_A;  // past a level-up card, Orchard variant picker, or Boss Rush's build
 		return;
 	}
 

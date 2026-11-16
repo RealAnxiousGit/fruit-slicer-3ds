@@ -62,7 +62,7 @@ constexpr int kBoardCount = kBaseBoards
 #define SHOP_THEME(...) +1
 #include "shop_items.inc"
 	;
-constexpr int kSceneCount = 3;
+constexpr int kSceneCount = 6;
 constexpr int kBladeCount = 6;
 
 enum ArtStyle { ART_2D, ART_3D };
@@ -178,6 +178,17 @@ struct Settings {
 	u16 rushBestSecs;       // Boss Rush: the fastest clear, in seconds, 0 = never cleared
 	u32 bossTracksFound;    // bit i: Shop track i has been discovered in Orchard Blast or Boss Rush
 	u8 reserved12[8];       // later 1.2.x fields take bytes from here
+	// 2.0 Endless, Online Leaderboards & 3DS StreetPass (appended cleanly so pre-2.0 saves keep defaults).
+	u16 endlessBestRoom;     // Orchard Blast Endless: highest room conquered
+	u16 endlessBestLevel;    // highest level reached in Endless
+	u32 endlessRuns;         // Endless runs started
+	u64 leaderboardId;       // random non-zero persistent player ID for online leaderboard upserts
+	char leaderboardName[8]; // saved 6-char max player name (NUL-terminated)
+	u8 streetPassOn;         // 3DS StreetPass enabled (0 = off, 1 = on)
+	u8 streetPassPrompted;   // 1 once startup StreetPass prompt has been answered
+	u8 spReserve;
+	char streetPassMsg[28];  // customizable 3DS StreetPass greeting (default "Hello! :)")
+	u32 spChallengesWon;     // StreetPass challenges beaten
 };
 static_assert(MODE_COUNT + 1 <= kMaxModes, "more modes than the save holds");
 static_assert(MODE_JUGGLE - MODE_ORCHARD + 2 <= 8, "howToSeen has a bit for each how-to");

@@ -1,0 +1,5 @@
+--atlas -f rgba5551 -z auto --border transparent
+png/bgtop4/sky.png
+png/bgtop4/far.png
+png/bgtop4/mid.png
+png/bgtop4/near.png

@@ -1208,6 +1208,20 @@ def spr_mode_icon(kind):
         ):
             el(d, x, y, 4.3, 4.3, c)
             el(d, x - 1.2, y - 1.2, 1.4, 1.1, hc)
+    elif kind == "endless":
+        # Endless Orchard: a gleaming gold-leaf infinity ribbon with sprouted orchard leaves.
+        leaf(d, 16, 7.5, -125, 6.0, (108, 194, 90, 255))
+        leaf(d, 16, 7.5, -55, 6.0, (146, 222, 118, 255))
+        pts = []
+        for i in range(65):
+            th = i / 64 * math.tau
+            x = 16 + 10.2 * math.cos(th) / (1 + math.sin(th) ** 2 * 0.45)
+            y = 17.5 + 5.2 * math.sin(th) * math.cos(th)
+            pts.append((x * SS, y * SS))
+        d.line(pts, fill=(140, 86, 22, 255), width=int(4.4 * SS), joint="curve")
+        d.line(pts, fill=(255, 212, 84, 255), width=int(2.6 * SS), joint="curve")
+        el(d, 10.5, 15.2, 1.6, 1.1, hi)
+        el(d, 21.5, 15.2, 1.6, 1.1, hi)
     return shrink(sticker(img, 1.1, shadow=False))
 
 
@@ -1502,7 +1516,7 @@ BOSS_POSES = ("guard", "open", "daze", "wind")
 FACE_INK = (40, 22, 30, 255)
 
 
-def boss_face(d, cx, cy, r, pose, king, outline=False):
+def boss_face(d, cx, cy, r, pose, kind, outline=False):
     """Eyes, brows and mouth for a boss face centred on (cx, cy), sized to a body of radius r."""
     ink = FACE_INK
     w = max(1.0, r * 0.06)
@@ -1532,8 +1546,9 @@ def boss_face(d, cx, cy, r, pose, king, outline=False):
             tilt = 0.12 if pose == "guard" else 0.18
             bx0, by0 = ex + side * r * 0.2, ey - r * (0.2 + tilt)
             bx1, by1 = ex - side * r * 0.14, ey - r * 0.14
-        d.line([bx0 * SS, by0 * SS, bx1 * SS, by1 * SS], fill=ink, width=int(w * 1.6 * SS))
-    my = cy + r * (0.42 if king else 0.32)
+        brow_col = (255, 200, 64, 255) if (kind == "chili" and not outline) else ink
+        d.line([bx0 * SS, by0 * SS, bx1 * SS, by1 * SS], fill=brow_col, width=int(w * 1.6 * SS))
+    my = cy + r * (0.42 if kind == "king" else 0.32)
     if pose == "open":
         # A wide laugh, tongue and all.
         el(d, cx, my, r * 0.26, r * 0.17, ink)
@@ -1555,9 +1570,9 @@ def boss_face(d, cx, cy, r, pose, king, outline=False):
     else:
         d.arc([(cx - r * 0.22) * SS, (my - r * 0.02) * SS, (cx + r * 0.22) * SS, (my + r * 0.26) * SS], 200, 340,
               fill=ink, width=int(w * 1.4 * SS))
-    if king:
+    if kind == "king":
         # The King's waxed moustache, over the mouth.
-        mc = (250, 214, 90, 255) if not outline else (250, 214, 90, 255)
+        mc = (250, 214, 90, 255)
         for side in (-1, 1):
             pts = []
             for i in range(13):
@@ -1565,14 +1580,21 @@ def boss_face(d, cx, cy, r, pose, king, outline=False):
                 pts.append(((cx + side * r * (0.04 + t * 0.36)) * SS, (my - r * 0.17 - math.sin(t * math.pi) * r * 0.04 - (t ** 3) * r * 0.1) * SS))
             d.line(pts, fill=ink, width=int(r * 0.1 * SS), joint="curve")
             d.line(pts, fill=mc, width=int(r * 0.06 * SS), joint="curve")
+    elif kind == "pineapple":
+        # An armored golden chin-guard /goatee tuft for The Pineapple Guard.
+        poly(d, [(cx - r * 0.16, my + r * 0.20), (cx + r * 0.16, my + r * 0.20), (cx, my + r * 0.38)], (92, 166, 70, 255))
+    elif kind == "chili":
+        # Flame-whisker cheek marks for The Inferno Pepper.
+        for side in (-1, 1):
+            poly(d, [(cx + side * r * 0.42, cy + r * 0.08), (cx + side * r * 0.62, cy + r * 0.02), (cx + side * r * 0.54, cy + r * 0.18)], (255, 206, 76, 255))
 
 
-def boss_body(king, pose):
+def boss_body(kind, pose):
     c = BOSS_CELL
     img = canvas(c)
     d = ImageDraw.Draw(img)
     cx, cy, r = c / 2, c / 2 + 2, c * 0.42
-    if king:
+    if kind == "king":
         for i in range(8):
             a = i * math.pi / 4 + math.pi / 8
             x, y = cx + math.cos(a) * r * 1.06, cy + math.sin(a) * r * 1.06
@@ -1591,7 +1613,50 @@ def boss_body(king, pose):
         sash.putalpha(ImageChops.multiply(mask_of(sash), disc))
         img.alpha_composite(sash)
         d = ImageDraw.Draw(img)
-        boss_face(d, cx, cy - r * 0.08, r * 0.88, pose, True)
+        boss_face(d, cx, cy - r * 0.08, r * 0.88, pose, "king")
+    elif kind == "pineapple":
+        # Tall spiky leaf crown and armored golden pineapple body.
+        for a, ln, col in ((-130, r * 0.62, (54, 138, 62, 255)), (-108, r * 0.72, (74, 168, 72, 255)),
+                           (-90, r * 0.80, (92, 190, 82, 255)), (-72, r * 0.72, (74, 168, 72, 255)),
+                           (-50, r * 0.62, (54, 138, 62, 255))):
+            leaf(d, cx, cy - r * 0.76, a, ln, col)
+        gold = (242, 178, 52, 255) if pose != "wind" else (255, 196, 68, 255)
+        el(d, cx, cy + r * 0.08, r * 0.84, r * 0.92, gold)
+        img = shade(img, light=(255, 244, 180, 100), dark=(110, 56, 10, 80))
+        d = ImageDraw.Draw(img)
+        # Crisscross diamond armor lines clipped smoothly onto the body.
+        grid = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        gd = ImageDraw.Draw(grid)
+        for sign in (-1, 1):
+            for k in range(-3, 4):
+                gd.line([(cx + k * r * 0.34 - sign * r * 0.6) * SS, (cy - r * 0.85) * SS,
+                         (cx + k * r * 0.34 + sign * r * 0.6) * SS, (cy + r * 1.05) * SS],
+                        fill=(176, 108, 22, 180), width=max(2, int(r * 0.06 * SS)))
+        disc = Image.new("L", img.size, 0)
+        el(ImageDraw.Draw(disc), cx, cy + r * 0.08, r * 0.84, r * 0.92, 255)
+        grid.putalpha(ImageChops.multiply(mask_of(grid), disc))
+        img.alpha_composite(grid)
+        patch = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        el(ImageDraw.Draw(patch), cx, cy + r * 0.06, r * 0.56, r * 0.44, (255, 234, 146, 160))
+        img.alpha_composite(patch.filter(ImageFilter.GaussianBlur(SS * 2.5)))
+        d = ImageDraw.Draw(img)
+        boss_face(d, cx, cy + r * 0.06, r * 0.88, pose, "pineapple")
+    elif kind == "chili":
+        # Fiery red-orange chili pepper silhouette with blazing flame crests.
+        for a, rad, fc in ((-130, r * 0.46, (255, 128, 36, 255)), (-95, r * 0.52, (255, 176, 48, 255)), (-55, r * 0.46, (255, 118, 34, 255))):
+            leaf(d, cx, cy - r * 0.58, a, rad, fc)
+        body = (226, 38, 42, 255) if pose != "wind" else (248, 66, 34, 255)
+        el(d, cx, cy + r * 0.04, r * 0.82, r * 0.94, body)
+        img = shade(img, light=(255, 214, 120, 110), dark=(90, 8, 12, 85))
+        d = ImageDraw.Draw(img)
+        stem(d, cx, cy - r * 0.84, cx + r * 0.16, cy - r * 1.06, w=max(2, int(r * 0.08)))
+        leaf(d, cx - r * 0.04, cy - r * 0.84, -150, r * 0.34, (74, 162, 62, 255))
+        leaf(d, cx + r * 0.04, cy - r * 0.84, -30, r * 0.34, (74, 162, 62, 255))
+        patch = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        el(ImageDraw.Draw(patch), cx, cy + r * 0.05, r * 0.54, r * 0.44, (255, 152, 92, 150))
+        img.alpha_composite(patch.filter(ImageFilter.GaussianBlur(SS * 2.5)))
+        d = ImageDraw.Draw(img)
+        boss_face(d, cx, cy + r * 0.04, r * 0.86, pose, "chili")
     else:
         green = (58, 148, 78, 255) if pose != "wind" else (84, 150, 64, 255)
         el(d, cx, cy, r, r * 0.94, green)
@@ -1612,7 +1677,7 @@ def boss_body(king, pose):
         el(ImageDraw.Draw(patch), cx, cy + r * 0.05, r * 0.6, r * 0.5, (150, 206, 120, 150))
         img.alpha_composite(patch.filter(ImageFilter.GaussianBlur(SS * 3)))
         d = ImageDraw.Draw(img)
-        boss_face(d, cx, cy, r, pose, False)
+        boss_face(d, cx, cy, r, pose, "melon")
     if pose == "daze":
         # Little stars circling the head.
         for i in range(3):
@@ -1627,30 +1692,38 @@ def boss_body(king, pose):
     return shrink(sticker(img, 2.0))
 
 
-def boss_face_overlay(king, pose):
+def boss_face_overlay(kind, pose):
     """The face alone, for laying on the 3D boss."""
     c = BOSS_CELL
     img = canvas(c)
     d = ImageDraw.Draw(img)
     cx, cy, r = c / 2, c / 2 + 2, c * 0.42
-    boss_face(d, cx, cy - (r * 0.08 if king else 0), r * (0.88 if king else 1.0), pose, king, outline=True)
+    scale = 0.88 if kind == "king" else (0.90 if kind in ("pineapple", "chili") else 1.0)
+    off = -0.08 if kind == "king" else (0.06 if kind in ("pineapple", "chili") else 0.0)
+    boss_face(d, cx, cy + r * off, r * scale, pose, kind, outline=True)
     return shrink(img)
 
 
 def boss_sprites():
     out = []
-    for who, king in (("melon", False), ("king", True)):
-        out += [(f"boss_{who}_{p}", boss_body(king, p)) for p in BOSS_POSES]
-        out += [(f"bface_{who}_{p}", boss_face_overlay(king, p)) for p in BOSS_POSES]
+    for who in ("melon", "king"):
+        out += [(f"boss_{who}_{p}", boss_body(who, p)) for p in BOSS_POSES]
+        out += [(f"bface_{who}_{p}", boss_face_overlay(who, p)) for p in BOSS_POSES]
     return out
 
 
 def orchard_sprites():
-    """The 1.2 sprites, after every older one so that no older sprite number moves."""
+    """The 1.2+ sprites, after every older one so that no older sprite number moves."""
     out = [("ic_tree", spr_mode_icon("tree")), ("ic_crown", spr_mode_icon("crown")), ("ic_cup", spr_mode_icon("cup")),
            ("ic_target", spr_mode_icon("target")), ("ic_juggle", spr_mode_icon("juggle"))]
     out += [("cd_" + key, spr_card_icon(i)) for i, key in enumerate(CARD_ICONS)]
-    return out + boss_sprites()
+    out += boss_sprites()
+    # 2.0 Endless bosses & icon added strictly after 1.2 sprites so older sprite IDs never shift.
+    for who in ("pineapple", "chili"):
+        out += [(f"boss_{who}_{p}", boss_body(who, p)) for p in BOSS_POSES]
+        out += [(f"bface_{who}_{p}", boss_face_overlay(who, p)) for p in BOSS_POSES]
+    out.append(("ic_endless", spr_mode_icon("endless")))
+    return out
 
 
 def spr_crack():
@@ -1827,24 +1900,34 @@ def hill_layer(w, h, base, amp, freq, color, seed, trees=0, tree_color=None, dot
     rng = random.Random(seed)
     img = Image.new("RGBA", (w * 2, h * 2), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
-    ph = [rng.uniform(0, 6.28) for _ in range(3)]
+    ph = [rng.uniform(0, 6.2831853) for _ in range(3)]
+    # Exact integer harmonics across width w so x=0 and x=w match seamlessly when scrolling.
+    c1 = max(1, int(round(w * freq / (2 * math.pi))))
+    w1 = 2 * math.pi * c1 / w
+    w2 = 2 * math.pi * (c1 * 2 + 1) / w
+    w3 = 2 * math.pi * (c1 * 4 + 1) / w
+
     def top(x):
-        return base + amp * (math.sin(x * freq + ph[0]) * 0.6 + math.sin(x * freq * 2.3 + ph[1]) * 0.28 + math.sin(x * freq * 5.1 + ph[2]) * 0.12)
+        return base + amp * (math.sin(x * w1 + ph[0]) * 0.6 + math.sin(x * w2 + ph[1]) * 0.28 + math.sin(x * w3 + ph[2]) * 0.12)
+
     pts = [(x * 2, top(x) * 2) for x in range(0, w + 1, 2)]
     d.polygon(pts + [(w * 2, h * 2), (0, h * 2)], fill=color)
     tc = tree_color or color
     for _ in range(trees):
-        x = rng.uniform(0, w)
-        y = top(x)
+        tx = rng.uniform(0, w)
+        y = top(tx)
         r = rng.uniform(9, 17)
-        d.rectangle([(x - 1.6) * 2, y * 2 - r * 1.4, (x + 1.6) * 2, (y + 3) * 2], fill=tc)
-        d.ellipse([(x - r) * 2, (y - r * 2.1) * 2, (x + r) * 2, (y - r * 0.2) * 2], fill=tc)
-        d.ellipse([(x - r * 1.2) * 2, (y - r * 1.6) * 2, (x - r * 0.1) * 2, (y - r * 0.5) * 2], fill=tc)
-        d.ellipse([(x + r * 0.1) * 2, (y - r * 1.7) * 2, (x + r * 1.2) * 2, (y - r * 0.6) * 2], fill=tc)
-        for _ in range(5):
-            a, q = rng.uniform(0, 6.28), rng.uniform(0, r * 0.9)
-            fx, fy = x + math.cos(a) * q, y - r * 1.2 + math.sin(a) * q * 0.8
-            d.ellipse([(fx - 1.6) * 2, (fy - 1.6) * 2, (fx + 1.6) * 2, (fy + 1.6) * 2], fill=dots)
+        spots = [(rng.uniform(0, 6.28), rng.uniform(0, r * 0.9)) for _ in range(5)]
+        for x in (tx - w, tx, tx + w):
+            if x + r * 1.4 < 0 or x - r * 1.4 > w:
+                continue
+            d.rectangle([(x - 1.6) * 2, y * 2 - r * 1.4, (x + 1.6) * 2, (y + 3) * 2], fill=tc)
+            d.ellipse([(x - r) * 2, (y - r * 2.1) * 2, (x + r) * 2, (y - r * 0.2) * 2], fill=tc)
+            d.ellipse([(x - r * 1.2) * 2, (y - r * 1.6) * 2, (x - r * 0.1) * 2, (y - r * 0.5) * 2], fill=tc)
+            d.ellipse([(x + r * 0.1) * 2, (y - r * 1.7) * 2, (x + r * 1.2) * 2, (y - r * 0.6) * 2], fill=tc)
+            for a, q in spots:
+                fx, fy = x + math.cos(a) * q, y - r * 1.2 + math.sin(a) * q * 0.8
+                d.ellipse([(fx - 1.6) * 2, (fy - 1.6) * 2, (fx + 1.6) * 2, (fy + 1.6) * 2], fill=dots)
     return img.resize((w, h), Image.LANCZOS)
 
 
@@ -1918,7 +2001,7 @@ def build_graphics():
     build_font()
 
     # One sheet per scene and board: only the chosen one is ever in memory.
-    for i in range(3):
+    for i in range(6):
         sky, far, mid, near = bg_top(i, hill_layer, v_gradient, spr_soft)
         write_sheet(f"bgtop{i}", [("sky", sky), ("far", far), ("mid", mid), ("near", near)], fmt="rgba5551")
     for i, b in enumerate(bg_boards()):

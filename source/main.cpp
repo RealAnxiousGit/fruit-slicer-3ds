@@ -1107,7 +1107,7 @@ static const char* const kBoardNames[kBoardCount] = {
 #include "shop_items.inc"
 };
 #if PORT_TWO_SCREENS
-static const char* const kSceneNames[kSceneCount] = {"Dusk Orchard", "Morning Meadow", "Moonlit Bay"};
+static const char* const kSceneNames[kSceneCount] = {"Dusk Orchard", "Morning Meadow", "Moonlit Bay", "Sakura Grove", "Autumn Harvest", "Starlit Mountain"};
 #endif
 static const char* const kArtNames[] = {"2D Stickers", "3D Models"};
 static const char* const kEffectNames[] = {"None", "Low", "Medium", "Full"};
@@ -2454,19 +2454,19 @@ static void updateSection(const Input& in, bool wasTouching) {
 #if PORT_TWO_SCREENS
 static void drawTopBackground() {
 	const float d = sTime;
-	// Layers sit behind the screen plane and slowly drift for life.
+	// Sky stays grounded; seamless 424px-wide foreground layers glide endlessly at different parallax speeds.
+	auto drawWrapped = [&](int img, float depth, float speed, float y, float h) {
+		gfx::setDepth(depth);
+		const float off = gSave.calmFx ? 0.0f : fmodf(d * speed, 424.0f);
+		for (float tx = -12.0f - off; tx < 412.0f; tx += 424.0f) {
+			if (tx + 424.0f > -12.0f) gfx::image(SHEET_BGTOP, img, tx, y, 424, h);
+		}
+	};
 	gfx::setDepth(-2.0f);
 	gfx::image(SHEET_BGTOP, bgtop0_sky_idx, -12, 0, 424, 240);
-	if (gSave.bgDetail) {
-		gfx::setDepth(-1.3f);
-		gfx::image(SHEET_BGTOP, bgtop0_far_idx, -12 + sinf(d * 0.11f) * 2, 120, 424, 120);
-	}
-	gfx::setDepth(-0.7f);
-	gfx::image(SHEET_BGTOP, bgtop0_mid_idx, -12 + sinf(d * 0.15f) * 3, 130, 424, 110);
-	if (gSave.bgDetail) {
-		gfx::setDepth(-0.15f);
-		gfx::image(SHEET_BGTOP, bgtop0_near_idx, -12, 170, 424, 70);
-	}
+	if (gSave.bgDetail) drawWrapped(bgtop0_far_idx, -1.3f, 5.0f, 120, 120);
+	drawWrapped(bgtop0_mid_idx, -0.7f, 12.0f, 130, 110);
+	if (gSave.bgDetail) drawWrapped(bgtop0_near_idx, -0.15f, 24.0f, 170, 70);
 }
 #endif
 
@@ -3039,7 +3039,15 @@ static void updateJournal(const Input& in, bool wasTouching) {
 }
 
 static bool bossBeaten(int boss) { return gSave.bossesBeaten >> boss & 1; }
-static int bossSprite(int boss) { return boss == BOSS_MELON ? sprites_boss_melon_guard_idx : sprites_boss_king_guard_idx; }
+static int bossSprite(int boss) {
+	static const int kBossSprites[BOSS_COUNT] = {
+		sprites_boss_melon_guard_idx,
+		sprites_boss_king_guard_idx,
+		sprites_boss_pineapple_guard_idx,
+		sprites_boss_chili_guard_idx,
+	};
+	return boss >= 0 && boss < BOSS_COUNT ? kBossSprites[boss] : sprites_boss_melon_guard_idx;
+}
 
 static void drawJournalBossTile(const Button& b, int boss, bool focused, bool pressed) {
 	drawPlank(b.x, b.y, b.w, b.h, focused, pressed);
@@ -3098,13 +3106,24 @@ static void drawJournalBossTop(int boss) {
 	gfx::sprite(SHEET_SPRITES, bossSprite(boss), 200, 42, 0.76f, 0.76f, gSave.calmFx ? 0 : sinf(sTime * 1.3f) * 0.1f, beaten ? WHITE : kUnfound);
 	gfx::setDepth(0.7f);
 	gfx::text(beaten ? kBosses[boss].name : "Not beaten yet", 200, 72, 0.54f, COL_ACCENT, ALIGN_CENTER);
-	snprintf(buf, sizeof buf, "ORCHARD BLAST, ROOM %d", boss == BOSS_MELON ? 5 : 10);
-	gfx::text(buf, 200, 94, 0.38f, COL_CREAM, ALIGN_CENTER);
+	static const char* const kBossWhere[BOSS_COUNT] = {
+		"ORCHARD BLAST & BOSS RUSH",
+		"ORCHARD BLAST & BOSS RUSH",
+		"ENDLESS ORCHARD & BOSS RUSH",
+		"ENDLESS ORCHARD & BOSS RUSH",
+	};
+	gfx::text(boss >= 0 && boss < BOSS_COUNT ? kBossWhere[boss] : "ORCHARD BLAST", 200, 94, 0.38f, COL_CREAM, ALIGN_CENTER);
 	const u32 wins = gSave.bossWins[boss];
 	snprintf(buf, sizeof buf, "%d SLICES TO BEAT   BEATEN %lu", kBosses[boss].slices, (unsigned long)wins);
 	gfx::text(buf, 200, 110, 0.35f, COL_CREAM, ALIGN_CENTER);
-	if (beaten) fitText(boss == BOSS_MELON ? "Spits seeds and flops. Slice it when its guard drops." : "Fires cannonballs and lights its fuse. Snuff the fuse in three swipes.", 200, 126, 0.34f, 326, COL_DIM);
-	else fitText("Reach it in Orchard Blast and beat it to fill this page.", 200, 126, 0.34f, 326, COL_DIM);
+	static const char* const kBossBlurb[BOSS_COUNT] = {
+		"Spits seeds and flops. Slice it when its guard drops.",
+		"Fires cannonballs and lights its fuse. Snuff the fuse in three swipes.",
+		"Fires sharp spikes and whirls. Slice when its shell opens.",
+		"Rains burning embers and dashes fast. Catch it between gusts.",
+	};
+	if (beaten) fitText(boss >= 0 && boss < BOSS_COUNT ? kBossBlurb[boss] : kBossBlurb[0], 200, 126, 0.34f, 326, COL_DIM);
+	else fitText("Reach it in Orchard Blast or Boss Rush and beat it to fill this page.", 200, 126, 0.34f, 326, COL_DIM);
 	// Win milestones, worth far more than a fruit's.
 	const int level = progress::bossLevel(wins);
 	for (int k = 1; k <= progress::kBossLevels; k++) {
@@ -3193,7 +3212,7 @@ static void drawStats() {
 	drawHeader("Stats");
 	drawBackArrow(true, sPressed == 0);
 	gfx::sign(sprites_plank_idx, 8, 48, 304, 186, COL_PLANK);
-	constexpr int kRows = 11;
+	constexpr int kRows = 12;
 	char value[kRows][32];
 	snprintf(value[0], 32, "%lu", (unsigned long)gSave.totalFruit);
 	snprintf(value[1], 32, "%lu", (unsigned long)gSave.coinsLifetime);
@@ -3204,24 +3223,26 @@ static void drawStats() {
 	snprintf(value[3], 32, "%s", fav < MODE_COUNT ? modeName(fav) : "None yet");
 	snprintf(value[4], 32, "%lu", (unsigned long)gSave.bestCombo);
 	snprintf(value[5], 32, "%d (best %d)", progress::dailyStreak(progress::today()), (int)gSave.dailyBestStreak);
-	// Orchard Blast: the highest room conquered (cleared), its runs and the bosses.
+	// Orchard Blast: the highest room conquered (cleared), Endless best, runs and the bosses.
 	const int conquered = statsRoomsConquered();
 	if (conquered >= kOrchardRooms) snprintf(value[6], 32, "All %d, run won", kOrchardRooms);
 	else if (conquered > 0) snprintf(value[6], 32, "Room %d", conquered);
 	else snprintf(value[6], 32, "None yet");
-	snprintf(value[7], 32, "%u runs, %u won", (unsigned)gSave.orchardRuns, (unsigned)gSave.orchardWins);
-	snprintf(value[8], 32, "%u", (unsigned)gSave.orchardBestLevel);
+	if (gSave.endlessBestRoom > 0) snprintf(value[7], 32, "Room %u", (unsigned)gSave.endlessBestRoom);
+	else snprintf(value[7], 32, "None yet");
+	snprintf(value[8], 32, "%u runs, %u won", (unsigned)gSave.orchardRuns, (unsigned)gSave.orchardWins);
+	snprintf(value[9], 32, "%u", (unsigned)gSave.orchardBestLevel);
 	unsigned long bossWins = 0;
 	for (u16 w : gSave.bossWins) bossWins += w;
-	snprintf(value[9], 32, "%lu", bossWins);
-	if (gSave.rushBestSecs) snprintf(value[10], 32, "%u:%02u", gSave.rushBestSecs / 60u, gSave.rushBestSecs % 60u);
-	else snprintf(value[10], 32, "Not cleared yet");
+	snprintf(value[10], 32, "%lu", bossWins);
+	if (gSave.rushBestSecs) snprintf(value[11], 32, "%u:%02u", gSave.rushBestSecs / 60u, gSave.rushBestSecs % 60u);
+	else snprintf(value[11], 32, "Not cleared yet");
 	static const char* const kNames[kRows] = {"FRUIT SLICED", "COINS EARNED", "TIME PLAYED", "FAVOURITE MODE", "LONGEST COMBO", "DAILY STREAK",
-	                                          "HIGHEST ROOM CONQUERED", "RUNS", "BEST LEVEL", "BOSS WINS", "FASTEST BOSS RUSH"};
+	                                          "HIGHEST ROOM CONQUERED", "ENDLESS BEST ROOM", "RUNS", "BEST LEVEL", "BOSS WINS", "FASTEST BOSS RUSH"};
 	for (int i = 0; i < kRows; i++) {
 		// The Orchard Blast rows sit under their own heading.
-		const float y = 52 + i * 14.5f + (i >= 6 ? 12 : 0);
-		if (i == 6) gfx::text("ORCHARD BLAST", 160, y - 13, 0.34f, COL_ACCENT, ALIGN_CENTER);
+		const float y = 52 + i * 13.5f + (i >= 6 ? 11 : 0);
+		if (i == 6) gfx::text("ORCHARD BLAST", 160, y - 12, 0.34f, COL_ACCENT, ALIGN_CENTER);
 		float sv = 0.36f, w = gfx::textWidth(value[i], sv);
 		if (w > 130) sv *= 130 / w;
 		const float valW = gfx::textWidth(value[i], sv);
@@ -4540,7 +4561,7 @@ static void drawTopContent(Screen screen) {
 				else snprintf(buf, sizeof buf, "BEST %lu", (unsigned long)gSave.best[mode]);
 				gfx::text(buf, 200, yBest, 0.6f, COL_CREAM, ALIGN_CENTER);
 			} else {
-				gfx::text("Back to the title", 200, 150, 0.46f, COL_CREAM, ALIGN_CENTER);
+				gfx::text("Back to the title", 200, 141, 0.46f, COL_CREAM, ALIGN_CENTER);
 			}
 			break;
 		}
@@ -4786,11 +4807,12 @@ static void drawTopContent(Screen screen) {
 			} else if (sGame.mode == MODE_ORCHARD) {
 				const Orchard& o = sGame.orc;
 				tracks = o.newTracks;
-				if (o.won) snprintf(buf, sizeof buf, "ORCHARD CLEARED!");
+				if (o.endless) snprintf(buf, sizeof buf, "ENDLESS: ROOM %d", o.room);
+				else if (o.won) snprintf(buf, sizeof buf, "ORCHARD CLEARED!");
 				else snprintf(buf, sizeof buf, "REACHED ROOM %d OF %d", o.room, kOrchardRooms);
-				gfx::text(buf, 200, 104, 0.39f, o.won ? rgba(255, 230, 140) : COL_CREAM, ALIGN_CENTER);
-				snprintf(buf, sizeof buf, "LEVEL %d   BOSSES %d   SLICED %d", o.level, o.bossesBeaten, sGame.sliced);
-				gfx::text(buf, 200, 124, 0.35f, COL_DIM, ALIGN_CENTER);
+				gfx::text(buf, 200, 104, 0.39f, o.won ? rgba(255, 230, 140) : (o.endless ? rgba(170, 230, 255) : COL_CREAM), ALIGN_CENTER);
+				snprintf(buf, sizeof buf, "LEVEL %d   BOSSES %d   SEED %08X", o.level, o.bossesBeaten, (unsigned)o.runSeed);
+				gfx::text(buf, 200, 124, 0.33f, COL_DIM, ALIGN_CENTER);
 				if (tracks > 0) {
 					snprintf(buf, sizeof buf, "NEW IN THE SHOP: %d BOSS TRACK%s", tracks, tracks == 1 ? "" : "S");
 					gfx::text(buf, 200, 144, 0.35f, COL_ACCENT, ALIGN_CENTER);
@@ -5787,6 +5809,7 @@ static void updateFrame(const Input& in, bool wasTouching) {
 				} else {
 					sOrcInv = true;
 					sOrcInvFocus = -1;
+					sOrcPassiveScroll = 0;
 					sOrcConfirm = 0;
 					sBlade.reset();
 					audio::fuse(false);

@@ -204,6 +204,7 @@ static void labInventory() {
 	const u8 seenWas = gSave.howToSeen;
 	gSave.howToSeen |= 3;
 	sGame.start(MODE_ORCHARD);
+	sGame.orchardPickVariant(false, 12345u);
 	sGame.phase = PHASE_PLAY;
 	Orchard& o = sGame.orc;
 	o.choosing = false;
@@ -216,6 +217,18 @@ static void labInventory() {
 		in.down = key;
 		updateOrchardMenus(in, false);
 	};
+	sGame.start(MODE_ORCHARD);
+	sGame.phase = PHASE_PLAY;
+	sOrcOpenT = 0.25f;
+	press(KEY_RIGHT);
+	press(KEY_A);
+	labCheck(o.endless && !o.variantPicking, "Orchard Blast variant picker lets D-pad switch to Endless and A starts it");
+	sGame.orchardPickVariant(false, 12345u);
+	sGame.phase = PHASE_PLAY;
+	o.choosing = false;
+	o.boss.on = false;
+	o.slot[0] = CARD_BLENDER;
+	o.slot[1] = CARD_GOLDAPPLE;
 	press(KEY_SELECT);
 	labCheck(sOrcInv && sOrcConfirm == 0, "Select opens the Inventory");
 	press(KEY_A);
@@ -269,6 +282,36 @@ static void labInventory() {
 	applyAccessibility();
 	snprintf(d, sizeof d, "bottom %.1f / %.1f vs buttons %.1f", (double)detailsBotOff, (double)detailsBotOn, (double)btnTop);
 	labCheck(detailsBotOff < btnTop && detailsBotOn < btnTop, "the Inventory card details + Next line stay clear of the bottom buttons", d);
+
+	// Scrollable passive charms: fill 18 passives, scroll with wheel and D-pad, verify visible clip bounds.
+	{
+		const int savedPassives = o.passiveCount;
+		for (int i = 0; i < 18; i++) o.passiveOrder[i] = (u8)(CARD_RING + (i % 10));
+		o.passiveCount = 18;
+		sOrcPassiveScroll = 0;
+		const OrcInvLayout invL = orcInvLayout();
+		float pTop, pBottom, pIcon;
+		int pPerRow;
+		orcPassiveArea(invL, &pTop, &pBottom, &pIcon, &pPerRow);
+		const float maxSc = orcPassiveMaxScroll(invL);
+		in = {};
+		in.tx = (int)(invL.cx + invL.cw * 0.5f);
+		in.ty = (int)(pTop + 8);
+		in.wheel = -2;
+		updateOrchardMenus(in, false);
+		OrcInvItem scItems[64];
+		const int scn = orcInvItems(scItems);
+		float firstPassiveY = 0, lastPassiveY = 0;
+		for (int i = 0; i < scn; i++) {
+			if (scItems[i].kind == INV_PASSIVE && scItems[i].index == 0) firstPassiveY = scItems[i].y;
+			if (scItems[i].kind == INV_PASSIVE && scItems[i].index == 17) lastPassiveY = scItems[i].y;
+		}
+		snprintf(d, sizeof d, "scroll %.1f / max %.1f, y0 %.1f, y17 %.1f, win %.1f..%.1f", (double)sOrcPassiveScroll, (double)maxSc, (double)firstPassiveY, (double)lastPassiveY, (double)pTop, (double)pBottom);
+		labCheck(maxSc > 0 && sOrcPassiveScroll > 0 && firstPassiveY < pTop && lastPassiveY + pIcon <= pBottom + pIcon,
+		         "Inventory scrolls passive charms when more passives are held than fit on screen", d);
+		sOrcPassiveScroll = 0;
+		o.passiveCount = savedPassives;
+	}
 	// A touch press and release on level-up card 0 picks it
 	const int hpBefore = o.upgrade[CARD_HEALTH];
 	o.choosing = true;

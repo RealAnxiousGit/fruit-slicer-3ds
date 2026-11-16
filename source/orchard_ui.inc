@@ -7,6 +7,10 @@ static int sOrcInvFocus;      // the picked item (see orcInvItems)
 static float sOrcOpenT;       // seconds the cards have been up: a short lock-out stops a swipe picking one
 static bool sOrcSlotTouch;    // this touch began on a charm slot, so it never becomes a slice
 static int sOrcCardDown = -1;
+static float sOrcPassiveScroll;  // vertical scroll offset for the passive charm grid
+static bool sOrcPassiveDrag;
+static float sOrcPassiveDragY;
+static bool sOrcPassiveDragMoved;
 
 static u32 rarityColor(int r) {
 	return r == RARE_LEGEND ? rgba(255, 205, 80) : (r == RARE_RARE ? rgba(120, 190, 255) : rgba(220, 210, 190));
@@ -231,6 +235,24 @@ static OrcInvLayout orcInvLayout() {
 	return L;
 }
 
+static void orcPassiveArea(const OrcInvLayout& L, float* top, float* bottom, float* icon, int* perRow) {
+	*top = L.cy + 75.0f;
+	*bottom = L.bottom - 2.0f;
+	*icon = 22.0f;
+	const int cols = (int)((L.cw - 6.0f) / *icon);
+	*perRow = cols > 0 ? cols : 1;
+}
+
+static float orcPassiveMaxScroll(const OrcInvLayout& L) {
+	float top, bottom, icon;
+	int perRow;
+	orcPassiveArea(L, &top, &bottom, &icon, &perRow);
+	const int rows = (sGame.orc.passiveCount + perRow - 1) / perRow;
+	const float content = rows * icon;
+	const float view = bottom - top;
+	return content > view ? content - view : 0.0f;
+}
+
 // Every item that can be picked, with where it sits. Returns the count.
 static int orcInvItems(OrcInvItem* out) {
 	const Orchard& o = sGame.orc;
@@ -238,10 +260,12 @@ static int orcInvItems(OrcInvItem* out) {
 	int n = 0;
 	const float bw = (L.cw - 6) * 0.5f;
 	for (int s = 0; s < kSlots; s++) out[n++] = {INV_SLOT, (u8)s, L.cx + s * (bw + 6), L.cy + 14, bw, 44};
-	const float icon = 22;
-	const int perRow = (int)(L.cw / icon) > 0 ? (int)(L.cw / icon) : 1;
+	float pTop, pBottom, icon;
+	int perRow;
+	orcPassiveArea(L, &pTop, &pBottom, &icon, &perRow);
+	sOrcPassiveScroll = clampf(sOrcPassiveScroll, 0.0f, orcPassiveMaxScroll(L));
 	for (int i = 0; i < o.passiveCount; i++)
-		out[n++] = {INV_PASSIVE, (u8)i, L.cx + (i % perRow) * icon, L.cy + 75 + (i / perRow) * icon, icon, icon};
+		out[n++] = {INV_PASSIVE, (u8)i, L.cx + (i % perRow) * icon, pTop + (i / perRow) * icon - sOrcPassiveScroll, icon, icon};
 	int u = 0;
 	for (int c = 0; c < CARD_COUNT; c++) {
 		if (kCards[c].kind != KIND_UPGRADE) continue;
@@ -318,10 +342,11 @@ static void drawOrcInventory() {
 	gfx::rect(kFillX, kFillX, kFillW, kFillW, rgba(20, 12, 8, 200));
 	gfx::text("INVENTORY", kFieldW * 0.5f, kFieldTop + 1, 0.46f, rgba(255, 230, 140), ALIGN_CENTER);
 	const u32 head = rgba(255, 210, 150);
-	const int room = o.room > kOrchardRooms ? kOrchardRooms : o.room;
+	const int room = o.endless ? o.room : (o.room > kOrchardRooms ? kOrchardRooms : o.room);
 	const int mins = (int)sGame.elapsed / 60, secs = (int)sGame.elapsed % 60;
 	if (!L.runCol) {
-		snprintf(buf, sizeof buf, "Room %d of %d   Level %d   %d:%02d   %d sliced", room, kOrchardRooms, o.level, mins, secs, sGame.sliced);
+		if (o.endless) snprintf(buf, sizeof buf, "Endless Room %d   Level %d   %d:%02d   %d sliced", room, o.level, mins, secs, sGame.sliced);
+		else snprintf(buf, sizeof buf, "Room %d of %d   Level %d   %d:%02d   %d sliced", room, kOrchardRooms, o.level, mins, secs, sGame.sliced);
 		orcFit(buf, kFieldW * 0.5f, kFieldTop + 21, 0.30f, kFieldW - 16, COL_CREAM);
 	}
 	// Stats: HP, then each upgrade with its level as pips.
@@ -334,7 +359,8 @@ static void drawOrcInventory() {
 		float y = L.ry;
 		gfx::text("Run", L.rx, y, 0.33f, head);
 		y += 15;
-		snprintf(buf, sizeof buf, "Room %d of %d", room, kOrchardRooms);
+		if (o.endless) snprintf(buf, sizeof buf, "Endless Room %d", room);
+		else snprintf(buf, sizeof buf, "Room %d of %d", room, kOrchardRooms);
 		orcFit(buf, L.rx, y, 0.29f, L.rw, COL_CREAM, ALIGN_LEFT);
 		y += 12;
 		snprintf(buf, sizeof buf, "Level %d", o.level);
@@ -361,9 +387,21 @@ static void drawOrcInventory() {
 	gfx::text("Charm slots", L.cx, L.cy, 0.33f, head);
 	gfx::text(o.passiveCount ? "Passive charms" : "No passive charms yet", L.cx, L.cy + 61, 0.29f, o.passiveCount ? head : COL_DIM);
 	const int focus = sOrcInvFocus >= 0 && sOrcInvFocus < n ? sOrcInvFocus : n - INVB_COUNT;
+	float pTop, pBottom, pIcon;
+	int pPerRow;
+	orcPassiveArea(L, &pTop, &pBottom, &pIcon, &pPerRow);
+	const float pMaxScroll = orcPassiveMaxScroll(L);
+	bool clippingPassives = false;
 	for (int i = 0; i < n; i++) {
 		const OrcInvItem& it = items[i];
 		const bool f = i == focus && !sOrcConfirm;
+		if (it.kind == INV_PASSIVE && !clippingPassives) {
+			gfx::setClip(L.cx - 2, pTop - 2, L.cw + 4, pBottom - pTop + 4);
+			clippingPassives = true;
+		} else if (it.kind != INV_PASSIVE && clippingPassives) {
+			gfx::clearClip();
+			clippingPassives = false;
+		}
 		switch (it.kind) {
 			case INV_SLOT: {
 				const int card = o.slot[it.index];
@@ -387,6 +425,7 @@ static void drawOrcInventory() {
 				break;
 			}
 			case INV_PASSIVE:
+				if (it.y + it.h < pTop - 2 || it.y > pBottom + 2) break;
 				if (f) gfx::rect(it.x, it.y, it.w, it.h, withAlpha(COL_ACCENT, 0.5f));
 				gfx::sprite(SHEET_SPRITES, cardIcon(o.passiveOrder[it.index]), it.x + it.w * 0.5f, it.y + it.h * 0.5f, 0.46f, 0.46f);
 				break;
@@ -408,6 +447,15 @@ static void drawOrcInventory() {
 				break;
 			}
 		}
+	}
+	if (clippingPassives) gfx::clearClip();
+	if (pMaxScroll > 0.5f) {
+		const float trackH = pBottom - pTop;
+		const float totalH = trackH + pMaxScroll;
+		const float thumbH = clampf(trackH * (trackH / totalH), 10.0f, trackH);
+		const float thumbY = pTop + (trackH - thumbH) * (sOrcPassiveScroll / pMaxScroll);
+		gfx::rect(L.cx + L.cw - 3, pTop, 3, trackH, rgba(255, 255, 255, 35));
+		gfx::rect(L.cx + L.cw - 3, thumbY, 3, thumbH, withAlpha(COL_CREAM, 0.75f));
 	}
 	// The details strip: what the picked item is and does.
 	const OrcInvItem& it = items[focus];
@@ -483,14 +531,59 @@ static bool updateOrcInventory(const Input& in, bool wasTouching) {
 		return true;
 	}
 	OrcInvItem items[64];
-	const int n = orcInvItems(items);
+	int n = orcInvItems(items);
 	if (sOrcInvFocus < 0 || sOrcInvFocus >= n) sOrcInvFocus = n - INVB_COUNT;
-	if (in.down & (KEY_LEFT | KEY_UP)) sOrcInvFocus = sOrcInvFocus == 0 ? n - 1 : sOrcInvFocus - 1;
-	if (in.down & (KEY_RIGHT | KEY_DOWN)) sOrcInvFocus = (sOrcInvFocus + 1) % n;
+	const OrcInvLayout L = orcInvLayout();
+	float pTop, pBottom, pIcon;
+	int pPerRow;
+	orcPassiveArea(L, &pTop, &pBottom, &pIcon, &pPerRow);
+	const float pMaxScroll = orcPassiveMaxScroll(L);
+	const bool overPassive = in.tx >= L.cx - 2 && in.tx <= L.cx + L.cw + 2 && in.ty >= pTop && in.ty <= pBottom;
+	if (in.wheel != 0 && pMaxScroll > 0 && (overPassive || items[sOrcInvFocus].kind == INV_PASSIVE)) {
+		sOrcPassiveScroll = clampf(sOrcPassiveScroll - in.wheel * pIcon, 0.0f, pMaxScroll);
+		n = orcInvItems(items);
+	}
+	if (tap && overPassive && pMaxScroll > 0) {
+		sOrcPassiveDrag = true;
+		sOrcPassiveDragY = (float)in.ty;
+		sOrcPassiveDragMoved = false;
+	} else if (in.touching && sOrcPassiveDrag) {
+		const float dy = (float)in.ty - sOrcPassiveDragY;
+		if (fabsf(dy) > 2.0f) {
+			sOrcPassiveScroll = clampf(sOrcPassiveScroll - dy, 0.0f, pMaxScroll);
+			sOrcPassiveDragY = (float)in.ty;
+			sOrcPassiveDragMoved = true;
+			n = orcInvItems(items);
+		}
+	}
+	const bool ignorePassiveTap = sOrcPassiveDragMoved && !in.touching && wasTouching;
+	if (!in.touching) {
+		sOrcPassiveDrag = false;
+		sOrcPassiveDragMoved = false;
+	}
+	if (in.down & (KEY_LEFT | KEY_UP)) {
+		sOrcInvFocus = sOrcInvFocus == 0 ? n - 1 : sOrcInvFocus - 1;
+	}
+	if (in.down & (KEY_RIGHT | KEY_DOWN)) {
+		sOrcInvFocus = (sOrcInvFocus + 1) % n;
+	}
+	if ((in.down & (KEY_LEFT | KEY_UP | KEY_RIGHT | KEY_DOWN)) && items[sOrcInvFocus].kind == INV_PASSIVE && pMaxScroll > 0) {
+		const float iy = items[sOrcInvFocus].y;
+		if (iy < pTop) sOrcPassiveScroll = clampf(sOrcPassiveScroll - (pTop - iy), 0.0f, pMaxScroll);
+		else if (iy + items[sOrcInvFocus].h > pBottom) sOrcPassiveScroll = clampf(sOrcPassiveScroll + (iy + items[sOrcInvFocus].h - pBottom), 0.0f, pMaxScroll);
+		n = orcInvItems(items);
+	}
+	auto itemVisible = [&](const OrcInvItem& it) {
+		if (it.kind != INV_PASSIVE) return true;
+		return it.y + it.h * 0.5f >= pTop && it.y + it.h * 0.5f <= pBottom;
+	};
 	int act = -1;
-	if (tap) {
+	if (!in.touching && wasTouching && !ignorePassiveTap) {
+		// Wait — tap acts on initial press for instant feel when not scrolling passives.
+	}
+	if (tap && !ignorePassiveTap) {
 		for (int i = 0; i < n; i++)
-			if (in.tx >= items[i].x && in.tx < items[i].x + items[i].w && in.ty >= items[i].y && in.ty < items[i].y + items[i].h) {
+			if (itemVisible(items[i]) && in.tx >= items[i].x && in.tx < items[i].x + items[i].w && in.ty >= items[i].y && in.ty < items[i].y + items[i].h) {
 				sOrcInvFocus = i;
 				if (items[i].kind == INV_BUTTON) act = i;
 			}
@@ -498,7 +591,7 @@ static bool updateOrcInventory(const Input& in, bool wasTouching) {
 #if PORT_MOUSE
 	if (in.hovering)
 		for (int i = 0; i < n; i++)
-			if (in.tx >= items[i].x && in.tx < items[i].x + items[i].w && in.ty >= items[i].y && in.ty < items[i].y + items[i].h) sOrcInvFocus = i;
+			if (itemVisible(items[i]) && in.tx >= items[i].x && in.tx < items[i].x + items[i].w && in.ty >= items[i].y && in.ty < items[i].y + items[i].h) sOrcInvFocus = i;
 #endif
 	if (items[sOrcInvFocus].kind == INV_SLOT) sOrcInvSlot = items[sOrcInvFocus].index;
 	if ((in.down & KEY_A) && items[sOrcInvFocus].kind == INV_BUTTON) act = sOrcInvFocus;
@@ -530,6 +623,7 @@ static bool updateOrcInventory(const Input& in, bool wasTouching) {
 
 static bool newModeOn() { return sGame.mode >= MODE_ORCHARD && sGame.mode <= MODE_JUGGLE; }
 static void drawRushPick();
+static void drawVariantPick();
 
 static void drawOrchardMenus() {
 	if (!newModeOn() || !sGame.orchardLike()) return;
@@ -538,6 +632,10 @@ static void drawOrchardMenus() {
 		return;
 	}
 	const Orchard& o = sGame.orc;
+	if (o.variantPicking) {
+		drawVariantPick();
+		return;
+	}
 	char buf[64];
 	if (o.choosing) {
 		const float openK = gSave.transitions && !gSave.calmFx ? clampf(sOrcOpenT / 0.24f, 0.0f, 1.0f) : 1.0f;
@@ -633,6 +731,63 @@ static bool updateRushPick(const Input& in, bool wasTouching) {
 	return true;
 }
 
+static void drawVariantPick() {
+	const Orchard& o = sGame.orc;
+	const float openK = gSave.transitions && !gSave.calmFx ? clampf(sOrcOpenT / 0.24f, 0.0f, 1.0f) : 1.0f;
+	const float ease = openK * openK * (3.0f - 2.0f * openK);
+	gfx::rect(kFillX, kFillX, kFillW, kFillW, rgba(20, 12, 8, (u8)(175 * ease)));
+	orcFit("ORCHARD BLAST", kFieldW * 0.5f, kFieldTop + 4 - (1.0f - ease) * 14.0f, 0.52f, kFieldW - 20, rgba(255, 230, 140));
+	char buf[96];
+	for (int i = 0; i < 2; i++) {
+		float x, y, w, h;
+		orcCardRect(i, 2, &x, &y, &w, &h);
+		const float ct = gSave.transitions && !gSave.calmFx ? clampf((sOrcOpenT - i * 0.035f) / 0.22f, 0.0f, 1.0f) : 1.0f;
+		const float ce = ct * ct * (3.0f - 2.0f * ct);
+		y += (1.0f - ce) * 28.0f;
+		drawPlank(x, y, w, h, o.variantFocus == i, false);
+		const float cx = x + w * 0.5f;
+		const float is = i == 0 ? (PORT_3DS ? 0.34f : 0.36f) : (PORT_3DS ? 1.05f : 1.12f);
+		gfx::sprite(SHEET_SPRITES, i == 0 ? sprites_boss_melon_guard_idx : sprites_ic_endless_idx, cx, y + 23, is, is);
+		orcFit(i == 0 ? "10 ROOMS" : "ENDLESS", cx, y + 48, 0.44f, w - 10, i == 0 ? COL_CREAM : rgba(170, 230, 255));
+		if (i == 0) {
+			if (gSave.orchardWins) snprintf(buf, sizeof buf, "Won %u time%s", (unsigned)gSave.orchardWins, gSave.orchardWins == 1 ? "" : "s");
+			else if (gSave.orchardBestRoom) snprintf(buf, sizeof buf, "Best: Room %u", (unsigned)gSave.orchardBestRoom);
+			else snprintf(buf, sizeof buf, "10-Room Adventure");
+		} else {
+			if (gSave.endlessBestRoom) snprintf(buf, sizeof buf, "Best: Room %u", (unsigned)gSave.endlessBestRoom);
+			else snprintf(buf, sizeof buf, "No Limit");
+		}
+		orcFit(buf, cx, y + 66, 0.28f, w - 12, COL_ACCENT);
+		const char* desc = i == 0 ? "Clear Room 10 and beat 2 bosses to win." : "Keep climbing past Room 10 with Royal bosses every lap.";
+		orcWrap(desc, cx, y + 84, 0.29f, w - 12, 12.0f, COL_CREAM, 4);
+	}
+	snprintf(buf, sizeof buf, "SEED %08X   %s", (unsigned)o.runSeed, PORT_3DS ? "A OR TAP TO START" : "CLICK OR ENTER TO START");
+	orcFit(buf, kFieldW * 0.5f, kFieldH - 28, 0.28f, kFieldW - 20, COL_DIM);
+}
+
+static bool updateVariantPick(const Input& in, bool wasTouching) {
+	Orchard& o = sGame.orc;
+	sOrcOpenT += kDt;
+	if (sOrcOpenT < 0.16f) return true;
+	if (in.down & (KEY_LEFT | KEY_RIGHT)) o.variantFocus ^= 1;
+	int pick = -1;
+	for (int i = 0; i < 2; i++) {
+		float x, y, w, h;
+		orcCardRect(i, 2, &x, &y, &w, &h);
+		if (tapped(in, wasTouching, x, y, w, h)) pick = i;
+#if PORT_MOUSE
+		if (in.hovering && in.tx >= x && in.tx < x + w && in.ty >= y && in.ty < y + h) o.variantFocus = (u8)i;
+#endif
+	}
+	if (in.down & KEY_A) pick = o.variantFocus;
+	if (pick >= 0) {
+		audio::click();
+		sGame.orchardPickVariant(pick == 1);
+		sOrcOpenT = 0;
+	}
+	return true;
+}
+
 // Runs the Orchard menus for the game screen. True when they took the frame, so the blade and game input wait.
 static bool updateOrchardMenus(const Input& in, bool wasTouching) {
 	if (!newModeOn() || sGame.phase != PHASE_PLAY || !sGame.orchardLike()) {
@@ -644,6 +799,10 @@ static bool updateOrchardMenus(const Input& in, bool wasTouching) {
 		return updateRushPick(in, wasTouching);
 	}
 	Orchard& o = sGame.orc;
+	if (o.variantPicking) {
+		sOrcInv = false;
+		return updateVariantPick(in, wasTouching);
+	}
 	if (o.choosing) {
 		sOrcInv = false;
 		sOrcOpenT += kDt;
@@ -732,6 +891,9 @@ static bool updateOrchardMenus(const Input& in, bool wasTouching) {
 		} else {
 			sOrcInv = true;
 			sOrcInvFocus = -1;  // Resume
+			sOrcPassiveScroll = 0;
+			sOrcPassiveDrag = false;
+			sOrcPassiveDragMoved = false;
 			sOrcConfirm = 0;
 			sBlade.reset();
 			audio::fuse(false);

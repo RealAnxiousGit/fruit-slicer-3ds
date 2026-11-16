@@ -239,7 +239,8 @@ struct Game {
 
 	// Orchard Blast, for the menus (orchard.cpp).
 	bool orchardLike() const { return mode == MODE_ORCHARD || mode == MODE_BOSSRUSH; }  // HP, charms and bosses
-	bool orchardHeld() const { return orchardLike() && (orc.choosing || orc.resumeT > 0 || m12.rushPicking); }  // play holds still
+	bool orchardHeld() const { return orchardLike() && (orc.choosing || orc.resumeT > 0 || m12.rushPicking || orc.variantPicking); }  // play holds still
+	void orchardPickVariant(bool endless, u32 seed = 0);  // Orchard Blast: choose 10 Rooms or Endless
 	void rushPick(int build);   // Boss Rush: takes a build and brings the first boss in
 	void drawModes12Field() const;  // the recipe, the call, the rings
 	bool orcCanReroll() const { return orc.choosing && !orc.placing && orc.rerolls > 0; }

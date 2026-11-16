@@ -100,7 +100,27 @@ void cardNextLine(int card, int level, char* out, int size) {
 const BossInfo kBosses[BOSS_COUNT] = {
 	{"The Big Melon", 3, 3},
 	{"The Bomb King", 5, 3},
+	{"The Pineapple Guard", 4, 3},
+	{"The Inferno Pepper", 4, 3},
 };
+
+void orchardBuildBossOrder(u32 seed, u8 outOrder[BOSS_COUNT]) {
+	for (int i = 0; i < BOSS_COUNT; i++) outOrder[i] = (u8)i;
+	u32 s = seed ? seed : 0x9E3779B9u;
+	for (int i = BOSS_COUNT - 1; i > 0; i--) {
+		s = s * 1664525u + 1013904223u;
+		const int j = (int)((s >> 16) % (u32)(i + 1));
+		const u8 tmp = outOrder[i];
+		outOrder[i] = outOrder[j];
+		outOrder[j] = tmp;
+	}
+}
+
+int orchardBossForEncounter(int encounterIndex, const u8 order[BOSS_COUNT], bool* royalOut) {
+	if (encounterIndex < 0) encounterIndex = 0;
+	if (royalOut) *royalOut = encounterIndex >= BOSS_COUNT;
+	return order[encounterIndex % BOSS_COUNT] % BOSS_COUNT;
+}
 
 static const OrchardLevel kLevels[DIFF_COUNT] = {
 	{25, 2, 0.334f, 0.65f, 0.70f, 2.5f, 1, 0.85f},
@@ -132,7 +152,19 @@ static const RoomPlan kRooms[kOrchardRooms + 1] = {
 	{0.75f, 0.22f, 5, 1.25f, true, true},
 	{0.50f, 0.00f, 1, 2.6f, true, false},   // The Bomb King throws its own bombs
 };
-static const RoomPlan& plan(int room) { return kRooms[room < 1 ? 1 : (room > kOrchardRooms ? kOrchardRooms : room)]; }
+static RoomPlan plan(int room) {
+	if (room < 1) return kRooms[1];
+	if (room <= kOrchardRooms) return kRooms[room];
+	const int extraRooms = room - kOrchardRooms;
+	if (room % 5 == 0) return {clampf(0.50f + extraRooms * 0.015f, 0.50f, 0.90f), 0.0f, 1, clampf(2.6f - extraRooms * 0.02f, 1.8f, 2.6f), true, false};
+	return {
+		clampf(0.55f + extraRooms * 0.025f, 0.55f, 1.0f),
+		clampf(0.20f + extraRooms * 0.006f, 0.20f, 0.32f),
+		(int)clampf(4.0f + extraRooms * 0.2f, 4.0f, 7.0f),
+		clampf(1.35f - extraRooms * 0.025f, 0.85f, 1.35f),
+		true, true
+	};
+}
 
 static const ObjKind kOrchardPowers[] = {OBJ_FREEZE, OBJ_DOUBLE, OBJ_FRENZY, OBJ_MAGNET, OBJ_WIDE, OBJ_SHIELD};
 
@@ -145,10 +177,16 @@ void Game::orcStart() {
 	orc.rerolls = 1;
 	orc.slot[0] = orc.slot[1] = CARD_NONE;
 	maxStrikes = 0;  // HP, not misses
+	orc.runSeed = gSpawn.s ? gSpawn.s : 1u;
+	orchardBuildBossOrder(orc.runSeed, orc.bossOrder);
 	gravity = lerpf(300, 430, plan(1).d) * kFieldK * levelGravity(gSave.difficulty) * (mix[MIX_LOW_GRAVITY] ? 0.6f : 1.0f);
-	setCallout("ROOM 1", rgba(255, 230, 140));
+	if (mode == MODE_ORCHARD) {
+		orc.variantPicking = true;
+		orc.variantFocus = 0;
+		phase = PHASE_PLAY;
+	}
 #ifdef TEST_ORCHARD
-	// Screenshots: a level up straight away, a charm in each slot, and the first boss soon after.
+	orc.variantPicking = false;
 	orc.level = 2;
 	orc.levelsWaiting = 1;
 	orc.slot[0] = CARD_BLENDER;
@@ -157,10 +195,24 @@ void Game::orcStart() {
 	orc.roomT = 9;
 	orc.upgrade[CARD_ARMOR] = 2;
 #ifdef TEST_ORCHARD_ROOM
-	orc.room = TEST_ORCHARD_ROOM;  // a later boss, with HP to see the whole fight
+	orc.room = TEST_ORCHARD_ROOM;
 	orc.maxHp = orc.hp = 400;
 #endif
 #endif
+}
+
+void Game::orchardPickVariant(bool endless, u32 seed) {
+	if (mode != MODE_ORCHARD) return;
+	orc.endless = endless;
+	orc.variantPicking = false;
+	if (seed != 0) {
+		orc.runSeed = seed;
+		gSpawn.s = seed;
+		orchardBuildBossOrder(seed, orc.bossOrder);
+	}
+	phase = PHASE_READY;
+	phaseT = 0;
+	setCallout(endless ? "ENDLESS ROOM 1" : "ROOM 1", rgba(255, 230, 140));
 }
 
 float Game::orcDifficulty() const { return plan(orc.room).d; }
@@ -336,7 +388,7 @@ void Game::orcHurt(int damage, float x, float y, const char* what) {
 
 void Game::orcBomb(Obj& o) {
 	if (orc.upgrade[CARD_SHARPRIND] && orc.boss.on && orc.boss.dazeT <= 0 && !orc.boss.beaten) bossOpen(1.5f);
-	if (orc.boss.on && !orc.boss.beaten && orc.boss.id == BOSS_KING && o.tag == 1) {
+	if (orc.boss.on && !orc.boss.beaten && (orc.boss.id == BOSS_KING || orc.boss.id == BOSS_CHILI) && o.tag == 1) {
 		addPopup("DEFUSED!", o.x, o.y - 18, rgba(200, 240, 170), 0.7f);
 		orcGainXp(1);
 		if (orc.upgrade[CARD_JUICE]) orc.hp = fminf(orc.maxHp, orc.hp + 0.25f);
@@ -376,7 +428,7 @@ void Game::orcNextRoom() {
 		addPopup("CLEAN SWEEP +3 HP", kFieldW * 0.5f, kFieldTop + 70, rgba(160, 240, 170), 0.6f);
 	}
 	award(1);
-	if (orc.room >= kOrchardRooms) {
+	if (!orc.endless && orc.room >= kOrchardRooms) {
 		orcFinish(true);
 		return;
 	}
@@ -389,9 +441,13 @@ void Game::orcNextRoom() {
 	orc.bossRoom = orc.room % 5 == 0;
 	char buf[32];
 	if (orc.bossRoom) {
-		bossStart(orc.room == 5 ? BOSS_MELON : BOSS_KING);
+		const int enc = (orc.room / 5) - 1;
+		bool royal = false;
+		const int bid = orchardBossForEncounter(enc, orc.bossOrder, &royal);
+		bossStart(bid, royal);
 	} else {
-		snprintf(buf, sizeof buf, orc.room == 6 ? "ROOM 6: TRICK FRUIT!" : "ROOM %d", orc.room);
+		if (orc.endless) snprintf(buf, sizeof buf, "ENDLESS ROOM %d", orc.room);
+		else snprintf(buf, sizeof buf, orc.room == 6 ? "ROOM 6: TRICK FRUIT!" : "ROOM %d", orc.room);
 		setCallout(buf, rgba(255, 230, 140));
 		audio::play(SFX_GO, 0.8f);
 	}
@@ -734,7 +790,7 @@ float Game::orcStat(int card) const {
 
 // ---------------------------------------------------------------- on screen
 void Game::orcSlotRect(int slot, float* x, float* y, float* w, float* h) {
-	const float s = PORT_3DS ? 52.0f : 58.0f * uiScale();
+	const float s = PORT_3DS ? 54.0f : 62.0f * uiScale();
 	*w = *h = s;
 	*y = kFieldH - s - 8;
 	*x = slot == 0 ? 8.0f : kFieldW - s - 8;
@@ -755,7 +811,10 @@ void Game::drawOrchardHud(float x, float y, float w, float u) const {
 	float titleW = 0, pipsW = 0;
 	// The room, or the boss and the slices it still needs.
 	if (b.on && !b.beaten) {
-		snprintf(buf, sizeof buf, "%s", b.id == BOSS_MELON ? (b.royal ? "ROYAL MELON" : "BIG MELON") : (b.royal ? "ROYAL KING" : "BOMB KING"));
+		static const char* const kShortName[BOSS_COUNT] = {"BIG MELON", "BOMB KING", "PINEAPPLE GUARD", "INFERNO PEPPER"};
+		static const char* const kRoyalName[BOSS_COUNT] = {"ROYAL MELON", "ROYAL KING", "ROYAL PINEAPPLE", "ROYAL PEPPER"};
+		const int bi = b.id % BOSS_COUNT;
+		snprintf(buf, sizeof buf, "%s", b.royal ? kRoyalName[bi] : kShortName[bi]);
 		titleW = gfx::textWidth(buf, titleScale);
 		gfx::text(buf, x, yOff + (PORT_3DS ? 2.0f : 3.0f) * u, titleScale, rgba(255, 200, 140), ALIGN_RIGHT);
 		const int all = b.total;
@@ -769,6 +828,7 @@ void Game::drawOrchardHud(float x, float y, float w, float u) const {
 		}
 	} else {
 		if (mode == MODE_BOSSRUSH) snprintf(buf, sizeof buf, "BOSS %d/%d", m12.rushStage + 1 > kRushStages ? kRushStages : m12.rushStage + 1, kRushStages);
+		else if (orc.endless) snprintf(buf, sizeof buf, "ROOM %d", orc.room);
 		else snprintf(buf, sizeof buf, "ROOM %d/%d", orc.room > kOrchardRooms ? kOrchardRooms : orc.room, kOrchardRooms);
 		titleW = gfx::textWidth(buf, titleScale);
 		gfx::text(buf, x, yOff + (PORT_3DS ? 2.0f : 3.0f) * u, titleScale, COL_CREAM, ALIGN_RIGHT);
@@ -818,8 +878,8 @@ void Game::drawOrchardOverlay() const {
 		gfx::rect(x, y, w, 2, ready ? rgba(150, 230, 255) : rgba(90, 90, 110));
 		if (card != CARD_NONE) {
 			const CardInfo& info = kCards[card];
-			const float is = (PORT_3DS ? 0.50f : 0.62f) * (w / 40.0f);
-			gfx::sprite(SHEET_SPRITES, cardIcon(card), x + w * 0.5f, y + h * 0.5f + 1, is, is, 0, ready ? WHITE : rgba(150, 150, 160, 200));
+			const float is = (PORT_3DS ? 0.56f : 0.70f) * (w / 40.0f);
+			gfx::sprite(SHEET_SPRITES, cardIcon(card), x + w * 0.5f, y + h * 0.5f + 2, is, is, 0, ready ? WHITE : rgba(150, 150, 160, 200));
 			if (orc.slotCool[s] > 0 && info.cooldown > 0) {
 				const float k = clampf(orc.slotCool[s] / info.cooldown, 0, 1);
 				gfx::rect(x, y + h * (1 - k), w, h * k, rgba(0, 0, 0, 120));
@@ -851,6 +911,9 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 	gSave.difficulty = DIFF_NORMAL;
 	const auto setup = [this]() {
 		start(MODE_ORCHARD);
+		orchardPickVariant(false, 12345u);
+		orc.bossOrder[0] = BOSS_MELON;
+		orc.bossOrder[1] = BOSS_KING;
 		phase = PHASE_PLAY;
 		phaseT = 0;
 		waveTimer = 999;
@@ -1193,6 +1256,80 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 	// Difficulty numbers.
 	check(orchardLevel(DIFF_EASY).startHp == 25 && orchardLevel(DIFF_INSANE).startHp == 12 && orchardLevel(DIFF_HARD).bombDamage == 6, "Difficulty sets HP and bomb damage", "");
 
+	// Seeded boss order, Endless rooms past 10, Royal laps, and the new bosses (Pineapple Guard & Inferno Pepper).
+	{
+		u8 ordA[BOSS_COUNT], ordB[BOSS_COUNT];
+		orchardBuildBossOrder(0x12345678u, ordA);
+		orchardBuildBossOrder(0x12345678u, ordB);
+		bool same = true;
+		int mask = 0;
+		for (int i = 0; i < BOSS_COUNT; i++) {
+			same = same && (ordA[i] == ordB[i]);
+			mask |= 1 << ordA[i];
+		}
+		check(same && mask == ((1 << BOSS_COUNT) - 1), "Seeded boss order deterministically permutes every boss once", "");
+		bool royalFirst = false, royalLap2 = false;
+		const int b0 = orchardBossForEncounter(0, ordA, &royalFirst);
+		const int b4 = orchardBossForEncounter(BOSS_COUNT, ordA, &royalLap2);
+		check(!royalFirst && royalLap2 && b0 == b4, "Endless lap 2 repeats the seeded boss order with Royal variants", "");
+
+		start(MODE_ORCHARD);
+		check(orc.variantPicking, "Orchard Blast asks between 10 Rooms and Endless on start", "");
+		orchardPickVariant(true, 999u);
+		phase = PHASE_PLAY;
+		phaseT = 0;
+		waveTimer = 999;
+		check(orc.endless && !orc.variantPicking, "Picking Endless enables Endless mode for the run", "");
+		orc.room = 10;
+		orc.bossRoom = false;
+		orc.roomT = kRoomSeconds;
+		orcUpdate(none);
+		check(orc.room == 11 && !orc.won && phase == PHASE_PLAY, "Endless Orchard continues into Room 11 instead of stopping at Room 10", "");
+		orc.room = 14;
+		orc.roomT = kRoomSeconds;
+		orcUpdate(none);
+		check(orc.room == 15 && orc.bossRoom && orc.boss.on, "Endless Room 15 brings in the next seeded boss", "");
+		orc.room = 24;
+		orc.bossRoom = false;
+		orc.roomT = kRoomSeconds;
+		orcUpdate(none);
+		check(orc.room == 25 && orc.bossRoom && orc.boss.on && orc.boss.royal, "Endless lap 2 brings Royal boss variants (Room 25)", "");
+		const u16 bestEndWas = gSave.endlessBestRoom;
+		const u16 endRunsWas = gSave.endlessRuns;
+		gSave.endlessBestRoom = 0;
+		orc.room = 17;
+		commitScore();
+		check(gSave.endlessBestRoom == 17 && gSave.endlessRuns == endRunsWas + 1, "Finishing an Endless run records endlessBestRoom", "");
+		gSave.endlessBestRoom = bestEndWas;
+		gSave.endlessRuns = endRunsWas;
+
+		// New boss 1: The Pineapple Guard (spikes + 4 slices).
+		setup();
+		bossStart(BOSS_PINEAPPLE);
+		Boss& pb = orc.boss;
+		pb.enterT = 0;
+		pb.y = pb.baseY;
+		check(pb.id == BOSS_PINEAPPLE && pb.left == kBosses[BOSS_PINEAPPLE].slices, "The Pineapple Guard enters with its full slice count", "");
+		bossFire(SHOT_SPIKE, 120, 200, 0, 0);
+		check(orc.shots[0].on && orc.shots[0].kind == SHOT_SPIKE, "The Pineapple Guard fires sliceable spike shots", "");
+		Blade spHit = swipe(100, 200, 140, 200, 0x53000001u);
+		bossTest(spHit);
+		check(!orc.shots[0].on, "A clean slice clears a pineapple spike", "");
+
+		// New boss 2: The Inferno Pepper (embers + 4 slices).
+		setup();
+		bossStart(BOSS_CHILI);
+		Boss& cb = orc.boss;
+		cb.enterT = 0;
+		cb.y = cb.baseY;
+		check(cb.id == BOSS_CHILI && cb.left == kBosses[BOSS_CHILI].slices, "The Inferno Pepper enters with its full slice count", "");
+		bossFire(SHOT_EMBER, 150, 190, 0, 0);
+		check(orc.shots[0].on && orc.shots[0].kind == SHOT_EMBER, "The Inferno Pepper launches sliceable ember shots", "");
+		Blade emHit = swipe(130, 190, 170, 190, 0x54000001u);
+		bossTest(emHit);
+		check(!orc.shots[0].on, "A clean slice clears an ember shot", "");
+	}
+
 
 	// Timed fights: a bot that plays like a good player beats each boss on each difficulty, three times. It slices
 	// shots after a short reaction, blocks charges, cuts fuses, scrubs the Giant Bomb at about five hits a second,
@@ -1269,7 +1406,7 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 				if (dif == DIFF_NORMAL) normalTime[boss] = total / 3;
 			}
 		}
-		check(allBeaten, "A good player can beat both bosses on every difficulty", "");
+		check(allBeaten, "A good player can beat every boss on every difficulty", "");
 		snprintf(d, sizeof d, "%.0f s", normalTime[BOSS_MELON]);
 		check(normalTime[BOSS_MELON] >= 40 && normalTime[BOSS_MELON] <= 70, "The Big Melon takes a good player about 45 to 60 seconds on Normal", d);
 		snprintf(d, sizeof d, "%.0f s", normalTime[BOSS_KING]);

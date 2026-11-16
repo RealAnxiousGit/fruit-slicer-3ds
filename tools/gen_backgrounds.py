@@ -635,7 +635,7 @@ def bg_top(scene, hill_layer, v_gradient, spr_soft):
         far = hill_layer(W, 120, 44, 15, 0.017, (138, 196, 150, 255), 13)
         mid = hill_layer(W, 110, 44, 13, 0.022, (102, 174, 96, 255), 15, trees=9, tree_color=(62, 136, 84, 255), dots=(232, 70, 70, 255))
         near = hill_layer(W, 70, 30, 8, 0.03, (64, 138, 72, 255), 18, trees=4, tree_color=(38, 104, 62, 255), dots=(252, 186, 60, 255))
-    else:  # Moonlit Bay
+    elif scene == 2:  # Moonlit Bay
         sky = v_gradient(W, H, [(0, (10, 14, 44)), (0.55, (24, 42, 92)), (1, (66, 92, 148))])
         add_stars(sky, rng, 110, 130)
         add_glow(sky, spr_soft, W - 110, 62, 150, 24, (240, 240, 218, 255), (190, 206, 255), 1.7)
@@ -643,17 +643,52 @@ def bg_top(scene, hill_layer, v_gradient, spr_soft):
         for cx, cy, r in ((W - 118, 56, 4), (W - 102, 68, 3), (W - 108, 52, 2)):
             d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=(208, 208, 192, 255))
         far = hill_layer(W, 120, 40, 12, 0.019, (34, 48, 96, 255), 23)
-        # The middle layer is water with the moon's reflection.
+        # The middle layer is water with tiling wave glints.
         mid = Image.new("RGBA", (W, 110), (0, 0, 0, 0))
         md = ImageDraw.Draw(mid)
         md.rectangle([0, 30, W, 110], fill=(20, 38, 84, 255))
         for i in range(34):
             y = 32 + i * 2.2
             half = 8 + i * 0.9 + rng.uniform(-3, 3)
-            x = W - 110 + rng.uniform(-4, 4)
-            md.line([x - half, y, x + half, y], fill=(190, 206, 240, max(30, 190 - i * 5)), width=1)
+            cx_m = W // 2
+            md.line([cx_m - half, y, cx_m + half, y], fill=(190, 206, 240, max(30, 190 - i * 5)), width=1)
         for _ in range(60):
-            x, y = rng.uniform(0, W), rng.uniform(34, 108)
-            md.line([x - rng.uniform(4, 16), y, x + rng.uniform(4, 16), y], fill=(70, 100, 160, 110), width=1)
+            x0, y, rw = rng.uniform(0, W), rng.uniform(34, 108), rng.uniform(4, 16)
+            for xx in (x0 - W, x0, x0 + W):
+                md.line([xx - rw, y, xx + rw, y], fill=(70, 100, 160, 110), width=1)
         near = hill_layer(W, 70, 34, 10, 0.03, (10, 16, 40, 255), 28, trees=6, tree_color=(8, 12, 32, 255), dots=(250, 214, 110, 255))
+    elif scene == 3:  # Sakura Grove
+        sky = v_gradient(W, H, [(0, (124, 92, 162)), (0.45, (238, 152, 178)), (0.8, (255, 208, 204)), (1, (255, 232, 214))])
+        add_glow(sky, spr_soft, 148, 128, 180, 26, (255, 244, 232, 255), (255, 206, 214), 1.5)
+        d = ImageDraw.Draw(sky)
+        for _ in range(32):
+            px, py = rng.uniform(0, W), rng.uniform(18, 170)
+            d.ellipse([px - 2, py - 1, px + 2, py + 1], fill=(255, 224, 236, 190))
+        far = hill_layer(W, 120, 44, 14, 0.016, (170, 124, 164, 255), 33)
+        mid = hill_layer(W, 110, 44, 12, 0.022, (128, 86, 134, 255), 35, trees=10, tree_color=(112, 74, 116, 255), dots=(255, 196, 222, 255))
+        near = hill_layer(W, 70, 30, 9, 0.030, (82, 48, 92, 255), 38, trees=5, tree_color=(72, 42, 82, 255), dots=(255, 216, 234, 255))
+    elif scene == 4:  # Autumn Harvest
+        sky = v_gradient(W, H, [(0, (54, 72, 126)), (0.45, (184, 108, 72)), (0.78, (246, 168, 78)), (1, (255, 220, 138))])
+        add_glow(sky, spr_soft, W // 2 + 54, 128, 180, 26, (255, 240, 180, 255), (255, 196, 98), 1.4)
+        far = hill_layer(W, 120, 42, 15, 0.017, (148, 78, 56, 255), 43)
+        mid = hill_layer(W, 110, 42, 13, 0.022, (110, 52, 42, 255), 45, trees=10, tree_color=(158, 66, 36, 255), dots=(248, 178, 58, 255))
+        near = hill_layer(W, 70, 32, 9, 0.029, (68, 30, 28, 255), 48, trees=5, tree_color=(98, 42, 26, 255), dots=(238, 102, 44, 255))
+    else:  # Starlit Mountain
+        sky = v_gradient(W, H, [(0, (8, 20, 48)), (0.48, (18, 56, 86)), (0.85, (40, 110, 116)), (1, (82, 148, 132))])
+        add_stars(sky, rng, 130, 145)
+        add_glow(sky, spr_soft, 108, 58, 140, 20, (236, 246, 255, 255), (140, 240, 200), 1.6)
+        # Craggy alpine far silhouette + snow caps, periodic across W.
+        far = Image.new("RGBA", (W, 120), (0, 0, 0, 0))
+        fd = ImageDraw.Draw(far)
+        w1, w2 = 2 * math.pi * 3 / W, 2 * math.pi * 6 / W
+        def mtn(x):
+            return 34 - 20 * abs(math.sin(x * w1 + 0.4)) - 7 * abs(math.sin(x * w2 + 1.7))
+        mpts = [(x, mtn(x)) for x in range(0, W + 1, 2)]
+        fd.polygon(mpts + [(W, 120), (0, 120)], fill=(38, 68, 96, 255))
+        spts = [(x, mtn(x) + 8 + 3 * math.sin(x * w2)) for x in range(0, W + 1, 2)]
+        for k in range(len(mpts) - 1):
+            if mpts[k][1] < 24:
+                fd.polygon([mpts[k], mpts[k + 1], spts[k + 1], spts[k]], fill=(208, 226, 244, 210))
+        mid = hill_layer(W, 110, 44, 12, 0.023, (22, 48, 66, 255), 55, trees=12, tree_color=(16, 40, 56, 255), dots=(164, 240, 198, 255))
+        near = hill_layer(W, 70, 32, 9, 0.031, (10, 24, 38, 255), 58, trees=6, tree_color=(8, 18, 30, 255), dots=(190, 246, 220, 255))
     return sky, far, mid, near

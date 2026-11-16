@@ -37,8 +37,8 @@ int cardIcon(int card);  // its badge on SHEET_SPRITES
 // What the next level of a card would do, with real numbers, for the details panel. Empty if nothing changes.
 void cardNextLine(int card, int level, char* out, int size);
 
-// The bosses of the 10-room run, and the Endless pool later on.
-enum BossId : u8 { BOSS_MELON, BOSS_KING, BOSS_COUNT };
+// The bosses of Orchard Blast (10-room and Endless pools).
+enum BossId : u8 { BOSS_MELON, BOSS_KING, BOSS_PINEAPPLE, BOSS_CHILI, BOSS_COUNT };
 struct BossInfo {
 	const char* name;
 	u8 slices;  // clean slices to beat it
@@ -47,7 +47,7 @@ struct BossInfo {
 extern const BossInfo kBosses[BOSS_COUNT];
 
 // A boss's projectiles live apart from the fruit, so nothing in the fruit code has to know about them.
-enum ShotKind : u8 { SHOT_SEED, SHOT_SPLASH, SHOT_CANNON, SHOT_WAVE, SHOT_CROWN };
+enum ShotKind : u8 { SHOT_SEED, SHOT_SPLASH, SHOT_CANNON, SHOT_WAVE, SHOT_CROWN, SHOT_SPIKE, SHOT_EMBER };
 struct Shot {
 	float x, y, vx, vy, age, rot;
 	float life;   // the crown and the juice wave: seconds left
@@ -61,14 +61,20 @@ struct Shot {
 // What a boss is doing (see boss.cpp).
 enum BossAttack : u8 {
 	ATK_NONE,
-	MEL_SEEDS,   // Seed Spit: a spray of seeds; slice them before they land
-	MEL_FLOP,    // Belly Flop: jumps and slams down, splashing juice
-	MEL_CHARGE,  // Rolling Charge: rolls at the screen. Swipe it to block
-	KING_VOLLEY, // Cannon Volley: cannonballs; slice them to defuse
-	KING_LOB,    // Royal Lob: real bombs, and fruit that turn into bombs
-	KING_CROWN,  // Crown Toss: the crown flies out and back
-	KING_FUSE,   // Short Fuse: its fuse is lit; snuff it with three swipes, or it blows
-	KING_GIANT,  // The Giant Bomb: he hides off screen and leaves a giant bomb; scrub it off the stage before it blows
+	MEL_SEEDS,     // Seed Spit: a spray of seeds; slice them before they land
+	MEL_FLOP,      // Belly Flop: jumps and slams down, splashing juice
+	MEL_CHARGE,    // Rolling Charge: rolls at the screen. Swipe it to block
+	KING_VOLLEY,   // Cannon Volley: cannonballs; slice them to defuse
+	KING_LOB,      // Royal Lob: real bombs, and fruit that turn into bombs
+	KING_CROWN,    // Crown Toss: the crown flies out and back
+	KING_FUSE,     // Short Fuse: its fuse is lit; snuff it with three swipes, or it blows
+	KING_GIANT,    // The Giant Bomb: he hides off screen and leaves a giant bomb; scrub it off the stage before it blows
+	PINE_DARTS,    // Spiky Dart Fan: radial spiky darts launched outward; slice to parry
+	PINE_WHIRL,    // Crown Whirlwind: sweeps across tossing shockwaves and bombs
+	PINE_SLAM,     // Fortress Slam: leaps and crashes down releasing twin waves before tiring
+	CHILI_EMBERS,  // Ember Volley: blazing fireballs arced up across the stage; swipe to snuff
+	CHILI_MIRAGE,  // Heat Mirage: fast flaming decoys that morph into bombs mid-flight
+	CHILI_RUSH,    // Scorching Dash: high-speed ember zig-zag across the screen before overheating
 };
 // Only the last attack of a chain tires the boss out and drops its guard.
 
@@ -133,10 +139,15 @@ static constexpr int kEchoPoints = 48;
 
 struct Orchard {
 	// Where the run is.
-	int room;            // 1 to 10
+	int room;            // 1 to 10 (or 1, 2, 3... in Endless)
 	float roomT;         // seconds into the room
 	bool bossRoom;
 	bool won;
+	bool endless;        // true = Endless Orchard (continues past Room 10, scores rooms conquered)
+	bool variantPicking; // choosing between 10 Rooms and Endless on Orchard Blast start
+	u8 variantFocus;     // 0 = 10 Rooms, 1 = Endless
+	u32 runSeed;         // deterministic seed determining boss order & wave variety for this run
+	u8 bossOrder[BOSS_COUNT];
 	// Health.
 	float hp, maxHp;
 	float regenT;
@@ -156,7 +167,7 @@ struct Orchard {
 	float xpPulse;
 	// Cards.
 	u8 upgrade[CARD_COUNT];  // levels of each upgrade, or 1 for each charm held
-	u8 passiveOrder[16];     // passive charms in the order they were taken, for the Inventory
+	u8 passiveOrder[24];     // passive charms in the order they were taken, for the Inventory
 	int passiveCount;
 	u8 slot[kSlots];         // slotted charms, CARD_NONE when empty
 	float slotCool[kSlots];  // seconds until a reusable charm can be used again
@@ -191,6 +202,10 @@ struct Orchard {
 	float fightT;
 	int charmsUsed;
 };
+
+// Deterministic seeded boss ordering & Endless difficulty helper.
+void orchardBuildBossOrder(u32 seed, u8 outOrder[BOSS_COUNT]);
+int orchardBossForEncounter(int encounterIndex, const u8 order[BOSS_COUNT], bool* royalOut = nullptr);
 
 // Numbers that depend on the Difficulty setting.
 struct OrchardLevel {

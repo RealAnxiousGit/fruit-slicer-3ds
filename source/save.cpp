@@ -53,6 +53,9 @@ void saveResetScores() {
 	memset(gSave.bestAssisted11, 0, sizeof gSave.bestAssisted11);
 	memset(gSave.bestMixer11, 0, sizeof gSave.bestMixer11);
 	gSave.orchardBestRoom = gSave.orchardBestLevel = 0;
+	gSave.endlessBestRoom = gSave.endlessBestLevel = 0;
+	gSave.endlessRuns = 0;
+	gSave.spChallengesWon = 0;
 	gSave.rushBestSecs = 0;
 	gSave.totalFruit = 0;
 	gSave.bestCombo = 0;
@@ -115,6 +118,11 @@ void saveDefaults(bool keepScores, int section) {
 	}
 	if (section == SEC_ALL || section == SEC_DISPLAY) {
 		PORT_RESET_DISPLAY
+	}
+	if (section == SEC_ALL) {
+		gSave.streetPassOn = 0;
+		gSave.streetPassPrompted = 0;
+		snprintf(gSave.streetPassMsg, sizeof gSave.streetPassMsg, "Hello! :)");
 	}
 }
 
@@ -261,6 +269,14 @@ void saveLoad() {
 	if (gSave.updConsent > 2) gSave.updConsent = 0;
 	gSave.practiceDone &= 1;
 	gSave.bossMusic &= 1;
+	gSave.streetPassOn &= 1;
+	gSave.streetPassPrompted &= 1;
+	gSave.leaderboardName[sizeof gSave.leaderboardName - 1] = 0;
+	gSave.streetPassMsg[sizeof gSave.streetPassMsg - 1] = 0;
+	if (!gSave.streetPassMsg[0]) snprintf(gSave.streetPassMsg, sizeof gSave.streetPassMsg, "Hello! :)");
+	if (gSave.leaderboardId == 0) {
+		gSave.leaderboardId = ((u64)gRng.next() << 32) | (u64)(gRng.next() | 1u);
+	}
 	for (u8& t : gSave.bossTrackLast)
 		if (t > kTrackCount) t = 0;
 	// A boss beaten before win counts existed counts once.

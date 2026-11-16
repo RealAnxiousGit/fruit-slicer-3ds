@@ -140,7 +140,8 @@ void Game::rushNext() {
 	orc.bombSquadUsed = false;
 	addPopup("HALF YOUR HP BACK", kFieldW * 0.5f, kFieldTop + 70, rgba(160, 240, 170), 0.6f);
 	for (auto& s : orc.shots) s.on = false;
-	bossStart(m12.rushStage % 2 == 0 ? BOSS_MELON : BOSS_KING, m12.rushStage >= 2);
+	const int bossId = m12.rushStage % BOSS_COUNT;
+	bossStart(bossId, m12.rushStage >= 2);
 }
 
 // ---------------------------------------------------------------- Recipe
@@ -491,9 +492,9 @@ void Game::labModes12(void (*check)(bool, const char*, const char*)) {
 	check(m12.rushStage == 1 && orc.hp == fminf(orc.maxHp, 2 + orc.maxHp * 0.5f), "Half the HP comes back after a boss", d);
 	check(orc.boss.on && orc.boss.id == BOSS_KING && !orc.boss.royal, "The Bomb King is second", "");
 	rushNext();
-	check(orc.boss.id == BOSS_MELON && orc.boss.royal && orc.boss.left == kBosses[BOSS_MELON].slices + 1, "Then a Royal Big Melon, one slice tougher", "");
+	check(orc.boss.id == BOSS_PINEAPPLE && orc.boss.royal && orc.boss.left == kBosses[BOSS_PINEAPPLE].slices + 1, "Then a Royal Pineapple Guard, one slice tougher", "");
 	rushNext();
-	check(orc.boss.id == BOSS_KING && orc.boss.royal && orc.boss.left == kBosses[BOSS_KING].slices + 1, "Then a Royal Bomb King", "");
+	check(orc.boss.id == BOSS_CHILI && orc.boss.royal && orc.boss.left == kBosses[BOSS_CHILI].slices + 1, "Then a Royal Inferno Pepper", "");
 	rushNext();
 	check(orc.won && score == 4, "Beating all four clears the rush and scores 1 per boss beaten", "");
 	audio::fuse(false);
