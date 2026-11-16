@@ -743,6 +743,65 @@ static void labStreetPass() {
 	gSave.best[MODE_CLASSIC] = classicWas;
 }
 
+static void labLeaderboard() {
+	const char* expected[MODE_COUNT] = {
+		"classic", "arcade", "zen", "frenzy", "sudden_death", "minefield",
+		"combo_rush", "daily", "beat_slice", "orchard_blast", "boss_rush",
+		"recipe", "sharpshooter", "juggle",
+	};
+	bool slugsOk = strcmp(lb::modeSlug(MODE_ORCHARD, true), "orchard_endless") == 0 && lb::modeSlug(MODE_PRACTICE, false) == nullptr;
+	for (int m = 0; m < MODE_COUNT; m++) {
+		const char* s = lb::modeSlug(m, false);
+		if (!s || strcmp(s, expected[m]) != 0) slugsOk = false;
+	}
+	labCheck(slugsOk, "All 15 leaderboard mode slugs map stably and Practice maps to nullptr");
+
+	char nameBuf[8] = {};
+	lb::cleanName("  Alex_99!?", nameBuf, sizeof nameBuf);
+	const bool truncOk = strcmp(nameBuf, "Alex_9") == 0 && !lb::sanitizeName(" !@# ", nameBuf, sizeof nameBuf);
+	lb::cleanName("   ", nameBuf, sizeof nameBuf);
+	labCheck(truncOk && strcmp(nameBuf, "PLAYER") == 0, "Leaderboard name enforces 6-char max and safe fallback");
+
+	char json[256] = {};
+	const bool built = lb::buildSubmitJson(MODE_ORCHARD, true, 420, "NICK_123", 0x1234ABCDULL, true, json, sizeof json);
+	labCheck(built && strstr(json, "\"mode\":\"orchard_endless\"") && strstr(json, "\"player_id\":\"000000001234abcd\"") &&
+	         strstr(json, "\"name\":\"NICK_1\"") && strstr(json, "\"score\":420") && strstr(json, "\"test\":1"),
+	         "Leaderboard submit JSON serializes mode slug, 64-bit id, sanitized 6-char name, score, and test flag");
+
+	const char* sample =
+	    "{\"total\":12,\"mode\":\"classic\",\"you\":{\"score\":900,\"rank\":2,\"name\":\"SAM\"},"
+	    "\"top\":[{\"score\":1250,\"name\":\"ACE\",\"platform\":\"win\",\"player_id\":\"aaa\"},"
+	    "{\"name\":\"SAM\",\"platform\":\"3ds\",\"score\":900,\"player_id\":\"bbb\"},"
+	    "{\"platform\":\"linux\",\"name\":\"MAX\",\"score\":750,\"player_id\":\"ccc\"}],\"ok\":true}";
+	lb::BoardView parsed = {}, bad = {};
+	const bool parseOk = lb::parseResponse(sample, &parsed);
+	labCheck(parseOk && parsed.status == lb::STATUS_READY && parsed.count == 3 &&
+	         strcmp(parsed.entries[1].name, "SAM") == 0 && strcmp(parsed.entries[1].platform, "3ds") == 0 &&
+	         parsed.entries[1].score == 900 && parsed.yourRank == 2 && parsed.yourScore == 900 && parsed.total == 12 &&
+	         !lb::parseResponse("{\"ok\":false}", &bad) && !lb::parseResponse("{corrupt", &bad),
+	         "Leaderboard JSON parser reads top entries, rank telemetry, and rejects invalid/error payloads");
+
+	char savedName[8];
+	snprintf(savedName, sizeof savedName, "%s", gSave.leaderboardName);
+	snprintf(gSave.leaderboardName, sizeof gSave.leaderboardName, "NICK");
+	int resetIdx = -1;
+	const int dataCount = (int)(sizeof kDataRows / sizeof kDataRows[0]);
+	for (int i = 0; i < dataCount; i++) {
+		if (kDataRows[i].action == ACT_RESET_LB_NAME) { resetIdx = i; break; }
+	}
+	sArmed = -1;
+	if (resetIdx >= 0) {
+		rowAction(resetIdx, kDataRows[resetIdx]);
+		const bool armed = sArmed == resetIdx && strcmp(gSave.leaderboardName, "NICK") == 0;
+		rowAction(resetIdx, kDataRows[resetIdx]);
+		labCheck(armed && gSave.leaderboardName[0] == 0, "Reset Leaderboard Name uses two-step confirm and clears saved name");
+	} else {
+		labCheck(false, "Reset Leaderboard Name row missing from Scores and Data");
+	}
+	sArmed = -1;
+	snprintf(gSave.leaderboardName, sizeof gSave.leaderboardName, "%s", savedName);
+}
+
 static void labFinish(Input& in) {
 	static int step = 0, held = 0;
 #ifdef LAB_QUICK
@@ -753,6 +812,7 @@ static void labFinish(Input& in) {
 		step = 1;
 		labInventory();
 		labStreetPass();
+		labLeaderboard();
 		sGame.labOrchard(labCheck);
 		sGame.labModes12(labCheck);
 		labSummary();
@@ -762,6 +822,7 @@ static void labFinish(Input& in) {
 #endif
 	if (step == 0) {
 		labStreetPass();
+		labLeaderboard();
 		labCheck(sLabBlastSeen && !sLabBlastMissed, "every bomb hit sets off a blast");
 		labCheck(gfx::fontImageCount() == gfx::fontLetterCount() * 2, "the font table matches the font sheet");
 		{

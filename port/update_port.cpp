@@ -269,4 +269,87 @@ char* netText() { return sReply; }
 
 // A CIA is already installed, and a 3DSX swaps in updateFinish: either way, closing the game is all that's left.
 void updateRestart() {}
+
+// Independent HTTP/HTTPS TLS 1.2 background job for Online Leaderboards.
+static Thread sLbThread;
+static volatile int sLbResult;
+static char sLbUrl[600], sLbBody[512];
+static bool sLbHasBody;
+static char* sLbReply;
+static size_t sLbLen, sLbCap;
+
+static size_t lbWrite(char* p, size_t size, size_t n, void*) {
+	const size_t add = size * n;
+	if (sLbLen + add + 1 > sLbCap) {
+		const size_t cap = (sLbLen + add + 1) * 2;
+		if (cap > 128 * 1024) return 0;
+		char* t = (char*)realloc(sLbReply, cap);
+		if (!t) return 0;
+		sLbReply = t;
+		sLbCap = cap;
+	}
+	memcpy(sLbReply + sLbLen, p, add);
+	sLbLen += add;
+	sLbReply[sLbLen] = 0;
+	return add;
+}
+
+static void lbWork(void*) {
+	CURL* c = curl_easy_init();
+	bool ok = false;
+	struct curl_slist* hdrs = nullptr;
+	if (c) {
+		curl_easy_setopt(c, CURLOPT_URL, sLbUrl);
+		curl_easy_setopt(c, CURLOPT_USERAGENT, "FruitSlicer3DS");
+		curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION, 1L);
+		curl_easy_setopt(c, CURLOPT_CAINFO, "romfs:/cacert.pem");
+		curl_easy_setopt(c, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_2);
+		curl_easy_setopt(c, CURLOPT_CONNECTTIMEOUT, 15L);
+		curl_easy_setopt(c, CURLOPT_LOW_SPEED_LIMIT, 512L);
+		curl_easy_setopt(c, CURLOPT_LOW_SPEED_TIME, 15L);
+		curl_easy_setopt(c, CURLOPT_FAILONERROR, 1L);
+		curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, lbWrite);
+		if (sLbHasBody) {
+			hdrs = curl_slist_append(nullptr, "Content-Type: application/json");
+			if (hdrs) curl_easy_setopt(c, CURLOPT_HTTPHEADER, hdrs);
+			curl_easy_setopt(c, CURLOPT_POSTFIELDS, sLbBody);
+		}
+		ok = curl_easy_perform(c) == CURLE_OK;
+		if (hdrs) curl_slist_free_all(hdrs);
+		curl_easy_cleanup(c);
+	}
+	sLbResult = (ok && sLbReply) ? 1 : -1;
+}
+
+bool lbRequest(const char* url, const char* jsonBody) {
+	if (sLbThread) {
+		if (sLbResult == 0) return false;
+		threadJoin(sLbThread, U64_MAX);
+		threadFree(sLbThread);
+		sLbThread = nullptr;
+	}
+	if (!netUp()) return false;
+	free(sLbReply);
+	sLbReply = nullptr;
+	sLbLen = sLbCap = 0;
+	snprintf(sLbUrl, sizeof sLbUrl, "%s", url ? url : "");
+	sLbHasBody = jsonBody && jsonBody[0];
+	if (sLbHasBody) snprintf(sLbBody, sizeof sLbBody, "%s", jsonBody);
+	else sLbBody[0] = 0;
+	sLbResult = 0;
+	sLbThread = threadCreate(lbWork, nullptr, 128 * 1024, 0x3F, -2, false);
+	return sLbThread != nullptr;
+}
+
+int lbPoll() {
+	const int r = sLbResult;
+	if (r != 0 && sLbThread) {
+		threadJoin(sLbThread, U64_MAX);
+		threadFree(sLbThread);
+		sLbThread = nullptr;
+	}
+	return r;
+}
+
+const char* lbText() { return sLbReply; }
 }  // namespace port

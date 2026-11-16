@@ -55,4 +55,9 @@ void spUserName(char* out, size_t size);
 void spSetEnabled(bool on);
 bool spPublish(const void* data, int size);
 bool spPopInbox(void* outBuf, int cap, int* outLen);
+
+// Online leaderboards: independent background HTTP/HTTPS GET or POST (jsonBody != nullptr).
+bool lbRequest(const char* url, const char* jsonBody);
+int lbPoll();           // 0 working, 1 done, -1 failed
+const char* lbText();   // finished response text, kept until next lbRequest
 }  // namespace port

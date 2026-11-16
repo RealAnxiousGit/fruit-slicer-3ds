@@ -11,6 +11,7 @@
 #include "fruit.h"
 #include "game.h"
 #include "jobs.h"
+#include "leaderboard.h"
 #include "model3d.h"
 #include "render.h"
 #include "progress.h"
@@ -415,9 +416,18 @@ static float sFolderNote = 0;  // seconds the folder's path stays up, where it c
 static char sAddNote[64];      // what Add Songs did, shown under the list for a few seconds
 static float sAddNoteT = 0;
 #endif
-static const Button kResultButtons[] = {kBack, {20, 170, 134, 52, "Again"}, {166, 170, 134, 52, "Modes"}, {110, 104, 100, 52, "Share"}};
-// Share saves a score card: Windows, Linux and Android. The 3DS can't keep or send a picture.
-static constexpr int kResultCount = PORT_3DS ? 3 : 4;
+#if PORT_3DS
+static const Button kResultButtons[] = {kBack, {20, 170, 134, 52, "Again"}, {166, 170, 134, 52, "Modes"}, {84, 108, 152, 46, "Top 10"}};
+static constexpr int kResultCount = 4;
+static constexpr int kResultTopIdx = 3;
+#else
+static const Button kResultButtons[] = {kBack, {20, 170, 134, 52, "Again"}, {166, 170, 134, 52, "Modes"}, {166, 108, 120, 46, "Share"}, {34, 108, 120, 46, "Top 10"}};
+static constexpr int kResultCount = 5;
+static constexpr int kResultTopIdx = 4;
+#endif
+static bool sResultBoard = false;
+static bool sLbTypingName = false;
+static int sLbNameFocus = 0;
 static bool sCardFrame;          // this frame is the score card: the sign shows the logo, not the coins
 static const char* sCardNote;    // what became of the last card, shown for a while
 static float sCardNoteT;
@@ -509,6 +519,7 @@ static int fruitFor(const char* label) {
 		{"Resume", MF_APPLE}, {"Main Menu", MF_PEAR}, {"Again", MF_PEACH}, {"Modes", MF_KIWI}, {"Keep", MF_LEMON}, {"Try Again", MF_PEACH}, {"Share", MF_PLUM},
 		{"Audio", MF_APPLE}, {"Visuals", MF_PEACH}, {"Visuals and Display", MF_PEACH}, {"Gameplay and Controls", MF_PINEAPPLE}, {"Accessibility", MF_PEAR}, {"Scores and Data", MF_PLUM},
 		{"StreetPass", MF_MELON}, {"Enable", MF_MELON}, {"Not Now", MF_APPLE}, {"Challenge", MF_MELON},
+		{"Top 10", MF_GOLD}, {"Summary", MF_PEAR},
 	};
 	if (!label) return MF_BERRY;
 	for (const auto& m : kMap)
@@ -1083,7 +1094,7 @@ static void drawCut(Screen screen, bool corner = false) {
 // ---------------------------------------------------------------- settings rows
 enum RowKind { ROW_SLIDER, ROW_CHOICE, ROW_ACTION, ROW_PAGE };  // a page row opens the section numbered by its lo
 enum SectionId { SID_AUDIO, SID_VISUALS, SID_VISUALS_MORE, SID_GAMEPLAY, SID_GAMEPLAY_MORE, SID_ACCESS, SID_ACCESS_MORE, SID_DATA, SID_STREETPASS, SID_DEV, SID_MIXER, SID_PASS };
-enum RowAction { ACT_NONE, ACT_RESET_AUDIO, ACT_RESET_VISUALS, ACT_RESET_GAMEPLAY, ACT_RESET_SCORES, ACT_RESET_ALL, ACT_SPEED_TEST, ACT_APPLY_DISPLAY, ACT_RESET_DISPLAY, ACT_RESET_ACCESS, ACT_RESET_CONTROLS, ACT_DEV_ADD_COINS, ACT_DEV_CLEAR_COINS, ACT_DEV_NEXT_DAY, ACT_CHECK_UPDATES, ACT_PASS_NAME, ACT_PASS_START, ACT_LATENCY, ACT_SP_MSG, ACT_SP_SYNC };
+enum RowAction { ACT_NONE, ACT_RESET_AUDIO, ACT_RESET_VISUALS, ACT_RESET_GAMEPLAY, ACT_RESET_SCORES, ACT_RESET_LB_NAME, ACT_RESET_ALL, ACT_SPEED_TEST, ACT_APPLY_DISPLAY, ACT_RESET_DISPLAY, ACT_RESET_ACCESS, ACT_RESET_CONTROLS, ACT_DEV_ADD_COINS, ACT_DEV_CLEAR_COINS, ACT_DEV_NEXT_DAY, ACT_CHECK_UPDATES, ACT_PASS_NAME, ACT_PASS_START, ACT_LATENCY, ACT_SP_MSG, ACT_SP_SYNC };
 
 struct Row {
 	RowKind kind;
@@ -1319,6 +1330,7 @@ static const Row kDataRows[] = {
 	{ROW_CHOICE, "Check for Updates", &gSave.updConsent, 1, 2, kUpdateNames, 0, 0, ACT_NONE, "Looks on GitHub once a day", "for a new version."},
 	{ROW_ACTION, "Check Now", nullptr, 0, 0, nullptr, 0, 0, ACT_CHECK_UPDATES, "Looks on GitHub right away.", ""},
 	{ROW_ACTION, "Reset Scores", nullptr, 0, 0, nullptr, 0, 0, ACT_RESET_SCORES, "Erases best scores and totals.", "Settings stay."},
+	{ROW_ACTION, "Reset Leaderboard Name", nullptr, 0, 0, nullptr, 0, 0, ACT_RESET_LB_NAME, "Clears your online leaderboard name.", "Prompts again on your next score."},
 	{ROW_ACTION, "Reset Everything", nullptr, 0, 0, nullptr, 0, 0, ACT_RESET_ALL, "Erases scores and all settings.", ""},
 };
 
@@ -1720,6 +1732,11 @@ static void rowAction(int index, const Row& r) {
 		case ACT_RESET_VISUALS: saveDefaults(true, SEC_VISUALS); break;
 		case ACT_RESET_GAMEPLAY: saveDefaults(true, SEC_GAMEPLAY); break;
 		case ACT_RESET_SCORES: saveResetScores(); break;
+		case ACT_RESET_LB_NAME:
+			gSave.leaderboardName[0] = 0;
+			sDirty = true;
+			saveWrite();
+			break;
 		case ACT_RESET_ALL: saveDefaults(false, SEC_ALL); break;
 		case ACT_RESET_DISPLAY: saveDefaults(true, SEC_DISPLAY); break;
 		case ACT_RESET_ACCESS: saveDefaults(true, SEC_ACCESS); break;
@@ -4629,6 +4646,69 @@ static void drawLatencyBottom() {
 	}
 }
 
+static bool lbEligible() {
+	return sGame.mode < MODE_COUNT && sPassTurn < 0 && !sGame.mixed && !sGame.assisted && !sGame.spChallenge;
+}
+
+static void onResultEntered() {
+	sResultBoard = false;
+	sLbTypingName = false;
+	if (!lbEligible()) {
+		lb::clearView();
+		return;
+	}
+	const bool endless = sGame.mode == MODE_ORCHARD && sGame.orc.endless;
+	if (!gSave.leaderboardName[0]) {
+#ifndef AUTOTEST
+		if (sGame.score > 0 || sGame.best > 0) {
+			sLbTypingName = true;
+			sLbNameFocus = 0;
+			port::textStart("", 6);
+			return;
+		}
+#endif
+		lb::fetch(sGame.mode, endless);
+		return;
+	}
+	if (sGame.newBest) lb::submit(sGame.mode, endless, sGame.score);
+	else lb::fetch(sGame.mode, endless);
+}
+
+static void updateLbNameEntry(const Input& in, bool wasTouching) {
+	char typed[32];
+	int result = port::textPoll(typed, sizeof typed);
+	if (result == 0) {
+		int t = touchButtons(kNameButtons, 2, in, wasTouching, sLbNameFocus);
+		if (in.repeat & (KEY_LEFT | KEY_RIGHT)) sLbNameFocus ^= 1;
+		if (in.down & KEY_A) t = sLbNameFocus;
+		if (in.down & KEY_B) t = 1;
+		if (t < 0) return;
+		audio::click();
+		result = t == 0 ? 1 : -1;
+	}
+	const bool endless = sGame.mode == MODE_ORCHARD && sGame.orc.endless;
+	if (result > 0) {
+		lb::cleanName(typed, gSave.leaderboardName, sizeof gSave.leaderboardName);
+		saveWrite();
+		const u32 sendScore = sGame.score > sGame.best ? sGame.score : sGame.best;
+		if (sendScore > 0) lb::submit(sGame.mode, endless, sendScore);
+		else lb::fetch(sGame.mode, endless);
+	} else {
+		lb::fetch(sGame.mode, endless);
+	}
+	port::textStop();
+	sLbTypingName = false;
+}
+
+static const char* lbShortPlatform(const char* p) {
+	if (!p || !p[0]) return "WEB";
+	if (strcmp(p, "3ds") == 0) return "3DS";
+	if (strcmp(p, "win") == 0) return "WIN";
+	if (strcmp(p, "linux") == 0) return "LIN";
+	if (strcmp(p, "android") == 0) return "AND";
+	return "WEB";
+}
+
 static void drawTopContent(Screen screen) {
 	char buf[48];
 	gfx::clearPanels();
@@ -4906,6 +4986,50 @@ static void drawTopContent(Screen screen) {
 			gfx::setDepth(0.5f);
 			gfx::sign(sprites_plank_idx, 28, 8, 344, 224, withAlpha(COL_PLANK, in));
 			gfx::setDepth(1.0f);
+			if (sResultBoard && !sCardFrame && lbEligible()) {
+				const bool endless = sGame.mode == MODE_ORCHARD && sGame.orc.endless;
+				gfx::text("ONLINE TOP 10", 200, 14, 0.48f, COL_ACCENT, ALIGN_CENTER);
+				gfx::text(endless ? "Endless Orchard" : modeName(sGame.mode), 48, 34, 0.33f, COL_CREAM);
+				if (gSave.leaderboardName[0]) {
+					snprintf(buf, sizeof buf, "YOU: %s", gSave.leaderboardName);
+					gfx::text(buf, 352, 34, 0.32f, COL_DIM, ALIGN_RIGHT);
+				}
+				gfx::rect(44, 48, 312, 1, withAlpha(COL_DIM, 0.35f));
+				const lb::BoardView& v = lb::view();
+				if (v.status == lb::STATUS_LOADING) {
+					gfx::text("Connecting to leaderboard...", 200, 112, 0.40f, COL_CREAM, ALIGN_CENTER);
+				} else if (v.status != lb::STATUS_READY) {
+					gfx::text("Leaderboard offline or unreachable.", 200, 102, 0.39f, COL_CREAM, ALIGN_CENTER);
+					gfx::text("Check internet connection and try again.", 200, 124, 0.33f, COL_DIM, ALIGN_CENTER);
+				} else if (v.count == 0) {
+					gfx::text("No scores uploaded yet!", 200, 112, 0.40f, COL_CREAM, ALIGN_CENTER);
+				} else {
+					char myPid[24];
+					lb::formatPlayerId(gSave.leaderboardId, myPid, sizeof myPid);
+					for (int i = 0; i < v.count && i < 10; i++) {
+						const lb::Entry& e = v.entries[i];
+						const float ry = 53.0f + i * 14.5f;
+						const bool isYou = e.playerId[0] && strcmp(e.playerId, myPid) == 0;
+						const u32 col = isYou ? COL_ACCENT : COL_CREAM;
+						snprintf(buf, sizeof buf, "%2d. %s", i + 1, e.name);
+						gfx::text(buf, 48, ry, 0.33f, col);
+						snprintf(buf, sizeof buf, "[%s]", lbShortPlatform(e.platform));
+						gfx::text(buf, 224, ry + 1, 0.29f, COL_DIM);
+						snprintf(buf, sizeof buf, "%lu", (unsigned long)e.score);
+						gfx::text(buf, 352, ry, 0.33f, col, ALIGN_RIGHT);
+					}
+					if (v.yourRank > 0) {
+						char lbBuf[72];
+						snprintf(lbBuf, sizeof lbBuf, "YOUR RANK #%d OF %d   BEST %lu", v.yourRank, v.total > 0 ? v.total : v.yourRank, (unsigned long)v.yourScore);
+						gfx::text(lbBuf, 200, 204, 0.33f, COL_ACCENT, ALIGN_CENTER);
+					} else if (!gSave.leaderboardName[0]) {
+						gfx::text("SET NAME ON NEXT BEST SCORE", 200, 204, 0.32f, COL_DIM, ALIGN_CENTER);
+					} else {
+						gfx::text("BEAT YOUR BEST TO POST TO TOP 10", 200, 204, 0.32f, COL_DIM, ALIGN_CENTER);
+					}
+				}
+				break;
+			}
 			if (sGame.mode == MODE_PRACTICE) {
 				gfx::setDepth(1.2f);
 				gfx::text("PRACTICE DONE", 200, 36, 0.80f, COL_ACCENT, ALIGN_CENTER);
@@ -5504,8 +5628,25 @@ static void drawBottomContent(Screen screen) {
 				drawSign(kPassResultButtons[1], kPassResultButtons[1].label, f == 1, sPressed == 1, 0.56f, -1, fruitFor(kPassResultButtons[1].label));
 			} else if (sGame.mode == MODE_PRACTICE) drawSign(kPracticeEndButtons[1], kPracticeEndButtons[1].label, f == 1, sPressed == 1, 0.56f, -1, fruitFor(kPracticeEndButtons[1].label));
 			else {
-				for (int i = 1; i < kResultCount; i++) drawSign(kResultButtons[i], kResultButtons[i].label, f == i, sPressed == i, 0.56f, -1, fruitFor(kResultButtons[i].label));
+				const bool elig = lbEligible();
+				const int shown = elig ? kResultCount : kResultCount - 1;
+				for (int i = 1; i < shown; i++) {
+					const char* lbl = (i == kResultTopIdx && sResultBoard) ? "Summary" : kResultButtons[i].label;
+					const float sc = (i == kResultTopIdx || (!PORT_3DS && i == 3)) ? 0.50f : 0.56f;
+					drawSign(kResultButtons[i], lbl, f == i, sPressed == i, sc, -1, fruitFor(lbl));
+				}
 				if (sCardNoteT > 0 && sCardNote) gfx::text(sCardNote, 160, 159, 0.34f, withAlpha(COL_CREAM, clampf(sCardNoteT, 0, 1)), ALIGN_CENTER);
+				if (sLbTypingName && screen == sScreen) {
+					char typed[32];
+					port::textPoll(typed, sizeof typed - 1);
+					strcat(typed, "_");
+					gfx::rect(0, 0, 320, 240, rgba(30, 18, 10, 175));
+					gfx::sign(sprites_plank_idx, 20, 56, 280, 152, COL_PLANK);
+					gfx::text("Leaderboard Name", 160, 68, 0.48f, COL_ACCENT, ALIGN_CENTER);
+					gfx::text("Max 6 characters", 160, 88, 0.34f, COL_DIM, ALIGN_CENTER);
+					fitText(typed, 160, 110, 0.56f, 248, COL_CREAM);
+					for (int i = 0; i < 2; i++) drawSign(kNameButtons[i], kNameButtons[i].label, sLbNameFocus == i, sPressed == i, 0.5f);
+				}
 			}
 			break;
 		}
@@ -5534,6 +5675,8 @@ static void drawBottomContent(Screen screen) {
 
 static void startGame() {
 	sCardNoteT = 0;
+	sResultBoard = false;
+	sLbTypingName = false;
 	sGame.start(sStartMode);
 	sBlade.reset();
 	gfx::setShake(0, 0);
@@ -5650,6 +5793,7 @@ static void updateFrame(const Input& in, bool wasTouching) {
 	updateTransitions();
 	updateWatch();
 	streetpass::update(kDt);
+	lb::tick();
 	if (sCut.on) {
 		sCut.t += kDt;
 		if (sCut.t > kCutLife) sCut.on = false;
@@ -6105,6 +6249,7 @@ static void updateFrame(const Input& in, bool wasTouching) {
 				sFocus[SCREEN_RESULT] = 1;
 				sPressed = -1;
 				sBlade.reset();
+				onResultEntered();
 			}
 			break;
 		case SCREEN_PAUSE: {
@@ -6202,21 +6347,40 @@ static void updateFrame(const Input& in, bool wasTouching) {
 				else if (t == 1) passNext();
 				break;
 			}
-			int t = menuInput(kResultButtons, kResultCount, SCREEN_RESULT, in, wasTouching);
+			if (sLbTypingName) {
+				updateLbNameEntry(in, wasTouching);
+				break;
+			}
+			const bool elig = lbEligible();
+			const int btnCount = elig ? kResultCount : kResultCount - 1;
+			if (sFocus[SCREEN_RESULT] >= btnCount) sFocus[SCREEN_RESULT] = btnCount - 1;
+			int t = menuInput(kResultButtons, btnCount, SCREEN_RESULT, in, wasTouching);
+			if (elig && (in.down & KEY_Y)) {
+				audio::click();
+				t = kResultTopIdx;
+			}
 			if (in.down & KEY_B) {
 				audio::click();
 				t = 0;
 			}
 			if (t == 1) {
 				sCardFrame = false;
+				sResultBoard = false;
 				sStartMode = sGame.mode;
 				fadeThen(startGame);
 			} else if (t == 0 || t == 2) {
 				sCardFrame = false;
+				sResultBoard = false;
 				fadeThen(toModes);
+			} else if (elig && t == kResultTopIdx) {
+				sResultBoard = !sResultBoard;
+				if (sResultBoard && (lb::view().status == lb::STATUS_IDLE || lb::view().status == lb::STATUS_OFFLINE)) {
+					lb::fetch(sGame.mode, sGame.mode == MODE_ORCHARD && sGame.orc.endless);
+				}
 			}
 #if !PORT_3DS
 			else if (t == 3 && !sCardFrame) {
+				sResultBoard = false;
 				sCardFrame = true;  // drawn next, and kept from that frame
 				port::shareCard(30, 12, 340, 212);
 			}
