@@ -128,6 +128,7 @@ void saveDefaults(bool keepScores, int section) {
 		gSave.streetPassOn = 0;
 		gSave.streetPassPrompted = 0;
 		snprintf(gSave.streetPassMsg, sizeof gSave.streetPassMsg, "Hello! :)");
+		if (!keepScores) gSave.seenRoom50Cutscene = 0;
 	}
 }
 
@@ -284,6 +285,9 @@ void saveLoad() {
 	}
 	for (u8& t : gSave.bossTrackLast)
 		if (t > kTrackCount) t = 0;
+	for (u8& t : gSave.bossTrackLastEx)
+		if (t > kTrackCount) t = 0;
+	gSave.seenRoom50Cutscene &= 1;
 	// A boss beaten before win counts existed counts once.
 	for (int b = 0; b < (int)(sizeof gSave.bossWins / sizeof gSave.bossWins[0]); b++)
 		if ((gSave.bossesBeaten >> b & 1) && gSave.bossWins[b] == 0) gSave.bossWins[b] = 1;

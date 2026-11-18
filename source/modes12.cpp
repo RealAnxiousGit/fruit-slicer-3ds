@@ -140,7 +140,12 @@ void Game::rushNext() {
 	orc.bombSquadUsed = false;
 	addPopup("HALF YOUR HP BACK", kFieldW * 0.5f, kFieldTop + 70, rgba(160, 240, 170), 0.6f);
 	for (auto& s : orc.shots) s.on = false;
-	const int bossId = m12.rushStage % BOSS_COUNT;
+	if (m12.rushStage == kRushStages - 1) {
+		const int mid = kFirstMilestoneBoss + gRng.below(kMilestoneBossCount);
+		bossStart(mid, false);
+		return;
+	}
+	const int bossId = m12.rushStage % kRegularBossCount;
 	bossStart(bossId, m12.rushStage >= 2);
 }
 
@@ -496,7 +501,9 @@ void Game::labModes12(void (*check)(bool, const char*, const char*)) {
 	rushNext();
 	check(orc.boss.id == BOSS_CHILI && orc.boss.royal && orc.boss.left == kBosses[BOSS_CHILI].slices + 1, "Then a Royal Inferno Pepper", "");
 	rushNext();
-	check(orc.won && score == 4, "Beating all four clears the rush and scores 1 per boss beaten", "");
+	check(m12.rushStage == 4 && orc.boss.id >= BOSS_DURIAN && !orc.boss.royal, "Stage 5 brings a Milestone Boss as the final Boss Rush challenge", "");
+	rushNext();
+	check(orc.won && score == 5, "Beating all five clears the rush and scores 1 per boss beaten", "");
 	audio::fuse(false);
 
 	// Recipe: the right fruit fill the cup, a full cup adds 8 seconds, the wrong one spoils it.

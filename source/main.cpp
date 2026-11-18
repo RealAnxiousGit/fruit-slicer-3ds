@@ -520,6 +520,8 @@ static int fruitFor(const char* label) {
 		{"Audio", MF_APPLE}, {"Visuals", MF_PEACH}, {"Visuals and Display", MF_PEACH}, {"Gameplay and Controls", MF_PINEAPPLE}, {"Accessibility", MF_PEAR}, {"Scores and Data", MF_PLUM},
 		{"StreetPass", MF_MELON}, {"Enable", MF_MELON}, {"Not Now", MF_APPLE}, {"Challenge", MF_MELON},
 		{"Top 10", MF_GOLD}, {"Summary", MF_PEAR},
+		{"Yes", MF_MELON}, {"No", MF_APPLE}, {"Update Now", MF_GOLD}, {"Install Now", MF_GOLD},
+		{"Later", MF_ORANGE}, {"Restart", MF_PINEAPPLE}, {"Close", MF_PEAR}, {"OK", MF_PEACH},
 	};
 	if (!label) return MF_BERRY;
 	for (const auto& m : kMap)
@@ -2850,8 +2852,8 @@ static void benchUpdate(const Input& hw) {
 static void drawDailyTop() {
 	char buf[48];
 	const u32 today = progress::today();
-	// Packed tighter where the Mixer fruit sits under the sign: the title, the line, the week, the footer.
-	const float lift[4] = {PORT_3DS ? 0.0f : 78.0f, PORT_3DS ? 0.0f : 80.0f, PORT_3DS ? 0.0f : 80.0f, PORT_3DS ? 0.0f : 80.0f};
+	// Centered below the coin purse and cleanly above the Mixer fruit.
+	const float lift[4] = {PORT_3DS ? 0.0f : 50.0f, PORT_3DS ? 0.0f : 52.0f, PORT_3DS ? 0.0f : 52.0f, PORT_3DS ? 0.0f : 52.0f};
 	gfx::text("Daily Fruit", 200, 100 - lift[0], 0.56f, COL_ACCENT, ALIGN_CENTER);
 	if (progress::dailyPlayed(today)) snprintf(buf, sizeof buf, "TODAY'S BEST %lu", (unsigned long)progress::dailyScore(today));
 	else snprintf(buf, sizeof buf, "First run today pays %lu coins", (unsigned long)progress::dailyBonusPreview(today));
@@ -3120,6 +3122,9 @@ static int bossSprite(int boss) {
 		sprites_boss_king_guard_idx,
 		sprites_boss_pineapple_guard_idx,
 		sprites_boss_chili_guard_idx,
+		sprites_boss_durian_guard_idx,
+		sprites_boss_lemon_guard_idx,
+		sprites_boss_apple_guard_idx,
 	};
 	return boss >= 0 && boss < BOSS_COUNT ? kBossSprites[boss] : sprites_boss_melon_guard_idx;
 }
@@ -3186,6 +3191,9 @@ static void drawJournalBossTop(int boss) {
 		"ORCHARD BLAST & BOSS RUSH",
 		"ORCHARD BLAST & BOSS RUSH",
 		"ORCHARD BLAST & BOSS RUSH",
+		"ORCHARD ROOM 50+ & BOSS RUSH",
+		"ORCHARD ROOM 50+ & BOSS RUSH",
+		"ORCHARD ROOM 50+ & BOSS RUSH",
 	};
 	gfx::text(boss >= 0 && boss < BOSS_COUNT ? kBossWhere[boss] : "ORCHARD BLAST", 200, 94, 0.38f, COL_CREAM, ALIGN_CENTER);
 	const u32 wins = gSave.bossWins[boss];
@@ -3194,8 +3202,11 @@ static void drawJournalBossTop(int boss) {
 	static const char* const kBossBlurb[BOSS_COUNT] = {
 		"Spits seeds and flops. Slice it when its guard drops.",
 		"Fires cannonballs and lights its fuse. Snuff the fuse in three swipes.",
-		"Fires sharp spikes and whirls. Slice when its shell opens.",
-		"Rains burning embers and dashes fast. Catch it between gusts.",
+		"Keeps its spiny guard up. Knock lobbed bombs back into it!",
+		"Rains embers and triggers Heat Surges that speed up combat.",
+		"Launches armored thorn volleys and dust quakes every 50 rooms.",
+		"Fires crisscrossing sour zest barrages at blistering speed.",
+		"Pokes out hungry worms. Slice or tap them before they lunge!",
 	};
 	if (beaten) fitText(boss >= 0 && boss < BOSS_COUNT ? kBossBlurb[boss] : kBossBlurb[0], 200, 126, 0.34f, 326, COL_DIM);
 	else fitText("Reach it in Orchard Blast or Boss Rush and beat it to fill this page.", 200, 126, 0.34f, 326, COL_DIM);
@@ -3208,7 +3219,7 @@ static void drawJournalBossTop(int boss) {
 		snprintf(buf, sizeof buf, "%lu WIN%s  +%lu", (unsigned long)progress::bossMilestone(k), k == 1 ? "" : "S", (unsigned long)progress::bossReward(k));
 		fitText(buf, x, 156, 0.31f, 70, reached ? COL_ACCENT : COL_DIM);
 	}
-	const int tracks = bossTrackCount(boss);
+	const int tracks = bossTrackCount(boss >= BOSS_DURIAN ? 4 : boss);
 	if (level < progress::kBossLevels)
 		snprintf(buf, sizeof buf, "%lu more win%s for %lu coins", (unsigned long)(progress::bossMilestone(level + 1) - wins), progress::bossMilestone(level + 1) - wins == 1 ? "" : "s", (unsigned long)progress::bossReward(level + 1));
 	else
@@ -3825,6 +3836,7 @@ static int wrapNotes(const char** starts, int* lens, int maxLines) {
 	return n;
 }
 
+static Button sUpdateButtons[2];
 static int updateButtons(const Button** out, const char** a, const char** b) {
 	*b = nullptr;
 	switch (update::state()) {
@@ -3844,8 +3856,18 @@ static int updateButtons(const Button** out, const char** a, const char** b) {
 #endif
 		default: *a = "OK"; break;
 	}
-	*out = *b ? kUpdateTwo : kUpdateOne;
-	return *b ? 2 : 1;
+	if (*b) {
+		sUpdateButtons[0] = kUpdateTwo[0];
+		sUpdateButtons[0].label = *a;
+		sUpdateButtons[1] = kUpdateTwo[1];
+		sUpdateButtons[1].label = *b;
+		*out = sUpdateButtons;
+		return 2;
+	}
+	sUpdateButtons[0] = kUpdateOne[0];
+	sUpdateButtons[0].label = *a;
+	*out = sUpdateButtons;
+	return 1;
 }
 
 static void drawUpdateSign() {
@@ -3976,12 +3998,16 @@ static void updateSignInput(const Input& in, bool wasTouching) {
 	// A drag that starts clear of the signs moves the notes; the top line of the list is clamped when drawn.
 	static ListDrag drag;
 	static float pos;
+	const update::State noteState = update::state();
+	const bool hasNotes = noteState == update::OFFER || noteState == update::NOTE;
 	bool onSign = false;
 	for (int i = 0; i < n; i++) onSign |= menuHit(btns[i], SCREEN_UPDATE, in.tx, in.ty);
 	if (in.touching && !wasTouching) pos = sUpdateScroll * (float)kNoteStep;
-	if (listDrag(drag, in, wasTouching, onSign ? 1e6f : -1e6f, 1e6f, &pos)) {
+	if (hasNotes && !onSign && in.ty < 140 && listDrag(drag, in, wasTouching, 0.0f, 140.0f, &pos)) {
 		sUpdateScroll = pos > 0 ? (int)(pos / kNoteStep + 0.5f) : 0;
 		keys.touching = false;
+	} else if (!hasNotes) {
+		drag = {};
 	}
 	if (n == 0) return;  // downloading: nothing to press
 	int t = menuInput(btns, n, SCREEN_UPDATE, keys, wasTouching);
@@ -4072,13 +4098,13 @@ static const GuideEntry kGuides[] = {
 	 "On-beat slices build your rhythm chain and score bonus points.",
 	 "Use Audio -> Latency Test to calibrate Beat Timing to your setup."},
 	{MODE_ORCHARD, nullptr, sprites_ic_tree_idx, "ENDLESS ROOMS & SEEDED BOSSES",
-	 "Each room cleared scores +1. Rooms keep scaling with no limit.",
-	 "Slicing fruit gives XP (not score) to level up right away, even in Frenzy.",
-	 "Every 5 rooms a seeded boss arrives (Royal variants after a full cycle).",
-	 "Runs only end on 0 HP or completion; quitting saves your run to continue!"},
-	{MODE_BOSSRUSH, nullptr, sprites_ic_crown_idx, "4 BOSSES BACK TO BACK, NO FRUIT WAVES",
-	 "Pick a starting Build, then face 4 escalating bosses in a row.",
-	 "Each boss defeated scores +1 (up to 4). Regular fruit never spawns.",
+	 "Each room cleared scores +1. Slicing fruit gives XP to stack uncapped upgrades.",
+	 "Every 5 rooms a seeded boss arrives. Every 50th brings a Milestone Boss!",
+	 "Your game is saved at the start of each room.",
+	 "Runs end on 0 HP. Continue restarts from the start of your saved room!"},
+	{MODE_BOSSRUSH, nullptr, sprites_ic_crown_idx, "5 BOSSES BACK TO BACK, NO FRUIT WAVES",
+	 "Pick a starting Build, then face 5 escalating bosses in a row.",
+	 "Each boss defeated scores +1 (up to 5). Regular fruit never spawns.",
 	 "Blue Ring = Guard Up (don't slice!). Gold Ring = Guard Down (slice!).",
 	 "Slice boss shots, defuse Bomb King bombs, and snuff his lit fuse in 3 cuts!"},
 	{MODE_RECIPE, nullptr, sprites_ic_cup_idx, "FILL SMOOTHIE ORDERS IN 60 SECONDS",
@@ -4124,12 +4150,12 @@ static void turnGuide(int dir) {
 static void updateGuides(const Input& in, bool wasTouching) {
 	if (in.down & KEY_B) {
 		audio::click();
-		goTo(SCREEN_HOWTO, 2);
+		goTo(SCREEN_HOWTO, -1);
 		return;
 	}
 	bool leave;
 	if (backCut(SCREEN_GUIDES, in, wasTouching, &leave)) {
-		if (leave) goTo(SCREEN_HOWTO, 2);
+		if (leave) goTo(SCREEN_HOWTO, -1);
 		return;
 	}
 	if ((in.repeat & (KEY_LEFT | KEY_UP)) || (in.down & KEY_L) || in.wheel > 0) turnGuide(-1);
@@ -4320,13 +4346,13 @@ static void drawGuidesTop() {
 			gfx::text("2", vx + 10, vy + 4, 0.38f, COL_ACCENT);
 			gfx::rect(118, vy + 6, 104, 12, rgba(110, 215, 115));
 			gfx::text("HP 20/20", 170, vy + 5, 0.30f, COL_CREAM, ALIGN_CENTER);
-			gfx::text("BOSS 3/4", vx + vw - 8, vy + 5, 0.34f, COL_ACCENT, ALIGN_RIGHT);
+			gfx::text("BOSS 3/5", vx + vw - 8, vy + 5, 0.34f, COL_ACCENT, ALIGN_RIGHT);
 			gfx::sprite(SHEET_SPRITES, sprites_ring_idx, 124, 110, 1.15f, 1.15f, 0, rgba(120, 200, 255));
 			gfx::sprite(SHEET_SPRITES, sprites_boss_melon_guard_idx, 124, 110, 0.68f, 0.68f);
 			gfx::sprite(SHEET_SPRITES, sprites_ring_idx, 276, 110, 1.15f, 1.15f, 0, rgba(255, 220, 90));
 			gfx::sprite(SHEET_SPRITES, sprites_boss_king_open_idx, 276, 110, 0.68f, 0.68f);
-			drawGuideCallout(124, 58, "BLUE RING: GUARD UP (WAIT!)", rgba(140, 210, 255), 124, 84);
-			drawGuideCallout(276, 58, "GOLD RING: SLICE BOSS!", COL_ACCENT, 276, 84);
+			drawGuideCallout(118, 58, "BLUE RING: GUARD UP", rgba(140, 210, 255), 124, 84);
+			drawGuideCallout(278, 58, "GOLD RING: SLICE IT!", COL_ACCENT, 276, 84);
 			drawGuideCallout(124, 168, "+1 SCORE PER BOSS", rgba(150, 245, 160));
 			drawGuideCallout(276, 168, "SLICE SHOTS & BOMBS", COL_CREAM, 276, 134);
 			break;
@@ -4431,11 +4457,46 @@ static void drawGuidesBottom() {
 	gfx::text(title, cx, 50, 0.44f, COL_ACCENT, ALIGN_CENTER);
 
 	gfx::sign(sprites_plank_idx, 8, 80, 304, 152, COL_PLANK);
-	fitText(g.goal, 160, 88, 0.36f, 276, COL_ACCENT);
+	fitText(g.goal, 160, 87, 0.36f, 276, COL_ACCENT);
 	const char* const lines[4] = {g.line1, g.line2, g.line3, g.line4};
+	float ly = 104.0f;
 	for (int i = 0; i < 4; i++) {
 		if (!lines[i] || !lines[i][0]) continue;
-		fitText(lines[i], 160, 114 + i * 22.0f, 0.33f, 280, COL_CREAM);
+		char wbuf[160];
+		snprintf(wbuf, sizeof wbuf, "%s", lines[i]);
+		char* p = wbuf;
+		int wrapped = 0;
+		const float sc = 0.31f, maxW = 278.0f, step = 10.8f;
+		while (*p && wrapped < 2 && ly <= 212.0f) {
+			while (*p == ' ') p++;
+			if (!*p) break;
+			if (gfx::textWidth(p, sc) <= maxW || wrapped == 1) {
+				fitText(p, 160, ly, sc, maxW, COL_CREAM);
+				ly += step;
+				break;
+			}
+			int split = -1;
+			for (int k = 1; p[k]; k++) {
+				if (p[k] == ' ') {
+					p[k] = 0;
+					const float twp = gfx::textWidth(p, sc);
+					p[k] = ' ';
+					if (twp <= maxW) split = k;
+					else break;
+				}
+			}
+			if (split < 0) {
+				fitText(p, 160, ly, sc, maxW, COL_CREAM);
+				ly += step;
+				break;
+			}
+			p[split] = 0;
+			gfx::text(p, 160, ly, sc, COL_CREAM, ALIGN_CENTER);
+			ly += step;
+			p += split + 1;
+			wrapped++;
+		}
+		ly += 2.0f;
 	}
 	// Page pips along the bottom of the plank.
 	const float dotStep = 12.0f, dotX0 = 160 - (kGuideCount - 1) * dotStep * 0.5f;
@@ -4743,7 +4804,7 @@ static void drawTopContent(Screen screen) {
 			// Where the Mixer fruit sits under it, the sign is shorter and its lines closer together.
 			const float yName = kMixerFruit ? 96 : 104, yLine = kMixerFruit ? 124 : 134, yBest = kMixerFruit ? 166 : 184;
 			if (kMixerFruit) {
-				if (mode == MODE_DAILY) topPanel(30, 14, 340, 148);
+				if (mode == MODE_DAILY) topPanel(30, 44, 340, 136);
 				else topPanel(30, 90, 340, 108);
 			} else topPanel(30, 96, 340, 134);
 			gfx::setDepth(1.0f);
@@ -5737,7 +5798,7 @@ static void toTitle() {
 
 static void quitRun() {
 	if (sGame.mode == MODE_ORCHARD && !sGame.passName) {
-		if (!sGame.orc.resumePrompt && sGame.phase != PHASE_OVER && sGame.phase != PHASE_DYING) sGame.orcSaveRun();
+		// Orchard Blast auto-saves cleanly at the start of every room, so quitting mid-room preserves that room-start snapshot.
 	} else {
 		sGame.commitScore();
 	}
@@ -5783,6 +5844,7 @@ static void updateTransitions() {
 
 static void updateFrame(const Input& in, bool wasTouching) {
 	sTime += kDt;
+	shopTick(kDt);
 #if PORT_3DS && defined(TEST_READINGS)
 	readingsTick();
 #endif
@@ -5809,7 +5871,8 @@ static void updateFrame(const Input& in, bool wasTouching) {
 	const bool inGame = sScreen == SCREEN_GAME;
 	gBladeDull = inGame && sGame.stunT > 0;
 	gBladeDrag = inGame ? clampf(sGame.stickyT, 0, 1) : 0;
-	audio::musicSpeed(inGame && sGame.chiliT > 0 ? 1.08f : 1.0f);
+	const bool bossSurge = inGame && !sGame.orchardHeld() && !sOrcInv && sGame.orchardLike() && sGame.orc.boss.on && !sGame.orc.boss.beaten && sGame.orc.boss.surgeT > 0;
+	audio::musicSpeed(bossSurge ? 1.22f : ((inGame && sGame.chiliT > 0) ? 1.08f : 1.0f));
 
 	// The game keeps moving during a fade, but menus ignore input while anything is sliding.
 	const bool blocked = inputBlocked();
@@ -6123,7 +6186,7 @@ static void updateFrame(const Input& in, bool wasTouching) {
 				sStartMode = MODE_PRACTICE;
 				fadeThen(startGame);
 			} else if (t == 2) {
-				goTo(SCREEN_GUIDES, 0);
+				goTo(SCREEN_GUIDES, 1);
 			}
 			break;
 		}

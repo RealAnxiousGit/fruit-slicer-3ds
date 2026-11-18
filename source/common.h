@@ -189,6 +189,8 @@ struct Settings {
 	u8 spReserve;
 	char streetPassMsg[28];  // customizable 3DS StreetPass greeting (default "Hello! :)")
 	u32 spChallengesWon;     // StreetPass challenges beaten
+	u8 seenRoom50Cutscene;   // 1 once Room 50 first-encounter dialogue has played (cleared only on Reset Everything)
+	u8 bossTrackLastEx[4];   // per boss (indices 4..7), last track (+1) heard
 };
 static_assert(MODE_COUNT + 1 <= kMaxModes, "more modes than the save holds");
 static_assert(MODE_JUGGLE - MODE_ORCHARD + 2 <= 8, "howToSeen has a bit for each how-to");

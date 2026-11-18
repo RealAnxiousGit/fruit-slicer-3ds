@@ -152,7 +152,8 @@ struct Game {
 	u32 runCoins() const {
 		if (mode == MODE_PRACTICE) return 0;
 		const u32 fromScore = mode == MODE_ORCHARD ? score * 5 : (mode == MODE_BOSSRUSH ? score * 10 : score / 100);
-		return (u32)coinsCaught * 5 + fromScore;
+		const u32 gross = (u32)coinsCaught * 5 + fromScore;
+		return gross > orc.coinsSpent ? gross - orc.coinsSpent : 0;
 	}
 	u32 journalCoins;   // part of it from Fruit Journal milestones
 	u32 dailyCoins;     // part of it from the day's first Daily Fruit
@@ -245,15 +246,18 @@ struct Game {
 
 	// Orchard Blast, for the menus (orchard.cpp).
 	bool orchardLike() const { return mode == MODE_ORCHARD || mode == MODE_BOSSRUSH; }  // HP, charms and bosses
-	bool orchardHeld() const { return orchardLike() && (orc.choosing || orc.resumeT > 0 || m12.rushPicking || orc.resumePrompt); }  // play holds still
+	bool orchardHeld() const { return orchardLike() && (orc.choosing || orc.resumeT > 0 || m12.rushPicking || orc.resumePrompt || orc.cutscene || orc.devPrompt); }  // play holds still
 	void orchardResumeChoice(bool continueRun, u32 seed = 0);  // Continue saved run or Start Over at Room 1
 	static bool orchardHasSave(int* savedRoomOut = nullptr);
 	static void orchardClearSave();
 	bool orcSaveRun() const;
 	bool orcLoadRun();
+	void orcApplyDevSkip(int targetRoom, int targetLevel);
+	void orcStartBossAfterCutscene();
 	void rushPick(int build);   // Boss Rush: takes a build and brings the first boss in
 	void drawModes12Field() const;  // the recipe, the call, the rings
-	bool orcCanReroll() const { return orc.choosing && !orc.placing && orc.rerolls > 0; }
+	int orcRerollPrice() const { return 15 + orc.paidRerolls * 15; }
+	bool orcCanReroll() const { return orc.choosing && !orc.placing && (orc.rerolls > 0 || (mode == MODE_ORCHARD && runCoins() >= (u32)orcRerollPrice())); }
 	void orcPick(int i);        // takes offer i
 	void orcReroll();
 	void orcPlace(int slot);    // puts the charm just taken in slot 0 or 1; -1 keeps the charms already there
@@ -309,6 +313,8 @@ private:
 	void bossNextAttack();
 	void bossAttack(float dt);
 	void bossFire(int kind, float x, float y, float vx, float vy);
+	void bossHitSlice(float x, float y, float dx, float dy);
+	int bossDamageBase(int base) const;
 	void shotsUpdate(float dt);
 	void drawBoss(bool solid) const;
 	void drawShots() const;

@@ -1,3 +1,5 @@
+#include <math.h>
+
 #include "shop.h"
 
 #include "render.h"
@@ -106,10 +108,38 @@ void shopCheckSave() {
 	if (gSave.skin > countOf(kSkins) || (gSave.skin > 0 && !shopOwned(SHOP_SKINS, gSave.skin - 1))) gSave.skin = 0;
 }
 
-const m3d::Skin& shopSkinLook(int item) { return kSkinLooks[item % countOf(kSkins)]; }
+static float sHoloPhase = 0.0f;
+void shopTick(float dt) { sHoloPhase += dt * 2.6f; }
+
+static void holoRgb(float* r, float* g, float* b) {
+	*r = 0.72f + 0.28f * sinf(sHoloPhase);
+	*g = 0.72f + 0.28f * sinf(sHoloPhase + 2.0944f);
+	*b = 0.72f + 0.28f * sinf(sHoloPhase + 4.1888f);
+}
+
+const m3d::Skin& shopSkinLook(int item) {
+	static m3d::Skin sHoloSkin;
+	const int idx = item % countOf(kSkins);
+	if (idx == 2) {
+		sHoloSkin = kSkinLooks[idx];
+		float r, g, b;
+		holoRgb(&r, &g, &b);
+		sHoloSkin.r = r * 1.15f;
+		sHoloSkin.g = g * 1.15f;
+		sHoloSkin.b = b * 1.15f;
+		return sHoloSkin;
+	}
+	return kSkinLooks[idx];
+}
 
 u32 shopSkinTint(int item) {
-	const u32 c = kSkinColours[item % countOf(kSkins)];
+	const int idx = item % countOf(kSkins);
+	if (idx == 2) {
+		float r, g, b;
+		holoRgb(&r, &g, &b);
+		return rgba((u8)(r * 255), (u8)(g * 255), (u8)(b * 255), (u8)(kSkinLooks[idx].alpha * 255));
+	}
+	const u32 c = kSkinColours[idx];
 	return rgba((u8)(c >> 16), (u8)(c >> 8), (u8)c, (u8)(shopSkinLook(item).alpha * 255));
 }
 
@@ -148,14 +178,16 @@ int bossTrackCount(int boss) {
 }
 
 int bossTrackPick(int boss, u32 roll) {
-	if (boss < 0 || boss >= (int)sizeof gSave.bossTrackLast) return -1;
+	const int eff = boss >= 4 ? 4 : boss;
+	if (eff < 0 || eff >= 5) return -1;
 	int pool[kTrackCount], n = 0;
-	const int last = gSave.bossTrackLast[boss] - 1;
+	u8& lastSlot = eff < 4 ? gSave.bossTrackLast[eff] : gSave.bossTrackLastEx[eff - 4];
+	const int last = lastSlot - 1;
 	for (int t = 0; t < kTrackCount; t++)
-		if (trackBoss(t) == boss && (t != last || bossTrackCount(boss) == 1)) pool[n++] = t;
+		if (trackBoss(t) == eff && (t != last || bossTrackCount(eff) == 1)) pool[n++] = t;
 	if (n == 0) return -1;
 	const int t = pool[roll % n];
-	gSave.bossTrackLast[boss] = (u8)(t + 1);
+	lastSlot = (u8)(t + 1);
 	return t;
 }
 

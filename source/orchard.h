@@ -37,8 +37,11 @@ int cardIcon(int card);  // its badge on SHEET_SPRITES
 // What the next level of a card would do, with real numbers, for the details panel. Empty if nothing changes.
 void cardNextLine(int card, int level, char* out, int size);
 
-// The bosses of Orchard Blast (10-room and Endless pools).
-enum BossId : u8 { BOSS_MELON, BOSS_KING, BOSS_PINEAPPLE, BOSS_CHILI, BOSS_COUNT };
+// The bosses of Orchard Blast (regular 4 in seeded 5-room loop, plus 3 Milestone Bosses every 50th room).
+enum BossId : u8 { BOSS_MELON, BOSS_KING, BOSS_PINEAPPLE, BOSS_CHILI, BOSS_DURIAN, BOSS_LEMON, BOSS_APPLE, BOSS_COUNT };
+static constexpr int kRegularBossCount = 4;
+static constexpr int kFirstMilestoneBoss = BOSS_DURIAN;
+static constexpr int kMilestoneBossCount = BOSS_COUNT - kFirstMilestoneBoss;
 struct BossInfo {
 	const char* name;
 	u8 slices;  // clean slices to beat it
@@ -47,7 +50,7 @@ struct BossInfo {
 extern const BossInfo kBosses[BOSS_COUNT];
 
 // A boss's projectiles live apart from the fruit, so nothing in the fruit code has to know about them.
-enum ShotKind : u8 { SHOT_SEED, SHOT_SPLASH, SHOT_CANNON, SHOT_WAVE, SHOT_CROWN, SHOT_SPIKE, SHOT_EMBER };
+enum ShotKind : u8 { SHOT_SEED, SHOT_SPLASH, SHOT_CANNON, SHOT_WAVE, SHOT_CROWN, SHOT_SPIKE, SHOT_EMBER, SHOT_THORN, SHOT_ACID };
 struct Shot {
 	float x, y, vx, vy, age, rot;
 	float life;   // the crown and the juice wave: seconds left
@@ -75,8 +78,25 @@ enum BossAttack : u8 {
 	CHILI_EMBERS,  // Ember Volley: blazing fireballs arced up across the stage; swipe to snuff
 	CHILI_MIRAGE,  // Heat Mirage: fast flaming decoys that morph into bombs mid-flight
 	CHILI_RUSH,    // Scorching Dash: high-speed ember zig-zag across the screen before overheating
+	PINE_BOMB,     // Pineapple Guard: lobs a heavy bomb; slice it back into him (watch out for returns!)
+	DUR_THORNS,    // Dusty Durian: radial armored thorn bursts & dust ring shockwaves
+	DUR_SLAM,      // Dusty Durian: heavy spiked slam with ground shockwaves
+	DUR_SPIN,      // Dusty Durian: whirling armored spin dash across the stage
+	LEM_ACID,      // Lord Lemon: crisscrossing sour citrus shots
+	LEM_ZEST,      // Lord Lemon: bouncing sour zest balls & temporary speed hazard
+	LEM_BLITZ,     // Lord Lemon: unpredictable figure-8 dash + rapid citrus volley
+	APP_WORMS,     // Aggro Apple: angry worms peek out—slice near/tap them quickly before they lunge!
+	APP_BARRAGE,   // Aggro Apple: fierce bouncy apple-core seed barrage
+	APP_CRUSH,     // Aggro Apple: aggressive dive slam with simultaneous worm ambush
 };
-// Only the last attack of a chain tires the boss out and drops its guard.
+// Only the last attack of a chain tires the boss out and drops its guard (Pineapple Guard uses lobbed bombs).
+
+struct AppleWorm {
+	float ox, oy;
+	float emergeT;  // rises from 0 to 1
+	float timer;    // seconds left before lunging at the player
+	bool on;
+};
 
 // The boss art's poses, in the order the sprite sheet holds them (gen_assets.py BOSS_POSES).
 enum BossPose { BOSS_POSE_GUARD, BOSS_POSE_OPEN, BOSS_POSE_DAZE, BOSS_POSE_WIND };
@@ -128,6 +148,9 @@ struct Boss {
 	bool royal;       // Boss Rush's second lap: one more slice, shorter openings, quicker attacks
 	u8 total;         // slices to beat it
 	s8 track;         // the Shop music track playing for this fight
+	u8 attackCycle;   // tracks cycles between special events (Pineapple bomb lob, Chili surge)
+	float surgeT;     // The Inferno Pepper's temporary speedup duration
+	AppleWorm worms[4];  // Aggro Apple's peeking worms
 };
 
 // The run itself.
@@ -148,7 +171,7 @@ struct Orchard {
 	u8 resumeFocus;      // 0 = Continue, 1 = Start Over
 	u16 savedRoom;       // room shown in the Continue prompt
 	u32 runSeed;         // deterministic seed determining boss order & wave variety for this run
-	u8 bossOrder[BOSS_COUNT];
+	u8 bossOrder[kRegularBossCount];
 	// Health.
 	float hp, maxHp;
 	float regenT;
@@ -174,7 +197,22 @@ struct Orchard {
 	float slotCool[kSlots];  // seconds until a reusable charm can be used again
 	float slotOn[kSlots];    // seconds a reusable charm still runs
 	int rerolls;
+	int paidRerolls;         // coin-purchased rerolls this run (price increments +15 per purchase)
+	u32 coinsSpent;          // coins spent from this run's gathered coins on rerolls
 	bool luckyPit;           // the next level-up shows 5 cards
+	// Room 50 first-encounter retro dialogue cutscene & Dev Room/Level Skip prompt.
+	bool cutscene;
+	u8 dialogueLine;
+	float dialogueChars;
+	int dialogueLastChar;
+	float dialoguePauseT;
+	bool dialogueWaitRelease;
+	bool tensionStarted;
+	u8 pendingMilestoneBoss;
+	bool devPrompt;
+	u8 devField;             // 0 = room, 1 = level, 2 = start button
+	int devRoomTarget;
+	int devLevelTarget;
 	// Effects of charms in use.
 	float blenderT, slowmoT, floodT, stillT;  // Blender, Slow-Mo, Juice Flood, Freeze Pop
 	bool coinJar;            // this room's coins count twice
@@ -205,8 +243,8 @@ struct Orchard {
 };
 
 // Deterministic seeded boss ordering & Endless difficulty helper.
-void orchardBuildBossOrder(u32 seed, u8 outOrder[BOSS_COUNT]);
-int orchardBossForEncounter(int encounterIndex, const u8 order[BOSS_COUNT], bool* royalOut = nullptr);
+void orchardBuildBossOrder(u32 seed, u8 outOrder[kRegularBossCount]);
+int orchardBossForRoom(int room, u32 seed, const u8 order[kRegularBossCount], bool* royalOut = nullptr);
 
 // Numbers that depend on the Difficulty setting.
 struct OrchardLevel {
@@ -231,7 +269,7 @@ struct RushBuildInfo {
 	const char* line2;
 };
 extern const RushBuildInfo kRushBuilds[BUILD_COUNT];
-constexpr int kRushStages = 4;     // The Big Melon, The Bomb King, then both again as Royals
+constexpr int kRushStages = 5;     // 4 regular bosses + 1 random Milestone Boss finale
 constexpr int kRecipeMax = 3;      // kinds of fruit in one recipe
 constexpr int kRecipeBonusTime = 8;
 constexpr int kSharpColours = 4;   // red circle, blue square, yellow triangle, green star

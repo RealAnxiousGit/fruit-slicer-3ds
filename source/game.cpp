@@ -357,7 +357,7 @@ void Game::launch(const Pending& p) {
 		o.kind = p.kind;
 		o.fruit = p.kind == OBJ_FRUIT ? (u8)(p.fruit & 0x7F) : p.fruit;
 		if (p.kind == OBJ_FRUIT && (p.fruit & 0x80)) o.morph = gRng.range(1.1f, 1.7f);  // The Bomb King's decoy
-		if (p.kind == OBJ_BOMB && p.fruit == 1) o.tag = 1;  // Lobbed by The Bomb King
+		if (p.kind == OBJ_BOMB && p.fruit > 0) o.tag = p.fruit;  // 1: Bomb King, 2: Pineapple Guard lobbed bomb
 		o.x = p.x;
 		o.y = kSpawnY;
 		o.vx = p.vx;
@@ -817,14 +817,16 @@ void Game::addPopup(const char* s, float x, float y, u32 color, float scale) {
 	popupCursor = (popupCursor + 1) % kMaxPopups;
 	p.on = false;  // the slot being reused must not block its own replacement
 	snprintf(p.text, sizeof p.text, "%s", s);
-	p.x = clampf(x, 26, kFieldW - 26);
-	const float lowest = kFieldH - 20;
-	p.y = clampf(y, kFieldTop + 24, lowest);
-	// Step clear of text already showing: down a line, or up once the bottom is reached.
 	float hw = gfx::textWidth(p.text, scale) * 0.5f, hh = 9 * scale, step = 20 * scale;
+	const float minX = fminf(fmaxf(26.0f, hw + 8.0f), kFieldW * 0.5f);
+	p.x = clampf(x, minX, kFieldW - minX);
+	const float highest = kFieldTop + ((p.x - hw < 72.0f) ? 30.0f : 24.0f);
+	const float lowest = kFieldH - 20;
+	p.y = clampf(y, highest, lowest);
+	// Step clear of text already showing: down a line, or up once the bottom is reached.
 	for (int tries = 0; tries < 6 && popupBlocked(p.x, p.y, hw, hh); tries++) {
 		if (p.y + step > lowest) step = -fabsf(step);
-		p.y = clampf(p.y + step, kFieldTop + 24, lowest);
+		p.y = clampf(p.y + step, highest, lowest);
 	}
 	p.life = 0.9f;
 	p.color = color;
@@ -1242,6 +1244,26 @@ void Game::sliceFruit(Obj& o, const Blade& blade) {
 
 void Game::hitBomb(Obj& o) {
 	o.on = false;
+	if (o.kind == OBJ_BOMB && o.tag == 4) {
+		o.on = true;  // already launched back toward The Pineapple Guard
+		return;
+	}
+	if (orchardLike() && orc.boss.on && !orc.boss.beaten && (o.tag == 2 || o.tag == 3) && orc.boss.id == BOSS_PINEAPPLE) {
+		// Slicing a lobbed Pineapple bomb launches it straight up toward The Pineapple Guard!
+		o.on = true;
+		o.tag = 4;
+		o.hitCooldown = 0.25f;
+		const float dx = orc.boss.x - o.x, dy = orc.boss.y - o.y;
+		const float dist = sqrtf(dx * dx + dy * dy) + 1.0f;
+		const float spd = 420.0f * kFieldK;
+		o.vx = dx / dist * spd;
+		o.vy = dy / dist * spd;
+		audio::play(SFX_KNOCK, 0.95f, fieldPan(o.x), 1.05f);
+		emitSparks(o.x, o.y, rgba(255, 220, 110), juiceCount(16), 210);
+		addRing(o.x, o.y, rgba(255, 210, 90), 2.2f, 0.3f);
+		addPopup("RETURNED!", o.x, o.y - 18, rgba(255, 230, 120), 0.7f);
+		return;
+	}
 	if (shield) {
 		// The shield takes it: the bomb fizzles out with a puff, and nothing is lost.
 		shield = false;
@@ -1786,7 +1808,7 @@ void Game::endGame() {
 void Game::updateObjects(float dt) {
 	for (auto& o : objs) {
 		if (!o.on) continue;
-		o.vy += gravity * dt;
+		o.vy += (o.kind == OBJ_BOMB && o.tag == 4 ? 0.2f : 1.0f) * gravity * dt;
 		o.x += o.vx * dt;
 		o.y += o.vy * dt;
 		o.rot += o.rotv * dt;
@@ -1810,11 +1832,11 @@ void Game::updateObjects(float dt) {
 		}
 		if (o.vy > 0 && o.y > kKillY) {
 			o.on = false;
-			if (o.kind == OBJ_BOMB && orchardLike() && orc.boss.on && !orc.boss.beaten && orc.boss.id == BOSS_KING && o.tag == 1 && phase == PHASE_PLAY) {
+			if (o.kind == OBJ_BOMB && orchardLike() && orc.boss.on && !orc.boss.beaten && ((orc.boss.id == BOSS_KING && o.tag == 1) || (orc.boss.id == BOSS_PINEAPPLE && (o.tag == 2 || o.tag == 3))) && phase == PHASE_PLAY) {
 				boom::start(o.x, kFieldH - 10);
 				emitSparks(o.x, kFieldH - 10, rgba(255, 170, 60), juiceCount(12), 200);
 				audio::play(SFX_BOOM, 0.85f, fieldPan(o.x));
-				orcHurt(orchardLevel(gSave.difficulty).bombDamage, o.x, kFieldH - 20.0f, "BOMB");
+				orcHurt(bossDamageBase(orchardLevel(gSave.difficulty).bombDamage), o.x, kFieldH - 20.0f, "BOMB");
 				continue;
 			}
 			// A dropped spiky fruit, pinata or loose piece is never a miss.
@@ -2159,7 +2181,12 @@ void Game::drawObjects2D(bool top, float ox, float oy) const {
 	}
 	if (top) gfx::setDepth(1.1f);
 	for (const auto& o : objs) {
-		if (o.on && o.kind == OBJ_BOMB && onThisScreen(o.y, 34, top, oy)) gfx::sprite(SHEET_FRUIT, fruit_bomb_idx, o.x + ox, o.y + oy, 1, 1, o.rot);
+		if (o.on && o.kind == OBJ_BOMB && onThisScreen(o.y, 34, top, oy)) {
+			if (o.tag >= 2) {
+				gfx::sprite(SHEET_SPRITES, sprites_ring_idx, o.x + ox, o.y + oy, 1.15f, 1.15f, 0, o.tag == 4 ? rgba(255, 220, 90, 210) : rgba(255, 150, 70, 200));
+			}
+			gfx::sprite(SHEET_FRUIT, fruit_bomb_idx, o.x + ox, o.y + oy, 1, 1, o.rot);
+		}
 	}
 	if (finaleOn && !top) {
 		float s = 1.0f + finaleSwell + sinf(finaleT * 11) * 0.015f;
@@ -2259,8 +2286,16 @@ void Game::drawField(const Blade& blade) const {
 
 	if (orchardLike()) drawOrchardField();  // the boss sits behind the fruit
 	drawMarks(false, 0, 0);
-	if (solid) drawObjects3D(false, 0, 0);
-	else drawObjects2D(false, 0, 0);
+	if (solid) {
+		for (const auto& o : objs) {
+			if (o.on && o.kind == OBJ_BOMB && o.tag >= 2 && o.y >= -30) {
+				gfx::sprite(SHEET_SPRITES, sprites_ring_idx, o.x, o.y, 1.15f, 1.15f, 0, o.tag == 4 ? rgba(255, 220, 90, 210) : rgba(255, 150, 70, 200));
+			}
+		}
+		drawObjects3D(false, 0, 0);
+	} else {
+		drawObjects2D(false, 0, 0);
+	}
 
 	for (const auto& o : objs) {
 		if (!o.on) continue;

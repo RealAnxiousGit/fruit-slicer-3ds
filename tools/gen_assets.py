@@ -1587,6 +1587,18 @@ def boss_face(d, cx, cy, r, pose, kind, outline=False):
         # Flame-whisker cheek marks for The Inferno Pepper.
         for side in (-1, 1):
             poly(d, [(cx + side * r * 0.42, cy + r * 0.08), (cx + side * r * 0.62, cy + r * 0.02), (cx + side * r * 0.54, cy + r * 0.18)], (255, 206, 76, 255))
+    elif kind == "durian":
+        # Heavy rocky brow-plate and twin fangs for Dusty Durian.
+        for side in (-1, 1):
+            poly(d, [(cx + side * r * 0.14, my + r * 0.02), (cx + side * r * 0.25, my + r * 0.02), (cx + side * r * 0.20, my + r * 0.20)], white)
+    elif kind == "lemon":
+        # Sour diamond monocle-crest and curled beard for Lord Lemon.
+        poly(d, [(cx, cy - r * 0.52), (cx + r * 0.14, cy - r * 0.34), (cx, cy - r * 0.22), (cx - r * 0.14, cy - r * 0.34)], (166, 74, 212, 255))
+        poly(d, [(cx - r * 0.16, my + r * 0.18), (cx + r * 0.16, my + r * 0.18), (cx, my + r * 0.36)], (188, 224, 62, 255))
+    elif kind == "apple":
+        # Scarred battle brows and fanged sneer for Aggro Apple.
+        for side in (-1, 1):
+            poly(d, [(cx + side * r * 0.12, my + r * 0.02), (cx + side * r * 0.22, my + r * 0.02), (cx + side * r * 0.17, my + r * 0.18)], white)
 
 
 def boss_body(kind, pose):
@@ -1657,6 +1669,55 @@ def boss_body(kind, pose):
         img.alpha_composite(patch.filter(ImageFilter.GaussianBlur(SS * 2.5)))
         d = ImageDraw.Draw(img)
         boss_face(d, cx, cy + r * 0.04, r * 0.86, pose, "chili")
+    elif kind == "durian":
+        # Dusty Durian: rugged spiked olive-tan armor ring with dusty ochre sheen.
+        for i in range(12):
+            a = i * math.pi / 6.0
+            ca, sa = math.cos(a), math.sin(a)
+            pts = [
+                (cx + ca * r * 0.72 - sa * r * 0.14, cy + sa * r * 0.72 + ca * r * 0.14),
+                (cx + ca * r * 0.72 + sa * r * 0.14, cy + sa * r * 0.72 - ca * r * 0.14),
+                (cx + ca * r * 1.08, cy + sa * r * 1.08),
+            ]
+            poly(d, pts, (132, 114, 58, 255))
+        body = (166, 148, 76, 255) if pose != "wind" else (196, 166, 82, 255)
+        el(d, cx, cy, r * 0.86, r * 0.86, body)
+        img = shade(img, light=(245, 232, 168, 95), dark=(64, 52, 24, 90))
+        d = ImageDraw.Draw(img)
+        patch = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        el(ImageDraw.Draw(patch), cx, cy + r * 0.05, r * 0.56, r * 0.46, (218, 200, 128, 150))
+        img.alpha_composite(patch.filter(ImageFilter.GaussianBlur(SS * 2.5)))
+        d = ImageDraw.Draw(img)
+        boss_face(d, cx, cy + r * 0.02, r * 0.88, pose, "durian")
+    elif kind == "lemon":
+        # Lord Lemon: sharp pointed citrus tips, vivid sour yellow rind & royal crest.
+        for side in (-1, 1):
+            poly(d, [(cx + side * r * 0.70, cy - r * 0.24), (cx + side * r * 0.70, cy + r * 0.24), (cx + side * r * 1.06, cy)], (232, 200, 40, 255))
+        body = (246, 218, 52, 255) if pose != "wind" else (255, 238, 92, 255)
+        el(d, cx, cy, r * 0.88, r * 0.78, body)
+        img = shade(img, light=(255, 254, 210, 110), dark=(132, 102, 10, 80))
+        d = ImageDraw.Draw(img)
+        leaf(d, cx + r * 0.06, cy - r * 0.74, -26, r * 0.44, (84, 178, 66, 255))
+        patch = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        el(ImageDraw.Draw(patch), cx, cy + r * 0.04, r * 0.54, r * 0.42, (255, 248, 170, 165))
+        img.alpha_composite(patch.filter(ImageFilter.GaussianBlur(SS * 2.5)))
+        d = ImageDraw.Draw(img)
+        boss_face(d, cx, cy + r * 0.02, r * 0.86, pose, "lemon")
+    elif kind == "apple":
+        # Aggro Apple: deep crimson body with worm-hole pockets and stout stem.
+        body = (206, 36, 48, 255) if pose != "wind" else (238, 54, 60, 255)
+        el(d, cx, cy + r * 0.04, r * 0.90, r * 0.86, body)
+        img = shade(img, light=(255, 196, 196, 105), dark=(78, 8, 18, 90))
+        d = ImageDraw.Draw(img)
+        stem(d, cx, cy - r * 0.78, cx + r * 0.12, cy - r * 1.04, w=max(2, int(r * 0.09)))
+        leaf(d, cx + r * 0.08, cy - r * 0.86, -24, r * 0.40, (78, 168, 64, 255))
+        for hx, hy in ((-0.54, -0.34), (0.56, -0.30), (-0.52, 0.36), (0.54, 0.38)):
+            el(d, cx + hx * r, cy + hy * r, r * 0.11, r * 0.09, (48, 12, 18, 255))
+        patch = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        el(ImageDraw.Draw(patch), cx, cy + r * 0.05, r * 0.54, r * 0.44, (248, 134, 134, 150))
+        img.alpha_composite(patch.filter(ImageFilter.GaussianBlur(SS * 2.5)))
+        d = ImageDraw.Draw(img)
+        boss_face(d, cx, cy + r * 0.04, r * 0.88, pose, "apple")
     else:
         green = (58, 148, 78, 255) if pose != "wind" else (84, 150, 64, 255)
         el(d, cx, cy, r, r * 0.94, green)
@@ -1698,10 +1759,28 @@ def boss_face_overlay(kind, pose):
     img = canvas(c)
     d = ImageDraw.Draw(img)
     cx, cy, r = c / 2, c / 2 + 2, c * 0.42
-    scale = 0.88 if kind == "king" else (0.90 if kind in ("pineapple", "chili") else 1.0)
-    off = -0.08 if kind == "king" else (0.06 if kind in ("pineapple", "chili") else 0.0)
+    scale = 0.88 if kind in ("king", "durian", "apple") else (0.90 if kind in ("pineapple", "chili") else (0.86 if kind == "lemon" else 1.0))
+    off = -0.08 if kind == "king" else (0.06 if kind in ("pineapple", "chili") else (0.03 if kind in ("durian", "lemon", "apple") else 0.0))
     boss_face(d, cx, cy + r * off, r * scale, pose, kind, outline=True)
     return shrink(img)
+
+
+def spr_worm():
+    """Angry peeking worm for Aggro Apple."""
+    img = canvas(CELL)
+    d = ImageDraw.Draw(img)
+    cx, cy = CELL / 2, CELL / 2
+    for i, (ox, oy, rr) in enumerate(((-8, 8, 7), (-3, 4, 8), (3, -1, 9), (8, -6, 10))):
+        col = (228, 126, 156, 255) if i < 3 else (246, 148, 174, 255)
+        el(d, cx + ox, cy + oy, rr, rr, col)
+    img = shade(img, light=(255, 224, 232, 95), dark=(95, 24, 48, 75))
+    d = ImageDraw.Draw(img)
+    el(d, cx + 6, cy - 8, 2.5, 2.5, (255, 252, 240, 255))
+    el(d, cx + 11, cy - 7, 2.5, 2.5, (255, 252, 240, 255))
+    el(d, cx + 6.5, cy - 8, 1.3, 1.3, FACE_INK)
+    el(d, cx + 11.5, cy - 7, 1.3, 1.3, FACE_INK)
+    d.line([(cx + 3) * SS, (cy - 12) * SS, (cx + 12) * SS, (cy - 10) * SS], fill=FACE_INK, width=int(2.2 * SS))
+    return shrink(sticker(img, 1.6))
 
 
 def boss_sprites():
@@ -1723,6 +1802,11 @@ def orchard_sprites():
         out += [(f"boss_{who}_{p}", boss_body(who, p)) for p in BOSS_POSES]
         out += [(f"bface_{who}_{p}", boss_face_overlay(who, p)) for p in BOSS_POSES]
     out.append(("ic_endless", spr_mode_icon("endless")))
+    # 2.0 Milestone bosses & worm hazard appended last.
+    for who in ("durian", "lemon", "apple"):
+        out += [(f"boss_{who}_{p}", boss_body(who, p)) for p in BOSS_POSES]
+        out += [(f"bface_{who}_{p}", boss_face_overlay(who, p)) for p in BOSS_POSES]
+    out.append(("boss_worm", spr_worm()))
     return out
 
 

@@ -751,7 +751,50 @@ def bk_pad(freq, dur):
     return pad_note(freq, dur, BOSS_RATE)
 
 
-VOICES = {"chip": bk_chip, "brass": bk_brass, "pluck": bk_pluck, "bell": bk_bell}
+def bk_wobble(freq, dur):
+    """Heavy dubstep wobble growl: low square/saw stack swept by a 6 Hz LFO."""
+    n = int(dur * BOSS_RATE)
+    t = _t(n)
+    lfo = 0.35 + 0.65 * (0.5 - 0.5 * np.cos(2 * np.pi * 6.0 * t))
+    s = (_harm(freq * 0.5, n, lambda h, tt: (1.0 / h) * (lfo if h > 2 else 1.0)) +
+         0.5 * _harm(freq * 0.503, n, lambda h, tt: (1.0 / h) * lfo))
+    s = np.tanh(s * 2.1) * 0.65
+    return s * np.minimum(1, t / 0.005) * _gate(n, 0.025)
+
+
+def bk_glitch(freq, dur):
+    """Glitch-hop chopped FM lead: gritty step-quantized carrier with fast gate stutters."""
+    n = int(dur * BOSS_RATE)
+    t = _t(n)
+    mod = np.sin(2 * np.pi * freq * 2.0 * t) * 2.4 * np.exp(-t * 8.0)
+    s = np.sin(2 * np.pi * freq * t + mod) + 0.35 * np.sin(2 * np.pi * freq * 3.0 * t)
+    chop = np.where((np.sin(2 * np.pi * 16.0 * t) >= 0) | (t < 0.04), 1.0, 0.25)
+    s = np.round(s * 12.0) / 12.0 * chop
+    return s * np.minimum(1, t / 0.004) * _gate(n, 0.02)
+
+
+def bk_reese(freq, dur):
+    """Neurofunk DnB detuned Reese lead: wide phasing saws with midrange bite."""
+    n = int(dur * BOSS_RATE)
+    t = _t(n)
+    s = sum(_harm(freq, n, lambda h, tt: (1.0 / h) * np.exp(-h * 0.09), detune=d) for d in (0.989, 0.996, 1.0, 1.005, 1.012)) / 4.2
+    s = np.tanh(s * 1.9) * 0.75
+    return s * np.minimum(1, t / 0.01) * _gate(n, 0.03)
+
+
+def bk_tense(freq, dur):
+    """Dark pulsing string/drone for the Room 50 reveal tension loop."""
+    n = int(dur * BOSS_RATE)
+    t = _t(n)
+    s = sum(_harm(freq, n, lambda h, tt: (1.0 / h) * np.exp(-h * 0.35), detune=d) for d in (0.994, 1.0, 1.006)) / 3.0
+    pulse = 0.6 + 0.4 * np.sin(2 * np.pi * 3.2 * t)
+    return s * pulse * np.minimum(1, t / 0.04) * _gate(n, 0.08)
+
+
+VOICES = {
+    "chip": bk_chip, "brass": bk_brass, "pluck": bk_pluck, "bell": bk_bell,
+    "wobble": bk_wobble, "glitch": bk_glitch, "reese": bk_reese, "tense": bk_tense,
+}
 
 
 def chord_tone(chord, i):
@@ -995,11 +1038,105 @@ h ..x...x...x...x.""", bass="x-------x-------", pad=0.3, leads=[("brass", 1, 0.2
     ]
 
 
+def track_tension_loop():
+    """Ominous tension loop (96 BPM, B minor): pulsing low strings, heartbeat sub & distant ticking."""
+    prog = [(47, m), (43, M), (48, M), (42, M)] * 2
+    motif = [[(0, 8, 0), (8, 8, 1)], [(0, 8, 2), (8, 8, 0)]]
+    drums = """k x.......x.......
+h ..x...x...x...x."""
+    return 96, [
+        dict(chords=prog, drums=drums, bass="x-------x-------", pad=0.32, leads=[("tense", 0, 0.24, motif)]),
+        dict(chords=prog, drums=drums, bass="x---x---x---x---", pad=0.36, leads=[("tense", 0, 0.28, motif), ("bell", 2, 0.08, motif)]),
+    ]
+
+
+def track_boss_dubstep():
+    """Abyssal Core (Milestone Boss - Dubstep, 140 BPM, D minor): half-time crush + wobble growls."""
+    prog = [(50, m), (46, M), (48, m), (45, M)] * 2
+    drop = [[(0, 4, 0), (4, 2, 2), (6, 2, 3), (8, 4, 1), (12, 2, 2), (14, 2, 0)],
+            [(0, 3, 2), (3, 3, 1), (6, 2, 3), (8, 4, 0), (12, 4, 2)]]
+    intro_lead = [[(0, 6, 3), (8, 4, 2), (12, 4, 1)]]
+    half_time = """k x.........x.....
+s ........x.......
+h x.x.x.x.x.x.x.x.
+c ........x......."""
+    heavy = """k x..x......x..x..
+s ........x.....g.
+c ........x.......
+h xxoxxxoxxxoxxxox"""
+    return 140, [
+        dict(chords=prog, drums=half_time, bass="x-------x---f---", pad=0.25, leads=[("bell", 2, 0.14, intro_lead)], riser=True, fill=True),
+        dict(chords=prog, drums=heavy, bass="x.x...x.x.x.o.x.", leads=[("wobble", 0, 0.34, drop), ("brass", 1, 0.14, intro_lead)], stabs="x.......x.......", fill=True),
+        dict(chords=[(46, M), (48, m), (45, M), (45, M)] * 2, drums="t x...x...x...x...\nh ..x...x...x...x.", pad=0.3, bass="x-------x-------", riser=True, fill=True),
+        dict(chords=prog, drums=heavy, bass="x.x.o.x.x.x.f.x.", leads=[("wobble", 0, 0.36, drop), ("chip", 2, 0.14, drop)], stabs="x.....x.x.......", fill=True),
+    ]
+
+
+def track_boss_glitch():
+    """Sour Circuit (Milestone Boss - Glitch Hop, 110 BPM, F minor): swung chops & crunchy stabs."""
+    prog = [(41, m), (49, M), (44, M), (48, M)] * 2
+    glitch_motif = [[(0, 2, 0), (2, 1, 3), (3, 1, 2), (4, 3, 4), (7, 1, 3), (8, 2, 2), (10, 2, 1), (12, 2, 3), (14, 2, 4)],
+                    [(0, 2, 2), (3, 1, 4), (4, 2, 5), (6, 2, 3), (8, 2, 2), (11, 1, 1), (12, 4, 2)]]
+    drums = """k x..x..x...x.....
+s ....x..g....x.gg
+h xx.xxxo.xx.xxxo.
+m ............1231"""
+    return 110, [
+        dict(chords=prog, drums=drums, bass="x..o..x.x..f..x.", swing=0.22, leads=[("glitch", 1, 0.28, glitch_motif)], stabs="x.....x...x.....", fill=True),
+        dict(chords=prog, drums=drums, bass="x.xo.fx.x.of.xx.", swing=0.22, leads=[("glitch", 1, 0.30, glitch_motif), ("wobble", 0, 0.18, glitch_motif)], stabs="x..x..x...x...x.", fill=True),
+        dict(chords=[(49, M), (44, M), (41, m), (48, M)] * 2, drums="k x.......x.......\nh x.x.x.x.x.x.x.x.", bass="x-------x-------", pad=0.26, leads=[("pluck", 2, 0.18, glitch_motif)], riser=True, fill=True),
+        dict(chords=prog, drums=drums, bass="x.xo.fx.x.of.xx.", swing=0.22, leads=[("glitch", 1, 0.32, glitch_motif), ("brass", 1, 0.16, glitch_motif)], stabs="x..x..x...x...x.", fill=True),
+    ]
+
+
+def track_boss_dnb():
+    """Core Meltdown (Milestone Boss - Drum & Bass, 174 BPM, E minor): relentless two-step breakbeat."""
+    prog = [(40, m), (48, M), (45, m), (47, M)] * 2
+    arp = [[(0, 1, 0), (1, 1, 1), (2, 1, 2), (3, 1, 3), (4, 2, 4), (6, 2, 2), (8, 1, 3), (9, 1, 2), (10, 2, 1), (12, 2, 2), (14, 2, 4)],
+           [(0, 2, 3), (2, 2, 2), (4, 2, 4), (6, 2, 5), (8, 4, 3), (12, 2, 2), (14, 2, 1)]]
+    dnb = """k x.........x.....
+s ....x.......x...
+h xxoxxxoxxxoxxxox"""
+    dnb_b = """k x.......x.x.....
+s ....x..g....x.gg
+h xxoxxxoxxxoxxxox
+m ............1122"""
+    return 174, [
+        dict(chords=prog, drums=dnb, bass="x-----x---f---x-", pad=0.22, leads=[("reese", 0, 0.24, arp)], fill=True),
+        dict(chords=prog, drums=dnb_b, bass="x.x.o.x.x.x.f.x.", leads=[("reese", 0, 0.28, arp), ("chip", 2, 0.15, arp)], stabs="x.........x.....", fill=True),
+        dict(chords=[(48, M), (45, m), (40, m), (47, M)] * 2, drums="t x...x...x...x...\nh x.x.x.x.x.x.x.x.", bass="x-------x-------", pad=0.28, riser=True, fill=True),
+        dict(chords=prog, drums=dnb_b, bass="x.x.o.x.x.f.o.x.", leads=[("reese", 0, 0.30, arp), ("brass", 1, 0.16, arp)], stabs="x.....x...x.....", fill=True),
+    ]
+
+
+def track_boss_neuro():
+    """Slicer's Reckoning (Milestone Boss - Neurofunk DnB, 176 BPM, C minor): fierce Room 50 finale."""
+    prog = [(48, m), (46, M), (44, M), (43, M)] * 2
+    fury = [[(0, 2, 3), (2, 1, 4), (3, 1, 5), (4, 2, 3), (6, 2, 2), (8, 2, 4), (10, 2, 5), (12, 2, 6), (14, 2, 5)],
+            [(0, 2, 5), (2, 2, 4), (4, 2, 3), (6, 2, 1), (8, 4, 2), (12, 4, 3)]]
+    neuro_drums = """k x.......x.x.....
+s ....x..g....x.gg
+c ....x.......x...
+h xxoxxxoxxxoxxxox
+t x.........x....."""
+    return 176, [
+        dict(chords=prog, drums=neuro_drums, bass="x-o-f-x-x-o-f-x-", leads=[("reese", 0, 0.28, fury)], stabs="x.......x.......", fill=True),
+        dict(chords=prog, drums=neuro_drums, bass="x.o.f.x.x.o.f.x.", leads=[("reese", 0, 0.30, fury), ("wobble", 0, 0.22, fury), ("brass", 1, 0.18, fury)], stabs="x.....x.x.....x.", fill=True),
+        dict(chords=[(44, M), (41, m), (48, m), (43, M)] * 2, drums="t x.x.x.x.x.x.x.x.\nh xxoxxxoxxxoxxxox", bass="x---x---x---x---", pad=0.3, riser=True, fill=True),
+        dict(chords=prog, drums=neuro_drums, bass="x.o.f.x.x.o.f.x.", leads=[("reese", 0, 0.32, fury), ("glitch", 2, 0.18, fury), ("brass", 1, 0.20, fury)], stabs="x...x...x...x...", fill=True),
+    ]
+
+
 BOSS_TRACKS = (
     ("music_boss_seeds", track_seed_spitter, 601),
     ("music_boss_rind", track_rind_and_run, 602),
     ("music_boss_fuse", track_long_live_the_fuse, 603),
     ("music_boss_keg", track_powder_keg_court, 604),
+    ("music_tension", track_tension_loop, 605),
+    ("music_boss_dubstep", track_boss_dubstep, 606),
+    ("music_boss_glitch", track_boss_glitch, 607),
+    ("music_boss_dnb", track_boss_dnb, 608),
+    ("music_boss_neuro", track_boss_neuro, 609),
 )
 
 
@@ -1019,7 +1156,7 @@ def build_audio():
     folder = os.path.dirname(path("romfs", "audio", "x"))
     # The Shop's recorded tracks (see the credits) are not generated, so they stay.
     recorded = ("music_summer", "music_hero", "music_trap", "music_unruly", "music_vengeance", "music_explorer",
-                "music_ahead", "music_spare", "music_fright", "music_worthless", "music_lies", "music_liesvip", "music_staywithme",
+                "music_ahead", "music_spare", "music_fright", "music_worthless", "music_lies", "music_liesvip", "music_staywithme", "music_enough",
                 # the five found boss tracks (convert_shop_music.py found)
                 "music_boss_minto", "music_boss_ansimuz", "music_boss_bounce", "music_boss_champion", "music_boss_epic")
     for f in os.listdir(folder):
@@ -1104,6 +1241,12 @@ def build_audio():
     write_pcm("whoosh", whoosh(), s)
     write_pcm("launch", launch(), s)
     write_pcm("levelup", levelup(), s)
+    # Ominous low retro major-boss voice blip (Room 50 encounter).
+    bt = np.arange(n_of(0.072)) / s
+    bf = 132.0 - 22.0 * (bt / 0.072)
+    bph = 2 * np.pi * np.cumsum(bf) / s
+    blip = (np.sign(np.sin(bph)) * 0.55 + np.sin(bph) * 0.45 + 0.25 * np.sin(2.0 * bph)) * np.minimum(1, bt / 0.004) * np.exp(-bt / 0.038)
+    write_pcm("boss_blip", norm(blip, 0.72), s)
 
     # Original tracks: all slow, soft and major-leaning.
     menu = [[60, 64, 67, 71, 74], [57, 60, 64, 67, 71], [65, 69, 72, 76], [55, 59, 62, 67, 69]]

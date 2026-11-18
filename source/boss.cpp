@@ -2,10 +2,12 @@
 // A boss attacks on its own clock, so Armor and Max HP matter. It can only be sliced while its guard
 // is down; slicing the guard costs a little HP ("Deflected!"). A clean slice leaves it confused for a
 // few seconds, then the guard goes back up.
+#include <cstring>
 #include <math.h>
 #include <stdio.h>
 
 #include "audio.h"
+#include "boom.h"
 #include "fruit.h"
 #include "fruitids.h"
 #include "game.h"
@@ -19,7 +21,12 @@ namespace {
 
 // A chain of attacks: only its last one tires the boss out and drops the guard, so a fight is a real fight.
 // Tuned with the Lab's timed fights (labBossFight).
-int chainLength(const Boss&) { return 4; }  // both bosses; the Melon's attacks are quicker, so its fight stays shorter
+int chainLength(const Boss& b) { return b.id >= BOSS_DURIAN ? 3 : 4; }
+
+float endlessRoomBoost(int room, bool endless) {
+	if (!endless || room <= 5) return 1.0f;
+	return clampf(1.0f + (room - 5) * 0.022f, 1.0f, 2.25f);
+}
 
 // The Giant Bomb: hits come from blade travel across it, like the Sunburst.
 constexpr int kGiantNeed[DIFF_COUNT] = {14, 18, 22, 26};
@@ -36,13 +43,73 @@ float segDist2(float px, float py, const Blade& b) {
 	return qx * qx + qy * qy;
 }
 
-int bossDamage(int base) {
-	const int d = (int)(base * orchardLevel(gSave.difficulty).bossDamage + 0.5f);
-	return d < 1 ? 1 : d;
-}
-
 float fieldMidY() { return kFieldTop + (kFieldH - kFieldTop) * 0.36f; }
 }  // namespace
+
+void Game::bossHitSlice(float x, float y, float dx, float dy) {
+	Boss& b = orc.boss;
+	if (b.left > 0) b.left--;
+	b.hurtT = 0.4f;
+	b.dazeT = 3.0f;
+	b.openT = 0;
+	b.guard = b.id == BOSS_PINEAPPLE;
+	b.crownOut = 0;
+	b.surgeT = 0;
+	audio::musicSpeed(1.0f);
+	for (auto& w : b.worms) w.on = false;
+	for (auto& s : orc.shots)
+		if (s.kind == SHOT_CROWN) s.on = false;
+	if (b.attack == KING_FUSE) audio::fuse(false);
+	b.attack = ATK_NONE;
+	shake = 0.6f;
+	flash = 0.15f;
+	flashColor = rgba(255, 255, 255);
+	static const u32 kHitJuice[BOSS_COUNT] = {
+	    rgba(255, 70, 90), rgba(255, 180, 80), rgba(255, 224, 90), rgba(255, 110, 48),
+	    rgba(198, 178, 92), rgba(246, 226, 72), rgba(226, 48, 60)};
+	emitJuice(x, y, kHitJuice[b.id % BOSS_COUNT], juiceAmount(30), dx, dy);
+	audio::play(b.id == BOSS_MELON || b.id == BOSS_APPLE ? SFX_MELON0 : SFX_SHELL, 1.0f, fieldPan(x), b.id == BOSS_CHILI ? 1.15f : 0.8f);
+	PORT_VIBRATE(0.6f, 140);
+	orcGainXp(6);
+	if (orc.upgrade[CARD_JUICE]) orc.hp = fminf(orc.maxHp, orc.hp + 1.0f);
+	sliced++;
+	const int done = b.total - b.left;
+	if (b.left == 0) {
+		b.beaten = true;
+		b.leaveT = 0;
+		for (auto& s : orc.shots) s.on = false;
+		orc.bossesBeaten++;
+		gSave.bossesBeaten |= 1u << b.id;
+		orc.bossCoins += progress::bossWin(b.id);
+		char buf[40];
+		static const char* const kBeatName[BOSS_COUNT] = {
+		    "BIG MELON", "BOMB KING", "PINEAPPLE GUARD", "INFERNO PEPPER",
+		    "DUSTY DURIAN", "LORD LEMON", "AGGRO APPLE"};
+		snprintf(buf, sizeof buf, "%s BEATEN!", kBeatName[b.id % BOSS_COUNT]);
+		setCallout(buf, rgba(255, 230, 140), 0.8f);
+		audio::play(SFX_VICTORY, 1.0f);
+		audio::bossMusicEnd();
+		orcGainXp(20);
+		if (mode == MODE_BOSSRUSH) award(1);
+		return;
+	}
+	const int phase = 1 + done * kBosses[b.id].phases / b.total;
+	if (phase > b.phase) {
+		b.phase = (u8)phase;
+		b.roarT = 1.2f;
+		setCallout(phase >= 3 ? "IT'S FURIOUS!" : "IT'S ANGRY!", rgba(255, 140, 110));
+		audio::play(SFX_ROAR, 1.0f, fieldPan(x));
+	} else {
+		addPopup("SLICED!", x, y - b.radius - 14, rgba(255, 240, 160), 0.7f);
+	}
+}
+
+int Game::bossDamageBase(int base) const {
+	const float roomMul = (mode == MODE_ORCHARD && orc.room > 5) ? clampf(1.0f + (orc.room / 15) * 0.25f, 1.0f, 3.0f) : 1.0f;
+	const int d = (int)(base * orchardLevel(gSave.difficulty).bossDamage * roomMul + 0.5f);
+	return d < 1 ? 1 : d;
+}
+#define bossDamage(b) bossDamageBase(b)
 
 void Game::bossStart(int id, bool royal) {
 	Boss& b = orc.boss;
@@ -52,29 +119,33 @@ void Game::bossStart(int id, bool royal) {
 	b.guard = true;
 	b.phase = 1;
 	b.royal = royal;
-	b.total = (u8)(kBosses[id].slices + (royal ? 1 : 0));
+	b.total = (u8)(kBosses[id].slices + (royal ? 1 : 0) + (mode == MODE_ORCHARD && orc.room > 20 ? (orc.room / 25) : 0));
 	b.left = b.total;
-	static const float kBossRadius[BOSS_COUNT] = {50.0f, 44.0f, 48.0f, 46.0f};
+	static const float kBossRadius[BOSS_COUNT] = {50.0f, 44.0f, 48.0f, 46.0f, 50.0f, 46.0f, 48.0f};
 	b.radius = kBossRadius[id % BOSS_COUNT] * (PORT_3DS ? 0.85f : 1.0f);
 	b.x = kFieldW * 0.5f;
 	b.baseY = fieldMidY();
 	b.y = -b.radius * 2;
 	b.enterT = 1.6f;
-	b.nextAttack = 1.2f;
+	b.nextAttack = 1.1f;
 	b.chain = (u8)chainLength(b);
 	for (auto& s : orc.shots) s.on = false;
+	for (auto& w : b.worms) w = {};
 	orc.fightT = 0;
+	audio::musicSpeed(1.0f);
 	if (royal) {
 		char name[32];
-		snprintf(name, sizeof name, "Royal %s", kBosses[id].name + 4);  // "The Big Melon" is the Royal Big Melon
+		const char* nm = kBosses[id].name;
+		if (strncmp(nm, "The ", 4) == 0) nm += 4;
+		snprintf(name, sizeof name, "Royal %s", nm);
 		setCallout(name, rgba(255, 220, 110), 0.8f);
 	} else {
-		setCallout(kBosses[id].name, rgba(255, 200, 120), 0.8f);
+		setCallout(kBosses[id].name, id >= BOSS_DURIAN ? rgba(255, 130, 110) : rgba(255, 200, 120), 0.8f);
 	}
 	showCaption("A boss drops in.");
 	audio::play(SFX_BOSSIN, 1.0f);
 	audio::play(SFX_WHOOSH, 0.9f, 0, 0.8f);
-	int track = bossTrackPick(id, gRng.next());
+	int track = bossTrackPick(id >= BOSS_DURIAN ? 4 : id, gRng.next());
 	if (track < 0) track = bossTrackPick(id % 2, gRng.next());
 	b.track = (s8)track;
 	const int item = track - kBaseTracks;
@@ -100,8 +171,7 @@ void Game::bossOpen(float seconds, bool laugh) {
 	if (wasUp) {
 		addPopup("OPEN!", b.x, b.y - b.radius - 16, rgba(255, 230, 120), 0.75f);
 		audio::play(SFX_OPEN, 0.9f, fieldPan(b.x));
-		// A cocky laugh as it drops its guard.
-		static const float kPitch[BOSS_COUNT] = {1.25f, 0.80f, 1.02f, 1.38f};
+		static const float kPitch[BOSS_COUNT] = {1.25f, 0.80f, 1.02f, 1.38f, 0.78f, 1.42f, 0.92f};
 		if (laugh) audio::play(SFX_LAUGH, 0.8f, fieldPan(b.x), kPitch[b.id % BOSS_COUNT]);
 		showCaption("Its guard is down. Slice it!");
 	}
@@ -136,13 +206,39 @@ void Game::bossNextAttack() {
 		choices[n++] = MEL_FLOP;
 		if (b.phase >= 2) choices[n++] = MEL_CHARGE;
 	} else if (b.id == BOSS_PINEAPPLE) {
-		if (!b.finisher && b.lastAttack != PINE_DARTS) choices[n++] = PINE_DARTS;
-		if (b.phase >= 2 && !b.finisher) choices[n++] = PINE_WHIRL;
-		choices[n++] = PINE_SLAM;
+		b.attackCycle++;
+		if (b.attackCycle >= 2) {
+			b.attackCycle = 0;
+			choices[n++] = PINE_BOMB;
+		} else {
+			choices[n++] = PINE_DARTS;
+			choices[n++] = PINE_WHIRL;
+			choices[n++] = PINE_SLAM;
+		}
 	} else if (b.id == BOSS_CHILI) {
+		b.attackCycle++;
+		if (b.attackCycle >= 3 && b.surgeT <= 0) {
+			b.attackCycle = 0;
+			b.surgeT = 4.5f;
+			setCallout("HEAT SURGE!", rgba(255, 130, 60), 0.75f);
+			audio::play(SFX_FEVER, 0.7f);
+			audio::musicSpeed(1.22f);
+		}
 		if (!b.finisher && b.lastAttack != CHILI_EMBERS) choices[n++] = CHILI_EMBERS;
 		if (b.phase >= 2 && !b.finisher && b.lastAttack != CHILI_MIRAGE) choices[n++] = CHILI_MIRAGE;
 		choices[n++] = CHILI_RUSH;
+	} else if (b.id == BOSS_DURIAN) {
+		if (!b.finisher) choices[n++] = DUR_THORNS;
+		choices[n++] = DUR_SLAM;
+		choices[n++] = DUR_SPIN;
+	} else if (b.id == BOSS_LEMON) {
+		if (!b.finisher) choices[n++] = LEM_ACID;
+		if (!b.finisher) choices[n++] = LEM_ZEST;
+		choices[n++] = LEM_BLITZ;
+	} else if (b.id == BOSS_APPLE) {
+		choices[n++] = APP_WORMS;
+		if (!b.finisher) choices[n++] = APP_BARRAGE;
+		choices[n++] = APP_CRUSH;
 	} else if (b.finisher && b.phase >= 2 && !(b.giantPhases >> b.phase & 1)) {
 		b.giantPhases |= (u8)(1u << b.phase);  // once in each of the later phases
 		choices[n++] = KING_GIANT;
@@ -217,6 +313,11 @@ void Game::bossNextAttack() {
 			b.volley = b.phase >= 3 ? 2 : 1;
 			addPopup("FORTRESS SLAM", b.x, b.y - b.radius - 14, rgba(255, 210, 110), 0.55f);
 			break;
+		case PINE_BOMB:
+			b.volley = 1;
+			addPopup("RETURN THE BOMB!", b.x, b.y - b.radius - 14, rgba(255, 190, 80), 0.55f);
+			showCaption("Slice the lobbed bomb back into The Pineapple Guard!");
+			break;
 		case CHILI_EMBERS:
 			b.volley = 4 + b.phase;
 			addPopup("EMBER VOLLEY", b.x, b.y - b.radius - 14, rgba(255, 160, 90), 0.55f);
@@ -230,6 +331,43 @@ void Game::bossNextAttack() {
 			b.volley = 3;
 			addPopup("BLAZING RUSH", b.x, b.y - b.radius - 14, rgba(255, 140, 80), 0.55f);
 			break;
+		case DUR_THORNS:
+			b.volley = 5 + b.phase;
+			addPopup("THORN VOLLEY", b.x, b.y - b.radius - 14, rgba(220, 200, 110), 0.55f);
+			break;
+		case DUR_SLAM:
+			b.volley = 2;
+			addPopup("DUST QUAKE", b.x, b.y - b.radius - 14, rgba(235, 195, 100), 0.55f);
+			break;
+		case DUR_SPIN:
+			b.volley = 3 + b.phase;
+			addPopup("SPIKE WHIRL", b.x, b.y - b.radius - 14, rgba(245, 215, 130), 0.55f);
+			break;
+		case LEM_ACID:
+			b.volley = 5 + b.phase;
+			addPopup("SOUR BARRAGE", b.x, b.y - b.radius - 14, rgba(245, 240, 100), 0.55f);
+			break;
+		case LEM_ZEST:
+			b.volley = 3 + b.phase;
+			addPopup("ZEST CROSSFIRE", b.x, b.y - b.radius - 14, rgba(190, 245, 90), 0.55f);
+			break;
+		case LEM_BLITZ:
+			b.volley = 4;
+			addPopup("CITRUS BLITZ", b.x, b.y - b.radius - 14, rgba(255, 240, 130), 0.55f);
+			break;
+		case APP_WORMS:
+			b.volley = 1;
+			addPopup("SWAT THE WORMS!", b.x, b.y - b.radius - 14, rgba(255, 150, 175), 0.55f);
+			showCaption("Slice or tap peeking worms before they lunge!");
+			break;
+		case APP_BARRAGE:
+			b.volley = 6 + b.phase;
+			addPopup("CORE VOLLEY", b.x, b.y - b.radius - 14, rgba(255, 120, 130), 0.55f);
+			break;
+		case APP_CRUSH:
+			b.volley = 2;
+			addPopup("ORCHARD CRUSH", b.x, b.y - b.radius - 14, rgba(255, 110, 110), 0.55f);
+			break;
 		default: break;
 	}
 }
@@ -237,7 +375,10 @@ void Game::bossNextAttack() {
 void Game::bossAttack(float dt) {
 	Boss& b = orc.boss;
 	const OrchardLevel& lv = orchardLevel(gSave.difficulty);
-	const float step = dt * lv.attackSpeed;
+	const float rmBoost = endlessRoomBoost(orc.room, mode == MODE_ORCHARD);
+	const float spdScale = lv.bossSpeed * (1.0f + (rmBoost - 1.0f) * 0.6f);
+	const float atkScale = lv.attackSpeed * rmBoost;
+	const float step = dt * atkScale;
 	b.attackT += step;
 	b.volleyT -= step;
 	const float floorY = kFieldH - b.radius * 0.75f;
@@ -409,17 +550,29 @@ void Game::bossAttack(float dt) {
 				if (--b.volley > 0) b.attackT = 0;
 				else {
 					b.volleyT = -1000;
-					if (b.finisher) bossOpen(lv.openTime + 0.4f);
+					// The Pineapple Guard keeps its guard raised; damage comes from knocking its lobbed bombs back.
 					b.attack = ATK_NONE;
 				}
 			}
+			break;
+		}
+		case PINE_BOMB: {
+			if (b.volley > 0) {
+				b.volley = 0;
+				float x = 160, vx = 0, vy = -300;
+				pickThrow(true, 0.0f, x, vx, vy);
+				// tag = 2 marks a Pineapple Guard lob bomb that slices launch back up at him.
+				queue(0.05f, x, vx, vy, OBJ_BOMB, 2);
+				audio::play(SFX_THROW, 0.8f, fieldPan(b.x), 0.85f);
+			}
+			if (b.attackT > 1.8f) b.attack = ATK_NONE;
 			break;
 		}
 		case CHILI_EMBERS:
 			if (b.volley > 0 && b.volleyT <= 0) {
 				const float tx = gRng.range(36, kFieldW - 36), ty = (float)kFieldH;
 				const float dx = tx - b.x, dy = ty - b.y, len = sqrtf(dx * dx + dy * dy) + 1;
-				const float speed = (100 + 18 * b.phase) * kFieldK * lv.bossSpeed;
+				const float speed = (100 + 18 * b.phase) * kFieldK * spdScale;
 				bossFire(SHOT_EMBER, b.x + dx / len * b.radius * 0.7f, b.y + dy / len * b.radius * 0.7f, dx / len * speed, dy / len * speed);
 				audio::play(SFX_THROW, 0.5f, fieldPan(b.x), 1.55f);
 				b.squash = 0.45f;
@@ -443,11 +596,11 @@ void Game::bossAttack(float dt) {
 			if (b.attackT > 1.7f) b.attack = ATK_NONE;
 			break;
 		case CHILI_RUSH: {
-			const float rushSpeed = (4.5f + b.phase * 0.6f) * lv.bossSpeed;
+			const float rushSpeed = (4.5f + b.phase * 0.6f) * spdScale;
 			const float sweep = kFieldW * 0.5f + sinf(b.attackT * rushSpeed) * kFieldW * 0.36f;
 			b.x = lerpf(b.x, sweep, 1 - powf(0.005f, dt));
 			if (b.volley > 0 && b.volleyT <= 0) {
-				bossFire(SHOT_EMBER, b.x, b.y + b.radius * 0.6f, gRng.range(-40, 40) * acrossScale(), 125 * kFieldK * lv.bossSpeed);
+				bossFire(SHOT_EMBER, b.x, b.y + b.radius * 0.6f, gRng.range(-40, 40) * acrossScale(), 125 * kFieldK * spdScale);
 				audio::play(SFX_SWISH0, 0.6f, fieldPan(b.x), 1.35f);
 				b.volley--;
 				b.volleyT = 0.42f;
@@ -458,10 +611,164 @@ void Game::bossAttack(float dt) {
 			}
 			break;
 		}
+		case DUR_THORNS:
+			if (b.volley > 0 && b.volleyT <= 0) {
+				for (int s = -1; s <= 1; s += 2) {
+					const float vx = (s * gRng.range(48, 95)) * acrossScale() * spdScale;
+					const float vy = (118 + 16 * b.phase) * kFieldK * spdScale;
+					bossFire(SHOT_THORN, b.x + s * b.radius * 0.6f, b.y + 8, vx, vy);
+				}
+				audio::play(SFX_THROW, 0.65f, fieldPan(b.x), 0.78f);
+				b.squash = 0.4f;
+				b.volley--;
+				b.volleyT = 0.34f - 0.04f * b.phase;
+			}
+			if (b.volley <= 0 && b.volleyT < -0.45f) b.attack = ATK_NONE;
+			break;
+		case DUR_SLAM: {
+			const float t = b.attackT;
+			if (t <= step * 1.5f) audio::play(SFX_WHOOSH, 0.9f, fieldPan(b.x), 0.9f);
+			if (t < 0.48f) b.y = lerpf(b.y, kFieldTop + b.radius * 0.5f, 1 - powf(0.0005f, dt));
+			else if (t < 0.78f) {}
+			else if (t < 1.02f) b.y = lerpf(kFieldTop + b.radius * 0.5f, floorY, (t - 0.78f) / 0.24f);
+			else if (b.volleyT > -100) {
+				b.y = floorY;
+				b.squash = 1.05f;
+				shake = 0.7f;
+				audio::play(SFX_BOOM, 0.8f, fieldPan(b.x), 0.65f);
+				PORT_VIBRATE(0.55f, 110);
+				for (int i = -2; i <= 2; i++) {
+					if (i == 0) continue;
+					bossFire(SHOT_THORN, b.x + i * 18, floorY - b.radius * 0.4f, i * 62.0f * acrossScale(), -gRng.range(240, 310) * kFieldK);
+				}
+				if (--b.volley > 0) b.attackT = 0;
+				else {
+					b.volleyT = -1000;
+					if (b.finisher) bossOpen(lv.openTime);
+					b.attack = ATK_NONE;
+				}
+			}
+			break;
+		}
+		case DUR_SPIN: {
+			const float sweep = kFieldW * 0.5f + sinf(b.attackT * 5.8f * spdScale) * kFieldW * 0.36f;
+			b.x = lerpf(b.x, sweep, 1 - powf(0.005f, dt));
+			b.rx += dt * 11;
+			if (b.volley > 0 && b.volleyT <= 0) {
+				bossFire(SHOT_THORN, b.x, b.y + b.radius * 0.6f, gRng.range(-55, 55) * acrossScale(), 140 * kFieldK * spdScale);
+				audio::play(SFX_SWISH1, 0.65f, fieldPan(b.x), 0.9f);
+				b.volley--;
+				b.volleyT = 0.32f;
+			}
+			if (b.volley <= 0 && b.volleyT < -0.45f) {
+				if (b.finisher) bossOpen(lv.openTime);
+				b.attack = ATK_NONE;
+			}
+			break;
+		}
+		case LEM_ACID:
+			if (b.volley > 0 && b.volleyT <= 0) {
+				const float tx = gRng.range(30, kFieldW - 30), ty = (float)kFieldH;
+				const float dx = tx - b.x, dy = ty - b.y, len = sqrtf(dx * dx + dy * dy) + 1;
+				const float speed = (128 + 20 * b.phase) * kFieldK * spdScale;
+				bossFire(SHOT_ACID, b.x + dx / len * b.radius * 0.7f, b.y + dy / len * b.radius * 0.7f, dx / len * speed, dy / len * speed);
+				audio::play(SFX_THROW, 0.55f, fieldPan(b.x), 1.6f);
+				b.squash = 0.35f;
+				b.volley--;
+				b.volleyT = 0.28f - 0.03f * b.phase;
+			}
+			if (b.volley <= 0 && b.volleyT < -0.45f) b.attack = ATK_NONE;
+			break;
+		case LEM_ZEST:
+			if (b.volley > 0 && b.volleyT <= 0) {
+				const int dir = (b.volley & 1) ? 1 : -1;
+				const float sx = dir > 0 ? 22.0f : kFieldW - 22.0f;
+				bossFire(SHOT_ACID, sx, b.y + 10, dir * 115.0f * acrossScale() * spdScale, 95 * kFieldK * spdScale);
+				audio::play(SFX_POP, 0.65f, fieldPan(sx), 1.3f);
+				b.volley--;
+				b.volleyT = 0.38f;
+			}
+			if (b.volley <= 0 && b.volleyT < -0.5f) b.attack = ATK_NONE;
+			break;
+		case LEM_BLITZ: {
+			const float sweep = kFieldW * 0.5f + sinf(b.attackT * 6.4f * spdScale) * kFieldW * 0.38f;
+			b.x = lerpf(b.x, sweep, 1 - powf(0.004f, dt));
+			b.y = lerpf(b.y, b.baseY + sinf(b.attackT * 3.2f) * 24, 1 - powf(0.01f, dt));
+			if (b.volley > 0 && b.volleyT <= 0) {
+				bossFire(SHOT_ACID, b.x, b.y + b.radius * 0.55f, gRng.range(-48, 48) * acrossScale(), 145 * kFieldK * spdScale);
+				audio::play(SFX_SWISH2, 0.65f, fieldPan(b.x), 1.4f);
+				b.volley--;
+				b.volleyT = 0.34f;
+			}
+			if (b.volley <= 0 && b.volleyT < -0.45f) {
+				if (b.finisher) bossOpen(lv.openTime);
+				b.attack = ATK_NONE;
+			}
+			break;
+		}
+		case APP_WORMS: {
+			if (b.volley > 0) {
+				b.volley = 0;
+				static const float kHoles[4][2] = {{-0.56f, -0.34f}, {0.56f, -0.32f}, {-0.54f, 0.36f}, {0.54f, 0.36f}};
+				const int cnt = b.phase >= 3 ? 4 : 3;
+				const float life = clampf(3.0f - 0.35f * (gSave.difficulty >= DIFF_HARD) - 0.15f * b.phase, 1.6f, 3.0f);
+				for (int i = 0; i < cnt; i++) {
+					b.worms[i].on = true;
+					b.worms[i].ox = kHoles[i][0] * b.radius;
+					b.worms[i].oy = kHoles[i][1] * b.radius;
+					b.worms[i].emergeT = 0.0f;
+					b.worms[i].timer = life + i * 0.25f;
+				}
+				audio::play(SFX_POP, 0.8f, fieldPan(b.x), 0.9f);
+			}
+			bool anyWorm = false;
+			for (const auto& w : b.worms) anyWorm |= w.on;
+			if (!anyWorm || b.attackT > 4.2f) {
+				if (b.finisher) bossOpen(lv.openTime);
+				b.attack = ATK_NONE;
+			}
+			break;
+		}
+		case APP_BARRAGE:
+			if (b.volley > 0 && b.volleyT <= 0) {
+				const float tx = gRng.range(28, kFieldW - 28), ty = (float)kFieldH;
+				const float dx = tx - b.x, dy = ty - b.y, len = sqrtf(dx * dx + dy * dy) + 1;
+				const float speed = (122 + 20 * b.phase) * kFieldK * spdScale;
+				bossFire(SHOT_SEED, b.x + dx / len * b.radius * 0.7f, b.y + dy / len * b.radius * 0.7f, dx / len * speed, dy / len * speed);
+				audio::play(SFX_THROW, 0.55f, fieldPan(b.x), 1.35f);
+				b.squash = 0.35f;
+				b.volley--;
+				b.volleyT = 0.26f - 0.025f * b.phase;
+			}
+			if (b.volley <= 0 && b.volleyT < -0.45f) b.attack = ATK_NONE;
+			break;
+		case APP_CRUSH: {
+			const float t = b.attackT;
+			if (t <= step * 1.5f) audio::play(SFX_WHOOSH, 0.9f, fieldPan(b.x), 1.0f);
+			if (t < 0.45f) b.y = lerpf(b.y, kFieldTop + b.radius * 0.5f, 1 - powf(0.0005f, dt));
+			else if (t < 0.74f) {}
+			else if (t < 0.98f) b.y = lerpf(kFieldTop + b.radius * 0.5f, floorY, (t - 0.74f) / 0.24f);
+			else if (b.volleyT > -100) {
+				b.y = floorY;
+				b.squash = 1.0f;
+				shake = 0.65f;
+				audio::play(SFX_BOOM, 0.75f, fieldPan(b.x), 0.8f);
+				for (int i = -1; i <= 1; i++) {
+					bossFire(SHOT_SPLASH, b.x + i * 24, floorY - b.radius * 0.45f, i * 85.0f * acrossScale(), -gRng.range(260, 320) * kFieldK);
+				}
+				if (--b.volley > 0) b.attackT = 0;
+				else {
+					b.volleyT = -1000;
+					if (b.finisher) bossOpen(lv.openTime);
+					b.attack = ATK_NONE;
+				}
+			}
+			break;
+		}
 		default: b.attack = ATK_NONE; break;
 	}
-	const float endlessBoost = (orc.endless && orc.room > 10) ? clampf(1.0f + (orc.room - 10) * 0.025f, 1.0f, 1.55f) : 1.0f;
-	if (b.attack == ATK_NONE) b.nextAttack = lerpf(2.6f, 1.6f, (b.phase - 1) * 0.5f) / (lv.attackSpeed * endlessBoost) * (b.royal ? 0.8f : 1.0f);
+	const float jit = gRng.range(0.82f, 1.16f);
+	if (b.attack == ATK_NONE) b.nextAttack = lerpf(2.3f, 1.35f, (b.phase - 1) * 0.5f) * jit / atkScale * (b.royal ? 0.8f : 1.0f);
 }
 
 void Game::shotsUpdate(float dt) {
@@ -487,7 +794,7 @@ void Game::shotsUpdate(float dt) {
 			continue;
 		}
 		if (s.kind == SHOT_SPLASH) s.vy += gravity * 0.8f * dt;
-		if (s.kind == SHOT_SEED || s.kind == SHOT_SPIKE || s.kind == SHOT_EMBER) s.vy += 45 * kFieldK * dt;
+		if (s.kind == SHOT_SEED || s.kind == SHOT_SPIKE || s.kind == SHOT_EMBER || s.kind == SHOT_THORN || s.kind == SHOT_ACID) s.vy += 45 * kFieldK * dt;
 		s.x += s.vx * dt;
 		s.y += s.vy * dt;
 		if (s.x < -40 || s.x > kFieldW + 40) {
@@ -496,9 +803,9 @@ void Game::shotsUpdate(float dt) {
 		}
 		if (s.y > kFieldH - 4 && s.vy > 0) {
 			s.on = false;
-			const int dmg = (s.kind == SHOT_CANNON || s.kind == SHOT_EMBER) ? 2 : 1;
-			const u32 col = s.kind == SHOT_CANNON ? rgba(90, 90, 100) : (s.kind == SHOT_EMBER ? rgba(255, 130, 40) : (s.kind == SHOT_SPIKE ? rgba(210, 190, 70) : rgba(255, 90, 110)));
-			const char* msg = s.kind == SHOT_CANNON ? "CANNON" : (s.kind == SHOT_EMBER ? "EMBER" : (s.kind == SHOT_SPIKE ? "SPIKE" : (s.kind == SHOT_SEED ? "SEED" : "SPLASH")));
+			const int dmg = (s.kind == SHOT_CANNON || s.kind == SHOT_EMBER || s.kind == SHOT_THORN || s.kind == SHOT_ACID) ? 2 : 1;
+			const u32 col = s.kind == SHOT_CANNON ? rgba(90, 90, 100) : (s.kind == SHOT_EMBER ? rgba(255, 130, 40) : (s.kind == SHOT_ACID ? rgba(220, 240, 70) : (s.kind == SHOT_THORN ? rgba(165, 145, 70) : (s.kind == SHOT_SPIKE ? rgba(210, 190, 70) : rgba(255, 90, 110)))));
+			const char* msg = s.kind == SHOT_CANNON ? "CANNON" : (s.kind == SHOT_EMBER ? "EMBER" : (s.kind == SHOT_ACID ? "ACID" : (s.kind == SHOT_THORN ? "THORN" : (s.kind == SHOT_SPIKE ? "SPIKE" : (s.kind == SHOT_SEED ? "SEED" : "SPLASH")))));
 			emitJuice(s.x, (float)kFieldH - 6, col, juiceAmount(6), 0, -1);
 			orcHurt(bossDamage(dmg), s.x, kFieldH - 20.0f, msg);
 		}
@@ -510,6 +817,15 @@ void Game::bossUpdate(float dt) {
 	Boss& b = orc.boss;
 	if (!b.on) return;
 	const OrchardLevel& lv = orchardLevel(gSave.difficulty);
+	if (b.surgeT > 0) {
+		b.surgeT -= dt;
+		if (b.surgeT <= 0) {
+			b.surgeT = 0;
+			audio::musicSpeed(1.0f);
+		} else {
+			dt *= 1.55f;
+		}
+	}
 	b.t += dt;
 	if (b.hurtT > 0) b.hurtT -= kDt;
 	if (b.deflectT > 0) b.deflectT -= kDt;
@@ -529,6 +845,45 @@ void Game::bossUpdate(float dt) {
 		return;
 	}
 	shotsUpdate(dt);
+	// Check returning Pineapple Guard bombs (tag == 4) colliding with the boss, and Aggro Apple peeking worms.
+	for (auto& o : objs) {
+		if (!o.on || o.kind != OBJ_BOMB || o.tag != 4) continue;
+		const float dx = o.x - b.x, dy = o.y - b.y;
+		const float hr = b.radius + o.radius;
+		if (dx * dx + dy * dy <= hr * hr) {
+			const bool parryBack = b.id == BOSS_PINEAPPLE && !b.beaten && !b.dazeT && o.hits < 2 && gRng.below(100) < (b.phase >= 2 ? 38 : 25);
+			if (parryBack) {
+				o.tag = 3;
+				o.hits++;
+				o.hitCooldown = 0.25f;
+				o.vx = clampf((gRng.range(48, kFieldW - 48) - o.x) * 1.15f, -180.0f, 180.0f);
+				o.vy = gRng.range(160, 220) * kFieldK;
+				audio::play(SFX_CLANG, 0.95f, fieldPan(b.x), 1.15f);
+				emitSparks(b.x, b.y, rgba(255, 225, 110), juiceAmount(12), 180);
+				addPopup("PARRIED BACK!", b.x, b.y - b.radius - 14, rgba(255, 185, 95), 0.65f);
+			} else {
+				o.on = false;
+				boom::start(b.x, b.y);
+				emitSparks(b.x, b.y, rgba(255, 200, 90), juiceAmount(24), 240);
+				audio::play(SFX_BOOM, 1.0f, fieldPan(b.x));
+				bossHitSlice(b.x, b.y, o.vx, o.vy);
+			}
+		}
+	}
+	if (!b.beaten && b.id == BOSS_APPLE && b.dazeT <= 0) {
+		for (auto& w : b.worms) {
+			if (!w.on) continue;
+			if (w.emergeT < 1.0f) w.emergeT = fminf(1.0f, w.emergeT + dt * 2.8f);
+			w.timer -= dt;
+			if (w.timer <= 0) {
+				w.on = false;
+				const float wx = b.x + w.ox, wy = b.y + w.oy;
+				audio::play(SFX_CHUCKLE, 0.8f, fieldPan(wx), 1.45f);
+				addPopup("WORM LUNGE!", wx, wy - 16, rgba(255, 120, 140), 0.65f);
+				orcHurt(bossDamage(2), wx, wy, "WORM");
+			}
+		}
+	}
 	if (b.dazeT > 0) {
 		b.dazeT -= dt;
 		b.x += sinf(b.t * 9) * 20 * dt;  // wobbles, dizzy
@@ -554,8 +909,8 @@ void Game::bossUpdate(float dt) {
 		return;
 	}
 	// Drifts about between attacks, and floats back up after a flop/slam.
-	if (b.attack != MEL_FLOP && b.attack != MEL_CHARGE && b.attack != KING_GIANT && b.attack != PINE_SLAM && b.attack != PINE_WHIRL && b.attack != CHILI_RUSH) {
-		const float speed = (b.id == BOSS_KING ? 0.9f : (b.id == BOSS_CHILI ? 1.05f : 0.65f)) * lv.bossSpeed;
+	if (b.attack != MEL_FLOP && b.attack != MEL_CHARGE && b.attack != KING_GIANT && b.attack != PINE_SLAM && b.attack != PINE_WHIRL && b.attack != CHILI_RUSH && b.attack != DUR_SLAM && b.attack != DUR_SPIN && b.attack != LEM_BLITZ && b.attack != APP_CRUSH) {
+		const float speed = (b.id == BOSS_KING ? 0.9f : (b.id == BOSS_CHILI || b.id >= BOSS_DURIAN ? 1.15f : 0.65f)) * lv.bossSpeed;
 		const float tx = kFieldW * 0.5f + sinf(b.t * speed) * kFieldW * 0.28f;
 		b.x = lerpf(b.x, tx, 1 - powf(0.2f, dt));
 		if (b.openT <= 0) b.y = lerpf(b.y, b.baseY + sinf(b.t * 1.3f) * 6, 1 - powf(0.1f, dt));
@@ -570,12 +925,31 @@ void Game::bossUpdate(float dt) {
 
 void Game::bossTest(Blade& blade) {
 	Boss& b = orc.boss;
-	if (!b.on || b.beaten || b.enterT > 0 || !blade.active || blade.strokeStart) return;
+	if (!b.on || b.beaten || b.enterT > 0) return;
 	const float reach = orcReach();
+	// Aggro Apple peeking worms respond to both touch-tap/click and swiping near the worm.
+	if (b.id == BOSS_APPLE && b.dazeT <= 0 && blade.active) {
+		const float wr = 20.0f * reach;
+		for (auto& w : b.worms) {
+			if (!w.on) continue;
+			const float wx = b.x + w.ox * (0.4f + 0.6f * w.emergeT), wy = b.y + w.oy * (0.4f + 0.6f * w.emergeT);
+			const float dx = blade.x - wx, dy = blade.y - wy;
+			if ((blade.strokeStart && dx * dx + dy * dy <= wr * wr) || (!blade.strokeStart && segDist2(wx, wy, blade) <= wr * wr)) {
+				w.on = false;
+				b.deflectStroke = blade.strokeId;  // swatting a worm off the rim never triggers Deflected!
+				audio::play(SFX_POP, 0.85f, fieldPan(wx), 1.35f);
+				emitSparks(wx, wy, rgba(255, 150, 175), juiceAmount(8), 110);
+				addPopup("SWATTED!", wx, wy - 14, rgba(190, 245, 160), 0.55f);
+				orcGainXp(2);
+				sliced++;
+			}
+		}
+	}
+	if (!blade.active || blade.strokeStart) return;
 	// Shots first: they're small and quick.
 	for (auto& s : orc.shots) {
 		if (!s.on || s.stroke == blade.strokeId) continue;
-		const float r = (s.kind == SHOT_CANNON ? 15.0f : (s.kind == SHOT_CROWN ? 18.0f : 10.0f)) * reach + 4;
+		const float r = (s.kind == SHOT_CANNON ? 15.0f : (s.kind == SHOT_CROWN ? 18.0f : 11.0f)) * reach + 4;
 		if (segDist2(s.x, s.y, blade) > r * r) continue;
 		s.stroke = blade.strokeId;
 		if (--s.hits > 0) {
@@ -590,13 +964,13 @@ void Game::bossTest(Blade& blade) {
 			addPopup("CROWN KNOCKED!", s.x, s.y - 14, rgba(255, 220, 120), 0.6f);
 			audio::play(SFX_GOLD, 0.8f, fieldPan(s.x));
 			bossOpen(orchardLevel(gSave.difficulty).openTime);
-		} else if (s.kind == SHOT_CANNON || s.kind == SHOT_EMBER) {
-			addPopup(s.kind == SHOT_EMBER ? "SNUFFED!" : "DEFUSED!", s.x, s.y - 14, s.kind == SHOT_EMBER ? rgba(255, 200, 120) : rgba(140, 230, 255), 0.5f);
+		} else if (s.kind == SHOT_CANNON || s.kind == SHOT_EMBER || s.kind == SHOT_THORN || s.kind == SHOT_ACID) {
+			addPopup(s.kind == SHOT_EMBER ? "SNUFFED!" : (s.kind == SHOT_ACID ? "NEUTRALIZED!" : "DEFUSED!"), s.x, s.y - 14, s.kind == SHOT_EMBER ? rgba(255, 200, 120) : rgba(140, 230, 255), 0.5f);
 			audio::play((Sfx)(SFX_JUICY0 + gRng.below(2)), 0.7f, fieldPan(s.x), 1.3f);
 		} else {
 			audio::play((Sfx)(SFX_JUICY0 + gRng.below(2)), 0.7f, fieldPan(s.x), 1.3f);
 		}
-		const u32 jCol = s.kind == SHOT_CANNON ? rgba(110, 110, 120) : (s.kind == SHOT_EMBER ? rgba(255, 150, 50) : (s.kind == SHOT_SPIKE ? rgba(240, 210, 80) : rgba(255, 110, 120)));
+		const u32 jCol = s.kind == SHOT_CANNON ? rgba(110, 110, 120) : (s.kind == SHOT_EMBER ? rgba(255, 150, 50) : (s.kind == SHOT_ACID ? rgba(235, 245, 80) : (s.kind == SHOT_THORN ? rgba(185, 165, 80) : (s.kind == SHOT_SPIKE ? rgba(240, 210, 80) : rgba(255, 110, 120)))));
 		emitJuice(s.x, s.y, jCol, juiceAmount(8), blade.x - blade.px, blade.y - blade.py);
 		orcGainXp(s.kind == SHOT_CANNON ? 2 : 1);
 		if (orc.upgrade[CARD_JUICE]) orc.hp = fminf(orc.maxHp, orc.hp + 0.25f);
@@ -623,9 +997,7 @@ void Game::bossTest(Blade& blade) {
 	float scale = 1 - (b.squash < 0 ? b.squash * 0.8f : 0);
 	const float r = b.radius * scale * 0.92f * reach;
 	if (segDist2(b.x, b.y, blade) > r * r) return;
-	if (b.attack == MEL_CHARGE) {
-		// Blocked the charge: it bounces off, and if the chain is done its guard drops for longer.
-		// A 1.2s deflect cooldown ensures following through doesn't cause accidental deflect damage.
+	if (b.attack == MEL_CHARGE || b.attack == DUR_SPIN) {
 		b.attack = ATK_NONE;
 		b.squash = 0;
 		b.nextAttack = 2;
@@ -637,73 +1009,26 @@ void Game::bossTest(Blade& blade) {
 		return;
 	}
 	if (b.guard && !orc.cleaver) {
-		// Deflected!: once per swipe, and at most every half second.
 		if (blade.strokeId == b.deflectStroke || b.deflectT > 0) return;
 		b.deflectStroke = blade.strokeId;
 		b.deflectT = 0.5f;
 		audio::play(SFX_CLANG, 1.0f, fieldPan(b.x));
 		emitSparks(blade.x, blade.y, rgba(170, 210, 255), juiceAmount(10), 150);
-		static const float kChuckPitch[BOSS_COUNT] = {1.25f, 0.80f, 1.02f, 1.38f};
+		static const float kChuckPitch[BOSS_COUNT] = {1.25f, 0.80f, 1.02f, 1.38f, 0.78f, 1.42f, 0.92f};
 		audio::play(SFX_CHUCKLE, 0.7f, fieldPan(b.x), kChuckPitch[b.id % BOSS_COUNT]);
 		blade.speed *= 0.3f;
-		if (orc.lastStandT > 0 || gRng.unit() < 0.1f * orc.upgrade[CARD_PARRY]) {
+		const float parryChance = 1.0f - powf(0.90f, (float)orc.upgrade[CARD_PARRY]);
+		if (orc.lastStandT > 0 || (orc.upgrade[CARD_PARRY] > 0 && gRng.unit() < parryChance)) {
 			addPopup("PARRIED!", b.x, b.y - b.radius - 14, rgba(170, 230, 255), 0.6f);
 			return;
 		}
-		orcHurt(orchardLevel(gSave.difficulty).deflectDamage, blade.x, blade.y, "DEFLECTED!");
+		orcHurt(bossDamageBase(orchardLevel(gSave.difficulty).deflectDamage), blade.x, blade.y, "DEFLECTED!");
 		return;
 	}
 	// A clean slice.
 	if (orc.cleaver && b.guard) addPopup("CLEAVED!", b.x, b.y - b.radius - 14, rgba(255, 230, 150), 0.6f);
 	orc.cleaver = false;
-	b.left--;
-	b.hurtT = 0.4f;
-	b.dazeT = 3.0f;
-	b.openT = 0;
-	b.guard = false;
-	b.crownOut = 0;
-	for (auto& s : orc.shots)
-		if (s.kind == SHOT_CROWN) s.on = false;
-	if (b.attack == KING_FUSE) audio::fuse(false);
-	b.attack = ATK_NONE;
-	shake = 0.6f;
-	flash = 0.15f;
-	flashColor = rgba(255, 255, 255);
-	const float dx = blade.x - blade.px, dy = blade.y - blade.py;
-	static const u32 kHitJuice[BOSS_COUNT] = {rgba(255, 70, 90), rgba(255, 180, 80), rgba(255, 224, 90), rgba(255, 110, 48)};
-	emitJuice(b.x, b.y, kHitJuice[b.id % BOSS_COUNT], juiceAmount(30), dx, dy);
-	audio::play(b.id == BOSS_MELON ? SFX_MELON0 : SFX_SHELL, 1.0f, fieldPan(b.x), b.id == BOSS_CHILI ? 1.15f : 0.8f);
-	PORT_VIBRATE(0.6f, 140);
-	orcGainXp(6);
-	if (orc.upgrade[CARD_JUICE]) orc.hp = fminf(orc.maxHp, orc.hp + 1.0f);
-	sliced++;
-	const int done = b.total - b.left;
-	if (b.left == 0) {
-		b.beaten = true;
-		b.leaveT = 0;
-		for (auto& s : orc.shots) s.on = false;
-		orc.bossesBeaten++;
-		gSave.bossesBeaten |= 1u << b.id;
-		orc.bossCoins += progress::bossWin(b.id);
-		char buf[40];
-		static const char* const kBeatName[BOSS_COUNT] = {"BIG MELON", "BOMB KING", "PINEAPPLE GUARD", "INFERNO PEPPER"};
-		snprintf(buf, sizeof buf, "%s BEATEN!", kBeatName[b.id % BOSS_COUNT]);
-		setCallout(buf, rgba(255, 230, 140), 0.8f);
-		audio::play(SFX_VICTORY, 1.0f);
-		audio::bossMusicEnd();
-		orcGainXp(20);
-		if (mode == MODE_BOSSRUSH) award(1);
-		return;
-	}
-	const int phase = 1 + done * kBosses[b.id].phases / b.total;
-	if (phase > b.phase) {
-		b.phase = (u8)phase;
-		b.roarT = 1.2f;
-		setCallout(phase >= 3 ? "IT'S FURIOUS!" : "IT'S ANGRY!", rgba(255, 140, 110));
-		audio::play(SFX_ROAR, 1.0f, fieldPan(b.x));
-	} else {
-		addPopup("SLICED!", b.x, b.y - b.radius - 14, rgba(255, 240, 160), 0.7f);
-	}
+	bossHitSlice(b.x, b.y, blade.x - blade.px, blade.y - blade.py);
 }
 
 // The Giant Bomb. Stage 0: the King floats off the top. Stage 1: the bomb sits ticking in the middle until it is
@@ -843,9 +1168,15 @@ void Game::drawShots() const {
 				m3d::Pose pose = {s.x, s.y, 26, s.age * 2.0f, s.rot, s.rot * 0.6f, 0.8f, 0, 0, 0};
 				m3d::draw(m3d::MESH_BOMB, m3d::PART_WHOLE, pose);
 				m3d::setSkin(nullptr);
-			} else if (s.kind == SHOT_SPIKE) {
-				m3d::Pose pose = {s.x, s.y, 26, s.age * 4.0f, s.rot * 1.2f, ang, 0.55f, 0, 0, 0};
+			} else if (s.kind == SHOT_SPIKE || s.kind == SHOT_THORN) {
+				m3d::Pose pose = {s.x, s.y, 26, s.age * 4.0f, s.rot * 1.2f, ang, s.kind == SHOT_THORN ? 0.62f : 0.55f, 0, 0, 0};
 				m3d::draw(m3d::MESH_SPIKY, m3d::PART_WHOLE, pose);
+			} else if (s.kind == SHOT_ACID) {
+				m3d::Skin skin = {0.5f, 0.82f, 1.0f, 0.18f, 1.0f, 0.45f};
+				m3d::setSkin(&skin);
+				m3d::Pose pose = {s.x, s.y, 26, s.age * 3.0f, s.rot, ang, 0.62f, 0, 0, 0};
+				m3d::draw(m3d::MESH_LEMON, m3d::PART_WHOLE, pose);
+				m3d::setSkin(nullptr);
 			} else if (s.kind == SHOT_EMBER) {
 				m3d::Skin skin = {0.55f, 1.0f, 0.55f, 0.15f, 1.0f, 0.5f};
 				m3d::setSkin(&skin);
@@ -858,7 +1189,7 @@ void Game::drawShots() const {
 	}
 	for (const auto& s : orc.shots) {
 		if (!s.on) continue;
-		if (in3D && (s.kind == SHOT_SEED || s.kind == SHOT_SPLASH || s.kind == SHOT_CANNON || s.kind == SHOT_SPIKE || s.kind == SHOT_EMBER)) continue;
+		if (in3D && (s.kind == SHOT_SEED || s.kind == SHOT_SPLASH || s.kind == SHOT_CANNON || s.kind == SHOT_SPIKE || s.kind == SHOT_THORN || s.kind == SHOT_ACID || s.kind == SHOT_EMBER)) continue;
 		switch (s.kind) {
 			case SHOT_SEED: gfx::sprite(SHEET_SPRITES, sprites_drop_idx, s.x, s.y, 0.9f, 1.2f, atan2f(s.vy, s.vx) - 1.5708f, rgba(70, 40, 30)); break;
 			case SHOT_SPLASH: gfx::sprite(SHEET_SPRITES, sprites_drop_idx, s.x, s.y, 1.5f, 1.5f, s.rot * 0.3f, rgba(255, 80, 110)); break;
@@ -867,6 +1198,8 @@ void Game::drawShots() const {
 				break;
 			case SHOT_CROWN: drawCrown(s.x, s.y, 1.1f, rgba(255, 210, 70)); break;
 			case SHOT_SPIKE: gfx::sprite(SHEET_SPRITES, sprites_spark_idx, s.x, s.y, 1.15f, 1.15f, s.rot, rgba(210, 235, 95)); break;
+			case SHOT_THORN: gfx::sprite(SHEET_SPRITES, sprites_spark_idx, s.x, s.y, 1.3f, 1.3f, s.rot, rgba(180, 155, 70)); break;
+			case SHOT_ACID: gfx::sprite(SHEET_SPRITES, sprites_drop_idx, s.x, s.y, 1.35f, 1.35f, s.rot, rgba(225, 245, 75)); break;
 			case SHOT_EMBER: gfx::sprite(SHEET_SPRITES, sprites_spark_idx, s.x, s.y, 1.3f, 1.3f, -s.rot, rgba(255, 145, 50)); break;
 			default: break;
 		}
@@ -928,17 +1261,21 @@ void Game::drawBoss(bool solid) const {
 	// The pose: dizzy when confused or beaten, laughing with the guard down, gritting its teeth mid-attack.
 	const int pose = b.beaten || b.dazeT > 0 ? BOSS_POSE_DAZE : !b.guard ? BOSS_POSE_OPEN : b.attack != ATK_NONE ? BOSS_POSE_WIND : BOSS_POSE_GUARD;
 	const u32 tint = hurt ? rgba(255, 140, 140, (int)(255 * alpha)) : rgba(255, 255, 255, (int)(255 * alpha));
-	static const float kArtDiv[BOSS_COUNT] = {40.0f, 35.5f, 39.0f, 38.0f};
-	static const float kMeshDiv[BOSS_COUNT] = {23.0f, 19.0f, 20.5f, 18.0f};
-	static const int kMeshId[BOSS_COUNT] = {m3d::MESH_MELON, m3d::MESH_BOMB, m3d::MESH_PINEAPPLE, m3d::MESH_CHILI};
-	static const int kFaceIdx[BOSS_COUNT] = {sprites_bface_melon_guard_idx, sprites_bface_king_guard_idx, sprites_bface_pineapple_guard_idx, sprites_bface_chili_guard_idx};
-	static const int kBodyIdx[BOSS_COUNT] = {sprites_boss_melon_guard_idx, sprites_boss_king_guard_idx, sprites_boss_pineapple_guard_idx, sprites_boss_chili_guard_idx};
+	static const float kArtDiv[BOSS_COUNT] = {40.0f, 35.5f, 39.0f, 38.0f, 40.0f, 39.0f, 40.0f};
+	static const float kMeshDiv[BOSS_COUNT] = {23.0f, 19.0f, 20.5f, 18.0f, 21.0f, 21.0f, 22.0f};
+	static const int kMeshId[BOSS_COUNT] = {m3d::MESH_MELON, m3d::MESH_BOMB, m3d::MESH_PINEAPPLE, m3d::MESH_CHILI, m3d::MESH_SPIKY, m3d::MESH_LEMON, m3d::MESH_APPLE};
+	static const int kFaceIdx[BOSS_COUNT] = {
+	    sprites_bface_melon_guard_idx, sprites_bface_king_guard_idx, sprites_bface_pineapple_guard_idx, sprites_bface_chili_guard_idx,
+	    sprites_bface_durian_guard_idx, sprites_bface_lemon_guard_idx, sprites_bface_apple_guard_idx};
+	static const int kBodyIdx[BOSS_COUNT] = {
+	    sprites_boss_melon_guard_idx, sprites_boss_king_guard_idx, sprites_boss_pineapple_guard_idx, sprites_boss_chili_guard_idx,
+	    sprites_boss_durian_guard_idx, sprites_boss_lemon_guard_idx, sprites_boss_apple_guard_idx};
 	const int bi = b.id % BOSS_COUNT;
 	const float art = b.radius / kArtDiv[bi];
 	if (drawing3D()) {
 		// The game's own 3D fruit, made big, with the pose's face laid over it.
 		m3d::begin(kFieldW, gfx::stereoPerZ(), true);
-		m3d::Skin skin = {hurt ? 0.6f : 0.0f, 1.0f, 0.35f, 0.35f, alpha, 0.3f};
+		m3d::Skin skin = {hurt ? 0.6f : (b.surgeT > 0 ? 0.25f : 0.0f), 1.0f, 0.35f, b.surgeT > 0 ? 0.1f : 0.35f, alpha, 0.3f};
 		m3d::setSkin(&skin);
 		const float s = b.radius / kMeshDiv[bi];
 		m3d::Pose pose3 = {b.x, b.y, 30, b.rx, b.t * 0.4f, wob, s * (1 + grow), 0, 0, 0};
@@ -948,6 +1285,16 @@ void Game::drawBoss(bool solid) const {
 		gfx::sprite(SHEET_SPRITES, kFaceIdx[bi] + pose, b.x, b.y, art * sx, art * sy, wob, tint);
 	} else {
 		gfx::sprite(SHEET_SPRITES, kBodyIdx[bi] + pose, b.x, b.y, art * sx, art * sy, wob, tint);
+	}
+	if (b.id == BOSS_APPLE && !b.beaten) {
+		for (const auto& w : b.worms) {
+			if (!w.on) continue;
+			const float wx = b.x + w.ox * (0.4f + 0.6f * w.emergeT), wy = b.y + w.oy * (0.4f + 0.6f * w.emergeT);
+			gfx::sprite(SHEET_SPRITES, sprites_boss_worm_idx, wx, wy, 0.72f * w.emergeT, 0.72f * w.emergeT, sinf(b.t * 9) * 0.15f);
+			if (w.timer < 1.2f) {
+				gfx::sprite(SHEET_SPRITES, sprites_ring_idx, wx, wy, 0.6f, 0.6f, 0, rgba(255, 110, 120, (u8)(180 + 70 * sinf(b.t * 16))));
+			}
+		}
 	}
 	// The King wears his crown; any Royal boss wears a golden crown too.
 	if ((b.id == BOSS_KING && b.crownOut <= 0) || (b.royal && b.id != BOSS_KING))

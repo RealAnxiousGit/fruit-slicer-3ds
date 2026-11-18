@@ -13,6 +13,7 @@
 
 static int sLabPass, sLabFail;
 static FILE* sLabFile;
+static void updateFrame(const Input& in, bool wasTouching);
 #if PORT_ULTRA
 namespace gfx {
 bool ultraLoaded();  // port/render.cpp: the 4K sheets are what's loaded
@@ -323,6 +324,93 @@ static void labInventory() {
 		         "Inventory scrolls passive charms when more passives are held than fit on screen", d);
 		sOrcPassiveScroll = 0;
 		o.passiveCount = savedPassives;
+	}
+	// Uncapped upgrades: every INV_UPGRADE item must leave >= 40 px for its name (no 255-pip overflow),
+	// and high levels must format concisely without crowding bottom buttons even with Larger Text on.
+	{
+		const u8 bladeWas2 = o.upgrade[CARD_BLADE];
+		const u8 largeWas2 = gSave.largeText;
+		o.upgrade[CARD_BLADE] = 25;
+		bool allPos = true;
+		for (int i = 0; i < n; i++) {
+			if (items[i].kind != INV_UPGRADE) continue;
+			const CardInfo& uinfo = kCards[items[i].index];
+			char lvBuf[16];
+			snprintf(lvBuf, sizeof lvBuf, "Lv %d", o.upgrade[items[i].index]);
+			const float bw = fmaxf(gfx::textWidth(lvBuf, 0.25f) + 4.0f, 24.0f);
+			if (!cardUncapped(uinfo) || items[i].w - 14.0f - bw < 40.0f) allPos = false;
+		}
+		gSave.largeText = 1;
+		applyAccessibility();
+		const float bladeBot = orcInvDetailsBottom(CARD_BLADE);
+		gSave.largeText = largeWas2;
+		o.upgrade[CARD_BLADE] = bladeWas2;
+		applyAccessibility();
+		snprintf(d, sizeof d, "blade@25 bottom %.1f vs buttons %.1f", (double)bladeBot, (double)btnTop);
+		labCheck(allPos && bladeBot < btnTop, "Uncapped Inventory upgrades keep positive name width and fit details strip cleanly", d);
+	}
+	// Room 50 cutscene: all 10 dialogue lines wrap cleanly above the prompt, KEY_START does not skip, and KEY_A advances.
+	{
+		bool wrapFits = true;
+		int worstLines = 0;
+		float worstGap = 999.0f;
+		for (int i = 0; i < 10; i++) {
+			const Room50CutsceneBox B = room50CutsceneBox(kRoom50Lines[i]);
+			const int lines = orcCountWrapLines(kRoom50Lines[i], B.maxW, B.textScale, 8);
+			const float gap = B.promptY - (B.textY + lines * B.step);
+			if (lines > worstLines) worstLines = lines;
+			if (gap < worstGap) worstGap = gap;
+			if (lines > B.maxLines || gap < 6.0f || B.y < kFieldTop) wrapFits = false;
+		}
+		snprintf(d, sizeof d, "worstLines %d, minPromptGap %.1f", worstLines, (double)worstGap);
+		labCheck(wrapFits, "Room 50 cutscene text wraps within box and clears PRESS TO CONTINUE prompt", d);
+
+		o.cutscene = true;
+		o.dialogueLine = 0;
+		o.dialogueChars = (float)strlen(kRoom50Lines[0]);
+		o.dialogueLastChar = (int)o.dialogueChars - 1;
+		o.dialoguePauseT = 0;
+		o.dialogueWaitRelease = false;
+		press(KEY_START);
+		const bool startIgnored = o.cutscene && o.dialogueLine == 0;
+		press(KEY_A);
+		const bool aAdvanced = o.cutscene && o.dialogueLine == 1;
+		o.cutscene = false;
+		labCheck(startIgnored && aAdvanced, "Room 50 cutscene leaves KEY_START for Pause while KEY_A advances dialogue");
+	}
+	// Heat Surge music speed survives updateFrame() when fighting Inferno Pepper unpaused.
+	{
+		const Screen scrWas = sScreen;
+		const bool invWas = sOrcInv;
+		sOrcInv = false;
+		sScreen = SCREEN_GAME;
+		sGame.phase = PHASE_PLAY;
+		sGame.chiliT = 0;
+		o.boss = {};
+		o.boss.on = true;
+		o.boss.id = BOSS_CHILI;
+		o.boss.beaten = false;
+		o.boss.enterT = 0;
+		o.boss.phase = 1;
+		o.boss.left = 10;
+		o.boss.total = 10;
+		o.boss.baseY = kFieldTop + 56;
+		o.boss.y = o.boss.baseY;
+		o.boss.x = kFieldW * 0.5f;
+		o.boss.radius = 28;
+		o.boss.surgeT = 2.0f;
+		updateFrame(Input{}, false);
+		const float spdDuring = audio::currentMusicSpeed();
+		sOrcInv = true;
+		updateFrame(Input{}, false);
+		const float spdPaused = audio::currentMusicSpeed();
+		sOrcInv = invWas;
+		sScreen = scrWas;
+		o.boss = {};
+		audio::musicSpeed(1.0f);
+		snprintf(d, sizeof d, "active %.2f, inv %.2f", (double)spdDuring, (double)spdPaused);
+		labCheck(!audio::available() || (spdDuring > 1.20f && fabsf(spdPaused - 1.0f) < 0.05f),
+		         "Inferno Pepper Heat Surge speedup persists across updateFrame() and resets while paused", d);
 	}
 	// A touch press and release on level-up card 0 picks it
 	const int hpBefore = o.upgrade[CARD_HEALTH];
@@ -816,6 +904,160 @@ static void labLeaderboard() {
 	snprintf(gSave.leaderboardName, sizeof gSave.leaderboardName, "%s", savedName);
 }
 
+static void labV2Fixes() {
+	// 1. Check for Updates fruit slicing: swipe across button center slices its fruit (doesn't require click, isn't stolen by listDrag).
+	{
+		const Screen prevScr = sScreen;
+		const auto prevCut = sCut;
+		sScreen = SCREEN_UPDATE;
+		sDrawing = SCREEN_UPDATE;
+		sCut = {};
+		const Button* btns = nullptr;
+		const char *a = nullptr, *b = nullptr;
+		const int n = updateButtons(&btns, &a, &b);
+		float fx = 0, fy = 0, fd = 0;
+		fruitSpot(btns[0], &fx, &fy, &fd);
+		const float swipeSpan = gSave.sliceAssist ? 16.0f : 36.0f;
+		Input uin = {};
+		uin.touching = true;
+		uin.tx = (int)(fx - swipeSpan * 0.5f);
+		uin.ty = (int)fy;
+		updateSignInput(uin, false);
+		uin.tx = (int)(fx + swipeSpan * 0.5f);
+		updateSignInput(uin, true);
+		labCheck(n >= 1 && btns[0].label != nullptr && fruitFor(btns[0].label) != MF_BERRY && sCut.pending && sCut.index == 0,
+		         "Check for Updates buttons slice cleanly via touch swipe without clicking");
+		sCut = prevCut;
+		sScreen = prevScr;
+	}
+
+	// 2. Guides slide transitions & wrapped line budget.
+	{
+		const Screen prevScr = sScreen;
+		const bool slidingWas = sSliding;
+		const int dirWas = sSlideDir;
+		sScreen = SCREEN_HOWTO;
+		sSliding = false;
+		goTo(SCREEN_GUIDES, 1);
+		const bool toGuidesSlides = sSliding && sSlideDir == 1;
+		sScreen = SCREEN_GUIDES;
+		sSliding = false;
+		goTo(SCREEN_HOWTO, -1);
+		const bool toHowtoSlides = sSliding && sSlideDir == -1;
+		sScreen = prevScr;
+		sSliding = slidingWas;
+		sSlideDir = dirWas;
+		labCheck(toGuidesSlides && toHowtoSlides, "Guides uses clean horizontal slide transitions (non-zero dir)");
+
+		bool fitsAll = true;
+		for (int p = 0; p < kGuideCount; p++) {
+			const GuideEntry& g = kGuides[p];
+			const char* const lines[4] = {g.line1, g.line2, g.line3, g.line4};
+			float ly = 104.0f;
+			for (int i = 0; i < 4; i++) {
+				if (!lines[i] || !lines[i][0]) continue;
+				char wbuf[160];
+				snprintf(wbuf, sizeof wbuf, "%s", lines[i]);
+				char* cur = wbuf;
+				int wrapped = 0;
+				while (*cur && wrapped < 2) {
+					while (*cur == ' ') cur++;
+					if (!*cur) break;
+					if (gfx::textWidth(cur, 0.31f) <= 278.0f || wrapped == 1) {
+						ly += 10.8f;
+						break;
+					}
+					int split = -1;
+					for (int k = 1; cur[k]; k++) {
+						if (cur[k] == ' ') {
+							cur[k] = 0;
+							const float tw = gfx::textWidth(cur, 0.31f);
+							cur[k] = ' ';
+							if (tw <= 278.0f) split = k;
+							else break;
+						}
+					}
+					if (split < 0) {
+						ly += 10.8f;
+						break;
+					}
+					ly += 10.8f;
+					cur += split + 1;
+					wrapped++;
+				}
+				ly += 2.0f;
+			}
+			if (ly > 212.0f) fitsAll = false;
+		}
+		const bool guidesUpdated = strstr(kGuides[MODE_ORCHARD].line3, "saved at the start of each room") != nullptr &&
+		                           strstr(kGuides[MODE_BOSSRUSH].line1, "5 escalating") != nullptr &&
+		                           strstr(kGuides[MODE_ORCHARD].goal, "10 ROOMS") == nullptr;
+		labCheck(fitsAll && guidesUpdated, "Guides fit inside plank with updated Endless room-start save & 5-boss Boss Rush text");
+	}
+
+	// 3. Holographic Shop Skin: shiny + translucent + rainbow color rotation via shopTick.
+	{
+		const u32 extrasWas = gSave.ownedExtras, coinsWas = gSave.coins;
+		const u8 skinWas = gSave.skin;
+		gSave.coins = 5000;
+		const int holoIdx = 2;
+		const bool hasHolo = shopCount(SHOP_SKINS) >= 3 && strcmp(shopItem(SHOP_SKINS, holoIdx).name, "Holographic") == 0;
+		if (hasHolo) {
+			shopBuy(SHOP_SKINS, holoIdx);
+			shopEquip(SHOP_SKINS, holoIdx);
+			const m3d::Skin* sk = shopWornSkin();
+			const u32 tintA = shopWornSkinTint();
+			shopTick(0.42f);
+			const u32 tintB = shopWornSkinTint();
+			labCheck(sk && sk->shine >= 0.99f && sk->alpha < 1.0f && tintA != tintB,
+			         "Holographic skin is shiny, translucent, and shifts rainbow hues over time");
+		} else {
+			labCheck(false, "Holographic skin exists in Shop Skins tab");
+		}
+		gSave.ownedExtras = extrasWas;
+		gSave.coins = coinsWas;
+		gSave.skin = skinWas;
+	}
+
+	// 4. Room 50 First-Encounter Cutscene UI: fast-forward, release-latch between lines, tensionMusic at line 5, boss transition at line 10.
+	{
+		const u8 seenWas = gSave.seenRoom50Cutscene;
+		const int trkWas = audio::currentTrack();
+		gSave.seenRoom50Cutscene = 0;
+		Game::orchardClearSave();
+		sGame.start(MODE_ORCHARD);
+		sGame.orcApplyDevSkip(50, 1);
+		Input cin = {};
+		cin.held = KEY_A;
+		for (int i = 0; i < 60 && (int)sGame.orc.dialogueChars < (int)strlen(kRoom50Lines[0]); i++) updateRoom50Cutscene(cin, false);
+		const bool latched = sGame.orc.dialogueWaitRelease;
+		updateRoom50Cutscene(cin, false);
+		const bool heldDidNotSkip = sGame.orc.dialogueLine == 0 && sGame.orc.cutscene;
+		// Release A, then advance through line 5 (starts tension music) and line 9 -> launches Milestone Boss.
+		cin = {};
+		updateRoom50Cutscene(cin, false);
+		for (int line = 0; line < 9; line++) {
+			sGame.orc.dialogueChars = (float)strlen(kRoom50Lines[line]);
+			sGame.orc.dialogueWaitRelease = false;
+			cin.down = KEY_A;
+			updateRoom50Cutscene(cin, false);
+		}
+		const bool tensionAt5Plus = sGame.orc.tensionStarted && sGame.orc.dialogueLine == 9;
+		sGame.orc.dialogueChars = (float)strlen(kRoom50Lines[9]);
+		sGame.orc.dialogueWaitRelease = false;
+		cin.down = KEY_A;
+		updateRoom50Cutscene(cin, false);
+		labCheck(latched && heldDidNotSkip && tensionAt5Plus && !sGame.orc.cutscene && sGame.orc.boss.on && gSave.seenRoom50Cutscene == 1,
+		         "Room 50 cutscene fast-forwards, latches release, starts tensionMusic at line 5, and enters Milestone Boss after line 10");
+		audio::tensionMusic(false);
+		audio::bossMusicEnd();
+		audio::music(MUSIC_MENU);
+		(void)trkWas;
+		gSave.seenRoom50Cutscene = seenWas;
+		Game::orchardClearSave();
+	}
+}
+
 static void labFinish(Input& in) {
 	static int step = 0, held = 0;
 #ifdef LAB_QUICK
@@ -827,6 +1069,7 @@ static void labFinish(Input& in) {
 		labInventory();
 		labStreetPass();
 		labLeaderboard();
+		labV2Fixes();
 		sGame.labOrchard(labCheck);
 		sGame.labModes12(labCheck);
 		labSummary();
@@ -837,6 +1080,7 @@ static void labFinish(Input& in) {
 	if (step == 0) {
 		labStreetPass();
 		labLeaderboard();
+		labV2Fixes();
 		labCheck(sLabBlastSeen && !sLabBlastMissed, "every bomb hit sets off a blast");
 		labCheck(gfx::fontImageCount() == gfx::fontLetterCount() * 2, "the font table matches the font sheet");
 		{

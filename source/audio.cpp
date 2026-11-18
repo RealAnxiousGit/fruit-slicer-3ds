@@ -39,6 +39,7 @@ static const char* const kSfxFiles[SFX_COUNT] = {
 	"coin", "plink", "shopbell",
 	"clang", "open", "roar", "bossin", "victory", "pop",
 	"laugh", "chuckle", "whoosh", "launch", "levelup",
+	"boss_blip",
 };
 static_assert(sizeof kSfxFiles / sizeof kSfxFiles[0] == SFX_COUNT, "every sound needs a file name");
 // How much of the mix one sound may take. A new sound is turned down if the ones still playing have
@@ -703,7 +704,7 @@ static void startTrack(int track, bool autoPick = false, int context = MUSIC_NON
 		sMusicRetiredFrames = 6;
 		sMusicClip.pcm = nullptr;
 	}
-	if (track < 0) return;
+	if (track < 0 && track != -2) return;
 #if PORT_CUSTOM_MUSIC
 	if (track >= kTrackCount) {
 		startCustom(track - kTrackCount);
@@ -711,10 +712,11 @@ static void startTrack(int track, bool autoPick = false, int context = MUSIC_NON
 	}
 #endif
 	if (track >= kTrackCount) return;
+	const char* trackFile = track == -2 ? "music_tension" : kTrackFiles[track];
 #if FS_OGG
 	{
 		char path[64];
-		snprintf(path, sizeof path, "audio/%s.ogg", kTrackFiles[track]);
+		snprintf(path, sizeof path, "audio/%s.ogg", trackFile);
 		if (port::AssetFile* ogg = port::assetOpen(path)) {
 			long size = port::assetSize(ogg);
 			if (size > 0 && size < 32L * 1024 * 1024 && (sOgg = (u8*)malloc((size_t)size))) {
@@ -728,7 +730,7 @@ static void startTrack(int track, bool autoPick = false, int context = MUSIC_NON
 	}
 #endif
 	u32 head[3];
-	port::AssetFile* f = openClip(kTrackFiles[track], head);
+	port::AssetFile* f = openClip(trackFile, head);
 	if (!f) return;
 	sMusicClip.samples = head[1];
 	sMusicClip.rate = head[2];
@@ -821,6 +823,18 @@ void bossMusicEnd() {
 	}
 	sBossStage = BOSS_LEAVING;
 	sBossT = 0;
+}
+
+void tensionMusic(bool on) {
+	if (!sReady) return;
+	bossCancel();
+	if (on) {
+		sSeekSec = 0;
+		sLoop = true;
+		startTrack(-2, false, sContext);
+	} else {
+		startTrack(-1, false, sContext);
+	}
 }
 
 bool bossMusicOn() { return sBossStage != BOSS_OFF; }
@@ -936,12 +950,15 @@ void reapply() {
 	startFor(sContext);
 }
 
+static float sMusicSpeedNow = 1.0f;
+
 void musicSpeed(float factor) {
-	static float now = 1;
-	if (!sReady || factor == now) return;
-	now = factor;
+	if (!sReady || factor == sMusicSpeedNow) return;
+	sMusicSpeedNow = factor;
 	audioport::musicRate(factor);
 }
+
+float currentMusicSpeed() { return sMusicSpeedNow; }
 
 void fuse(bool on, float pan) {
 	if (!sReady || !sFuse.pcm) return;
