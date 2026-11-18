@@ -905,10 +905,12 @@ static void labLeaderboard() {
 }
 
 static void labV2Fixes() {
-	// 1. Check for Updates fruit slicing: swipe across button center slices its fruit (doesn't require click, isn't stolen by listDrag).
+	// 1. Check for Updates fruit slicing: swipe across "Yes" and from outside onto "No" without clicking first.
 	{
 		const Screen prevScr = sScreen;
 		const auto prevCut = sCut;
+		const update::State prevUpd = update::state();
+		update::setTestState(update::ASK);
 		sScreen = SCREEN_UPDATE;
 		sDrawing = SCREEN_UPDATE;
 		sCut = {};
@@ -925,10 +927,28 @@ static void labV2Fixes() {
 		updateSignInput(uin, false);
 		uin.tx = (int)(fx + swipeSpan * 0.5f);
 		updateSignInput(uin, true);
-		labCheck(n >= 1 && btns[0].label != nullptr && fruitFor(btns[0].label) != MF_BERRY && sCut.pending && sCut.index == 0,
-		         "Check for Updates buttons slice cleanly via touch swipe without clicking");
+		const bool yesSliced = n == 2 && btns[0].label != nullptr && fruitFor(btns[0].label) != MF_BERRY && sCut.pending && sCut.index == 0;
+		updateSignInput(Input{}, true);  // lift touch cleanly before second swipe
+		// Also test swiping from outside the hitbox across "No" (index 1) without clicking inside it first.
+		sCut = {};
+		float fx1 = 0, fy1 = 0, fd1 = 0;
+		if (n >= 2) fruitSpot(btns[1], &fx1, &fy1, &fd1);
+		Input uin2 = {};
+		uin2.touching = true;
+		uin2.tx = (int)(fx1 - 54.0f);
+		uin2.ty = (int)fy1;
+		updateSignInput(uin2, false);
+		uin2.tx = (int)fx1;
+		updateSignInput(uin2, true);
+		uin2.tx = (int)(fx1 + 24.0f);
+		updateSignInput(uin2, true);
+		const bool noSliced = n == 2 && btns[1].label != nullptr && fruitFor(btns[1].label) != MF_BERRY && sCut.pending && sCut.index == 1;
+		updateSignInput(Input{}, true);
+		update::setTestState(prevUpd);
 		sCut = prevCut;
 		sScreen = prevScr;
+		labCheck(yesSliced && noSliced,
+		         "Check for Updates Yes/No buttons slice cleanly via touch swipe across button or from outside");
 	}
 
 	// 2. Guides slide transitions & wrapped line budget.

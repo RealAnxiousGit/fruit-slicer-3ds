@@ -251,4 +251,7 @@ void restart() {
 	port::updateRestart();
 	sState = IDLE;
 }
+#ifdef AUTOTEST
+void setTestState(State s) { sState = s; }
+#endif
 }  // namespace update

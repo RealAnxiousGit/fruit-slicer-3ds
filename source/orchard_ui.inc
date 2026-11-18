@@ -1027,6 +1027,15 @@ static bool updateDevSkip(const Input& in, bool wasTouching) {
 	float x, y, w, h;
 	Button b[7];
 	devSkipLayout(&x, &y, &w, &h, b);
+#if PORT_MOUSE
+	if (in.hovering) {
+		for (int i = 0; i < 3; i++)
+			if (in.tx >= b[i].x && in.tx < b[i].x + b[i].w && in.ty >= b[i].y && in.ty < b[i].y + b[i].h) o.devField = 0;
+		for (int i = 3; i < 6; i++)
+			if (in.tx >= b[i].x && in.tx < b[i].x + b[i].w && in.ty >= b[i].y && in.ty < b[i].y + b[i].h) o.devField = 1;
+		if (in.tx >= b[6].x && in.tx < b[6].x + b[6].w && in.ty >= b[6].y && in.ty < b[6].y + b[6].h) o.devField = 2;
+	}
+#endif
 	if (in.down & KEY_UP) o.devField = o.devField == 0 ? 2 : o.devField - 1;
 	if (in.down & KEY_DOWN) o.devField = (o.devField + 1) % 3;
 	const int delta = (in.repeat & KEY_LEFT) ? -1 : ((in.repeat & KEY_RIGHT) ? 1 : 0);

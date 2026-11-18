@@ -2852,8 +2852,8 @@ static void benchUpdate(const Input& hw) {
 static void drawDailyTop() {
 	char buf[48];
 	const u32 today = progress::today();
-	// Centered below the coin purse and cleanly above the Mixer fruit.
-	const float lift[4] = {PORT_3DS ? 0.0f : 50.0f, PORT_3DS ? 0.0f : 52.0f, PORT_3DS ? 0.0f : 52.0f, PORT_3DS ? 0.0f : 52.0f};
+	// Centered cleanly below the coin purse and above the Mixer fruit.
+	const float lift[4] = {PORT_3DS ? 0.0f : 46.0f, PORT_3DS ? 0.0f : 48.0f, PORT_3DS ? 0.0f : 48.0f, PORT_3DS ? 0.0f : 48.0f};
 	gfx::text("Daily Fruit", 200, 100 - lift[0], 0.56f, COL_ACCENT, ALIGN_CENTER);
 	if (progress::dailyPlayed(today)) snprintf(buf, sizeof buf, "TODAY'S BEST %lu", (unsigned long)progress::dailyScore(today));
 	else snprintf(buf, sizeof buf, "First run today pays %lu coins", (unsigned long)progress::dailyBonusPreview(today));
@@ -3998,10 +3998,12 @@ static void updateSignInput(const Input& in, bool wasTouching) {
 	// A drag that starts clear of the signs moves the notes; the top line of the list is clamped when drawn.
 	static ListDrag drag;
 	static float pos;
+	static bool sUpdateWasTouch = false;
 	const update::State noteState = update::state();
 	const bool hasNotes = noteState == update::OFFER || noteState == update::NOTE;
 	bool onSign = false;
 	for (int i = 0; i < n; i++) onSign |= menuHit(btns[i], SCREEN_UPDATE, in.tx, in.ty);
+	if (!wasTouching && !in.touching) sUpdateWasTouch = false;
 	if (in.touching && !wasTouching) pos = sUpdateScroll * (float)kNoteStep;
 	if (hasNotes && !onSign && in.ty < 140 && listDrag(drag, in, wasTouching, 0.0f, 140.0f, &pos)) {
 		sUpdateScroll = pos > 0 ? (int)(pos / kNoteStep + 0.5f) : 0;
@@ -4009,8 +4011,10 @@ static void updateSignInput(const Input& in, bool wasTouching) {
 	} else if (!hasNotes) {
 		drag = {};
 	}
+	const bool prevUpdateTouch = sUpdateWasTouch;
+	sUpdateWasTouch = keys.touching;
 	if (n == 0) return;  // downloading: nothing to press
-	int t = menuInput(btns, n, SCREEN_UPDATE, keys, wasTouching);
+	int t = menuInput(btns, n, SCREEN_UPDATE, keys, prevUpdateTouch);
 	if (in.down & KEY_B) {
 		audio::click();
 		t = n - 1;  // the second answer, or the only one
@@ -4804,7 +4808,7 @@ static void drawTopContent(Screen screen) {
 			// Where the Mixer fruit sits under it, the sign is shorter and its lines closer together.
 			const float yName = kMixerFruit ? 96 : 104, yLine = kMixerFruit ? 124 : 134, yBest = kMixerFruit ? 166 : 184;
 			if (kMixerFruit) {
-				if (mode == MODE_DAILY) topPanel(30, 44, 340, 136);
+				if (mode == MODE_DAILY) topPanel(30, 46, 340, 138);
 				else topPanel(30, 90, 340, 108);
 			} else topPanel(30, 96, 340, 134);
 			gfx::setDepth(1.0f);

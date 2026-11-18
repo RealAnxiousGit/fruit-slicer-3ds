@@ -32,4 +32,7 @@ void later();                    // not this version: ask again only for a newer
 void install();                  // Update Now
 void dismiss();                  // OK on LATEST, FAILED or NOTE
 void restart();                  // READY: the port starts the new version once the game has closed
+#ifdef AUTOTEST
+void setTestState(State s);
+#endif
 }  // namespace update

@@ -342,6 +342,7 @@ bool Game::orcLoadRun() {
 	phase = PHASE_PLAY;
 	phaseT = 0;
 	if (orc.bossRoom) {
+		waveTimer = 999.0f;
 		bool royal = false;
 		const int bid = orchardBossForRoom(orc.room, orc.runSeed, orc.bossOrder, &royal);
 		if (orc.room == 50 && !gSave.seenRoom50Cutscene && !passName) {
@@ -358,10 +359,13 @@ bool Game::orcLoadRun() {
 		} else {
 			bossStart(bid, royal);
 		}
-	} else if (!orc.choosing) {
-		char buf[32];
-		snprintf(buf, sizeof buf, "ROOM %d", orc.room);
-		setCallout(buf, rgba(255, 230, 140));
+	} else {
+		waveTimer = 0.25f;
+		if (!orc.choosing) {
+			char buf[32];
+			snprintf(buf, sizeof buf, "ROOM %d", orc.room);
+			setCallout(buf, rgba(255, 230, 140));
+		}
 	}
 	return true;
 }
@@ -748,6 +752,8 @@ void Game::orcNextRoom() {
 			bossStart(bid, royal);
 		}
 	} else {
+		// Leaving a boss room stopped waveTimer at 999s, so restore normal wave launches right away.
+		waveTimer = 0.25f;
 		snprintf(buf, sizeof buf, "ROOM %d", orc.room);
 		setCallout(buf, rgba(255, 230, 140));
 		audio::play(SFX_GO, 0.8f);
@@ -1558,6 +1564,42 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 	check(b.beaten && (gSave.bossesBeaten & 1u << BOSS_MELON), "The last slice beats the boss and marks it beaten", "");
 	for (int i = 0; i < 200 && b.on; i++) bossUpdate(kDt);
 	check(!b.on && orc.room == 6 && strstr(callout, "TRICK") == nullptr, "After the boss, the run moves on to plain ROOM 6 without Trick Fruit text", "");
+	// Fruits must resume spawning cleanly in non-boss rooms after a boss defeat (waveTimer was 999 during the boss).
+	{
+		orc.choosing = false;
+		orc.levelsWaiting = 0;
+		const float postBossTimer = waveTimer;
+		for (auto& o : objs) o = {};
+		for (auto& p : pending) p = {};
+		for (int i = 0; i < 90; i++) {
+			if (orc.choosing) orcPick(0);
+			update(none);
+		}
+		int spawned = 0;
+		for (const auto& o : objs)
+			if (o.on) spawned++;
+		for (const auto& p : pending)
+			if (p.on) spawned++;
+		snprintf(d, sizeof d, "timer %.2f, spawned %d", (double)postBossTimer, spawned);
+		check(!orc.bossRoom && orc.room == 6 && postBossTimer < 2.0f && spawned > 0,
+		      "After defeating a boss, non-boss rooms reset waveTimer and spawn fruits again", d);
+	}
+
+	// Dev skip helper jumps cleanly to any room (including Room 50 Milestone Boss + buffered level-ups) and non-boss rooms.
+	{
+		const u8 seenWas = gSave.seenRoom50Cutscene;
+		setup();
+		gSave.seenRoom50Cutscene = 1;
+		orcApplyDevSkip(6, 4);
+		const bool room6Ok = !orc.bossRoom && orc.room == 6 && waveTimer < 2.0f && orc.level == 4 && orc.levelsWaiting == 3;
+		setup();
+		gSave.seenRoom50Cutscene = 0;
+		orcApplyDevSkip(50, 3);
+		const bool room50Ok = orc.bossRoom && orc.room == 50 && orc.cutscene && orc.level == 3 && orc.levelsWaiting == 2;
+		orchardClearSave();
+		gSave.seenRoom50Cutscene = seenWas;
+		check(room6Ok && room50Ok, "Orchard dev skip cleanly enters non-boss rooms (with waves) and Milestone Boss Room 50 with buffered levels", "");
+	}
 
 	// Boss attacks hurt, and their shots can be sliced away.
 	setup();
