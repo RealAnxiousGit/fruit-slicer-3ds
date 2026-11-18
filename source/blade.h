@@ -32,7 +32,7 @@ struct Blade {
 
 private:
 	void drawExtras(int style) const;
-	void drawStroke(int style, float life, float width, bool tip) const;
+	void drawStroke(int style, float life, float width, bool tip, float alphaScale = 1.0f) const;
 	void pushPoint(float nx, float ny);
 	float hx[3], hy[3];  // recent filtered samples, for curve interpolation
 	int hn = 0;

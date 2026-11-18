@@ -36,9 +36,14 @@ void updateRestart();          // once the game has closed, start the new versio
 
 // Typing a short name. On the 3DS, textStart shows the system keyboard and the answer is ready when it returns.
 // Elsewhere the letters arrive from the keyboard or on-screen keyboard while the game keeps running.
-void textStart(const char* current, int maxLen);
+void textStart(const char* current, int maxLen, bool numericOnly = false);
 int textPoll(char* out, size_t size);  // the text so far: 0 still typing, 1 finished, -1 cancelled
 void textStop();
+#ifdef AUTOTEST
+void testTextInject(const char* s);
+void testTextBackspace();
+void testTextFinish(bool accept);
+#endif
 
 // Opens a web page in the system browser (Windows, Linux and Android only: the main menu's link icons).
 void openLink(const char* url);

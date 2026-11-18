@@ -86,6 +86,17 @@ void fieldFor(float aspect, float* w, float* h);
 // Test hook: draws both eyes as if the 3D slider were all the way up, even on a 2DS.
 void forceStereo(bool on);
 
+// Hardware/GPU additive blend pass for FX_FULL glow, sparks, explosions and blade aura (Universal only).
+#if PORT_3DS
+inline void setAdditive(bool) {}
+inline bool isAdditive() { return false; }
+inline bool fullGpuFx() { return false; }
+#else
+void setAdditive(bool on);
+bool isAdditive();
+inline bool fullGpuFx() { return gSave.effects == FX_FULL && !gSave.highContrast; }
+#endif
+
 void sprite(SheetId sheet, int idx, float x, float y, float sx = 1, float sy = 1, float rot = 0, u32 color = WHITE);
 void image(SheetId sheet, int idx, float x, float y, float w, float h, u32 color = WHITE);
 // Part of a sprite, from (u0, v0) to (u1, v1) with 0 to 1 across it. A backwards range mirrors it.

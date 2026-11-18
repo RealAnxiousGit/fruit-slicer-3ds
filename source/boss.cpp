@@ -77,6 +77,12 @@ void Game::bossHitSlice(float x, float y, float dx, float dy) {
 	if (b.left == 0) {
 		b.beaten = true;
 		b.leaveT = 0;
+		b.boomT = 0;
+		b.dazeT = 0;
+		b.attack = ATK_NONE;
+		b.hidden = false;
+		b.giant.on = false;
+		for (auto& w : b.worms) w.on = false;
 		for (auto& s : orc.shots) s.on = false;
 		orc.bossesBeaten++;
 		gSave.bossesBeaten |= 1u << b.id;
@@ -87,8 +93,16 @@ void Game::bossHitSlice(float x, float y, float dx, float dy) {
 		    "DUSTY DURIAN", "LORD LEMON", "AGGRO APPLE"};
 		snprintf(buf, sizeof buf, "%s BEATEN!", kBeatName[b.id % BOSS_COUNT]);
 		setCallout(buf, rgba(255, 230, 140), 0.8f);
-		audio::play(SFX_VICTORY, 1.0f);
 		audio::bossMusicEnd();
+		if (b.id >= kFirstMilestoneBoss) {
+			b.boomT = 0.02f;
+			audio::play(SFX_BOOM, 0.9f, fieldPan(b.x), 0.95f);
+			shake = fmaxf(shake, 0.35f);
+			flash = 0.25f;
+			flashColor = rgba(255, 220, 140);
+		} else {
+			audio::play(SFX_VICTORY, 1.0f);
+		}
 		orcGainXp(20);
 		if (mode == MODE_BOSSRUSH) award(1);
 		return;
@@ -813,6 +827,60 @@ void Game::shotsUpdate(float dt) {
 	if (b.crownOut > 0) b.crownOut -= dt;
 }
 
+void Game::bossSpawnPieces(int id, float cx, float cy) {
+	static const int kFruitSprL[BOSS_COUNT] = {
+	    fruit_melon_l_idx, fruit_coconut_l_idx, fruit_pineapple_l_idx, fruit_chili_l_idx,
+	    fruit_spiky_l_idx, fruit_lemon_l_idx, fruit_apple_l_idx};
+	static const int kFruitSprR[BOSS_COUNT] = {
+	    fruit_melon_r_idx, fruit_coconut_r_idx, fruit_pineapple_r_idx, fruit_chili_r_idx,
+	    fruit_spiky_r_idx, fruit_lemon_r_idx, fruit_apple_r_idx};
+	static const int kMeshId[BOSS_COUNT] = {
+	    m3d::MESH_MELON, m3d::MESH_BOMB, m3d::MESH_PINEAPPLE, m3d::MESH_CHILI,
+	    m3d::MESH_SPIKY, m3d::MESH_LEMON, m3d::MESH_APPLE};
+	static const u32 kBlastJuice[BOSS_COUNT] = {
+	    rgba(255, 70, 90), rgba(255, 180, 80), rgba(255, 224, 90), rgba(255, 110, 48),
+	    rgba(198, 178, 92), rgba(246, 226, 72), rgba(226, 48, 60)};
+	const int bi = id >= 0 ? id % BOSS_COUNT : 0;
+	boom::start(cx, cy, 1.55f);
+	flash = 0.72f;
+	flashColor = rgba(255, 230, 145);
+	shake = 0.65f;
+	for (int r = 0; r < 4; r++)
+		addRing(cx, cy, hueColor(0.06f + r * 0.16f), 2.4f + r * 1.4f, 0.38f + r * 0.12f);
+	emitJuice(cx, cy, kBlastJuice[bi], juiceAmount(36), 0, -1);
+	emitJuice(cx, cy, rgba(255, 235, 130), juiceAmount(22), 0, 1);
+	emitSparks(cx, cy, rgba(255, 220, 110), juiceAmount(32), 260);
+	Splat& sp = splats[splatCursor];
+	splatCursor = (splatCursor + 1) % kMaxSplats;
+	sp = {cx, cy, gRng.range(0, 6.28f), 2.2f, 3.2f, kBlastJuice[bi], (u8)gRng.below(3), true};
+	const int pieces = PORT_3DS ? 10 : 12;
+	for (int i = 0; i < pieces; i++) {
+		Half& h = halves[halfCursor];
+		halfCursor = (halfCursor + 1) % kMaxHalves;
+		if (h.on) m3d::cutRelease(h.cut);
+		h = {};
+		const float a = (6.283185f * i) / pieces + gRng.range(-0.18f, 0.18f);
+		const float spV = gRng.range(115.0f, 250.0f) * acrossScale();
+		const bool right = (i & 1) != 0;
+		h.on = true;
+		h.x = cx + cosf(a) * 14.0f;
+		h.y = cy + sinf(a) * 14.0f;
+		h.vx = cosf(a) * spV;
+		h.vy = sinf(a) * spV - 85.0f * kFieldK;
+		h.rot = gRng.range(0.0f, 6.28f);
+		h.rotv = (right ? 1.0f : -1.0f) * gRng.range(3.5f, 7.5f);
+		h.rx = gRng.range(-1.2f, 1.2f);
+		h.ry = gRng.range(-1.2f, 1.2f);
+		h.axisX = cosf(a);
+		h.axisY = sinf(a);
+		h.tiltv = gRng.range(-4.5f, 4.5f);
+		h.sprite = (short)(right ? kFruitSprR[bi] : kFruitSprL[bi]);
+		h.mesh = (u8)kMeshId[bi];
+		h.part = right ? m3d::PART_RIGHT : m3d::PART_LEFT;
+		h.cut = -1;
+	}
+}
+
 void Game::bossUpdate(float dt) {
 	Boss& b = orc.boss;
 	if (!b.on) return;
@@ -832,6 +900,35 @@ void Game::bossUpdate(float dt) {
 	b.squash *= powf(0.02f, kDt);
 	if (b.beaten) {
 		b.leaveT += kDt;
+		if (b.id >= kFirstMilestoneBoss) {
+			const float cx = kFieldW * 0.5f;
+			const float cy = kFieldTop + (kFieldH - kFieldTop) * 0.46f;
+			const float k = clampf(kDt * 5.2f, 0.0f, 1.0f);
+			b.x += (cx - b.x) * k;
+			b.y += (cy - b.y) * k;
+			b.boomT -= kDt;
+			if (b.boomT <= 0 && b.leaveT < 4.92f) {
+				const float p = clampf(b.leaveT / 5.0f, 0.0f, 1.0f);
+				const bool onBoss = gRng.unit() < 0.58f;
+				const float bx = onBoss ? clampf(b.x + gRng.range(-b.radius * 1.4f, b.radius * 1.4f), 20.0f, kFieldW - 20.0f)
+				                        : gRng.range(24.0f, kFieldW - 24.0f);
+				const float by = onBoss ? clampf(b.y + gRng.range(-b.radius * 1.3f, b.radius * 1.3f), kFieldTop + 20.0f, kFieldH - 20.0f)
+				                        : gRng.range(kFieldTop + 22.0f, kFieldH - 22.0f);
+				boom::start(bx, by, gRng.range(0.65f, 1.05f + 0.45f * p));
+				emitSparks(bx, by, hueColor(gRng.unit()), juiceAmount(10), 160);
+				audio::play(SFX_BOOM, 0.55f + 0.35f * p, fieldPan(bx), gRng.range(0.88f, 1.25f));
+				shake = fmaxf(shake, 0.22f + 0.28f * p);
+				b.boomT = lerpf(0.32f, 0.09f, p);
+			}
+			if (b.leaveT >= 5.0f) {
+				bossSpawnPieces(b.id, b.x, b.y);
+				audio::play(SFX_FINALE_BURST, 1.0f);
+				audio::play(SFX_VICTORY, 1.0f);
+				b.on = false;
+				orcNextRoom();
+			}
+			return;
+		}
 		b.y -= 40 * kDt;
 		if (b.leaveT > 1.6f) {
 			b.on = false;
@@ -1240,27 +1337,33 @@ void Game::drawBoss(bool solid) const {
 		}
 	}
 	if (b.hidden) return;
+	const bool milestoneDead = b.beaten && b.id >= kFirstMilestoneBoss;
 	float alpha = 1;
-	if (b.beaten) alpha = clampf(1 - b.leaveT / 1.6f, 0, 1);
-	if (b.dazeT > 0) {
+	if (milestoneDead) alpha = 1.0f;
+	else if (b.beaten) alpha = clampf(1 - b.leaveT / 1.6f, 0, 1);
+	if (b.dazeT > 0 && !milestoneDead) {
 		// Confused: a flicker no faster than three times a second, or a steady see-through look with Calm Effects.
 		alpha *= gSave.calmFx ? 0.55f : (((int)(b.dazeT * 6)) & 1 ? 0.35f : 0.9f);
 	}
-	const float grow = b.squash < 0 ? -b.squash * 0.8f : 0;
+	const float deadP = milestoneDead ? clampf(b.leaveT / 5.0f, 0.0f, 1.0f) : 0.0f;
+	const float grow = (b.squash < 0 ? -b.squash * 0.8f : 0) + (milestoneDead ? (0.06f * sinf(b.leaveT * 26.0f) + 0.14f * deadP) : 0.0f);
 	const float flat = b.squash > 0 ? b.squash * 0.25f : 0;
 	const float sx = (1 + grow) * (1 + flat), sy = (1 + grow) * (1 - flat);
 	const bool hurt = b.hurtT > 0;
-	const float wob = b.dazeT > 0 ? sinf(b.t * 7) * 0.25f : sinf(b.t * 1.7f) * 0.06f;
+	const float wob = milestoneDead ? sinf(b.leaveT * 14.0f) * 0.16f : (b.dazeT > 0 ? sinf(b.t * 7) * 0.25f : sinf(b.t * 1.7f) * 0.06f);
+	const float bx = b.x + (milestoneDead && !gSave.calmFx ? sinf(b.leaveT * 52.0f) * (2.2f + 4.0f * deadP) : 0.0f);
+	const float by = b.y + (milestoneDead && !gSave.calmFx ? cosf(b.leaveT * 43.0f) * (1.8f + 3.2f * deadP) : 0.0f);
 	// The guard: a cool ring while it's up, a warm one while it's open.
 	if (!b.beaten && b.enterT <= 0 && b.dazeT <= 0) {
 		const float ring = b.radius * 1.5f * (1 + grow) / 34;
 		const float pulse = 0.65f + 0.25f * sinf(b.t * 5);
-		if (b.guard) gfx::sprite(SHEET_SPRITES, sprites_ring_idx, b.x, b.y, ring, ring, 0, rgba(140, 200, 255, (int)(200 * pulse * alpha)));
-		else gfx::sprite(SHEET_SPRITES, sprites_ring_idx, b.x, b.y, ring * 1.08f, ring * 1.08f, 0, rgba(255, 220, 110, (int)(230 * pulse * alpha)));
+		if (b.guard) gfx::sprite(SHEET_SPRITES, sprites_ring_idx, bx, by, ring, ring, 0, rgba(140, 200, 255, (int)(200 * pulse * alpha)));
+		else gfx::sprite(SHEET_SPRITES, sprites_ring_idx, bx, by, ring * 1.08f, ring * 1.08f, 0, rgba(255, 220, 110, (int)(230 * pulse * alpha)));
 	}
-	// The pose: dizzy when confused or beaten, laughing with the guard down, gritting its teeth mid-attack.
+	// The pose: shocked X-eye death pose on milestone finales, dizzy when confused/beaten, laughing with guard down, gritting mid-attack.
 	const int pose = b.beaten || b.dazeT > 0 ? BOSS_POSE_DAZE : !b.guard ? BOSS_POSE_OPEN : b.attack != ATK_NONE ? BOSS_POSE_WIND : BOSS_POSE_GUARD;
-	const u32 tint = hurt ? rgba(255, 140, 140, (int)(255 * alpha)) : rgba(255, 255, 255, (int)(255 * alpha));
+	const u32 tint = hurt ? rgba(255, 140, 140, (int)(255 * alpha))
+	                      : (milestoneDead ? rgba(255, 240 - (int)(55 * deadP), 240 - (int)(85 * deadP), 255) : rgba(255, 255, 255, (int)(255 * alpha)));
 	static const float kArtDiv[BOSS_COUNT] = {40.0f, 35.5f, 39.0f, 38.0f, 40.0f, 39.0f, 40.0f};
 	static const float kMeshDiv[BOSS_COUNT] = {23.0f, 19.0f, 20.5f, 18.0f, 21.0f, 21.0f, 22.0f};
 	static const int kMeshId[BOSS_COUNT] = {m3d::MESH_MELON, m3d::MESH_BOMB, m3d::MESH_PINEAPPLE, m3d::MESH_CHILI, m3d::MESH_SPIKY, m3d::MESH_LEMON, m3d::MESH_APPLE};
@@ -1270,21 +1373,32 @@ void Game::drawBoss(bool solid) const {
 	static const int kBodyIdx[BOSS_COUNT] = {
 	    sprites_boss_melon_guard_idx, sprites_boss_king_guard_idx, sprites_boss_pineapple_guard_idx, sprites_boss_chili_guard_idx,
 	    sprites_boss_durian_guard_idx, sprites_boss_lemon_guard_idx, sprites_boss_apple_guard_idx};
+	static const int kDeadFaceIdx[3] = {
+	    sprites_bface_durian_dead_idx, sprites_bface_lemon_dead_idx, sprites_bface_apple_dead_idx};
+	static const int kDeadBodyIdx[3] = {
+	    sprites_boss_durian_dead_idx, sprites_boss_lemon_dead_idx, sprites_boss_apple_dead_idx};
 	const int bi = b.id % BOSS_COUNT;
+	const int faceIdx = milestoneDead ? kDeadFaceIdx[bi - kFirstMilestoneBoss] : (kFaceIdx[bi] + pose);
+	const int bodyIdx = milestoneDead ? kDeadBodyIdx[bi - kFirstMilestoneBoss] : (kBodyIdx[bi] + pose);
 	const float art = b.radius / kArtDiv[bi];
 	if (drawing3D()) {
 		// The game's own 3D fruit, made big, with the pose's face laid over it.
 		m3d::begin(kFieldW, gfx::stereoPerZ(), true);
 		m3d::Skin skin = {hurt ? 0.6f : (b.surgeT > 0 ? 0.25f : 0.0f), 1.0f, 0.35f, b.surgeT > 0 ? 0.1f : 0.35f, alpha, 0.3f};
+		if (!hurt && b.surgeT <= 0 && milestoneDead) {
+			skin = {0.22f * deadP, 1.0f, 0.62f, 0.25f, 1.0f, 0.35f};
+		} else if (!hurt && b.surgeT <= 0 && bi == BOSS_DURIAN) {
+			skin = {0.26f, 0.80f, 0.70f, 0.32f, alpha, 0.25f};
+		}
 		m3d::setSkin(&skin);
 		const float s = b.radius / kMeshDiv[bi];
-		m3d::Pose pose3 = {b.x, b.y, 30, b.rx, b.t * 0.4f, wob, s * (1 + grow), 0, 0, 0};
+		m3d::Pose pose3 = {bx, by, 30, b.rx, b.t * 0.4f, wob, s * (1 + grow), 0, 0, 0};
 		m3d::draw(kMeshId[bi], m3d::PART_WHOLE, pose3);
 		m3d::setSkin(nullptr);
 		m3d::end();
-		gfx::sprite(SHEET_SPRITES, kFaceIdx[bi] + pose, b.x, b.y, art * sx, art * sy, wob, tint);
+		gfx::sprite(SHEET_SPRITES, faceIdx, bx, by, art * sx, art * sy, wob, tint);
 	} else {
-		gfx::sprite(SHEET_SPRITES, kBodyIdx[bi] + pose, b.x, b.y, art * sx, art * sy, wob, tint);
+		gfx::sprite(SHEET_SPRITES, bodyIdx, bx, by, art * sx, art * sy, wob, tint);
 	}
 	if (b.id == BOSS_APPLE && !b.beaten) {
 		for (const auto& w : b.worms) {
@@ -1298,7 +1412,7 @@ void Game::drawBoss(bool solid) const {
 	}
 	// The King wears his crown; any Royal boss wears a golden crown too.
 	if ((b.id == BOSS_KING && b.crownOut <= 0) || (b.royal && b.id != BOSS_KING))
-		drawCrown(b.x, b.y - b.radius * sy - (b.id == BOSS_KING ? 2 : 8), b.radius / (b.royal ? 32.0f : 40.0f), rgba(255, 210, 70, (int)(255 * alpha)));
+		drawCrown(bx, by - b.radius * sy - (b.id == BOSS_KING ? 2 : 8), b.radius / (b.royal ? 32.0f : 40.0f), rgba(255, 210, 70, (int)(255 * alpha)));
 	if (b.attack == KING_FUSE) {
 		const float fx = b.x, fy = b.y - b.radius - 8;
 		const bool lit = ((int)(b.t * 10)) & 1;

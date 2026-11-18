@@ -7,6 +7,7 @@
 
 #include "audio.h"
 #include "audio_port.h"  // the Lab gives the 3DS music reader real time
+#include "boom.h"
 #include "fruitids.h"
 #include "game.h"
 #include "port_api.h"
@@ -294,6 +295,20 @@ bool Game::orcSaveRun() const {
 	return true;
 }
 
+void Game::orcBeginRoom50Cutscene(int bid) {
+	orc.boss = {};
+	for (auto& sShot : orc.shots) sShot.on = false;
+	orc.cutscene = true;
+	orc.dialogueLine = 0;
+	orc.dialogueChars = 0;
+	orc.dialogueLastChar = -1;
+	orc.dialoguePauseT = 0;
+	orc.dialogueWaitRelease = false;
+	orc.tensionStarted = false;
+	orc.pendingMilestoneBoss = (u8)bid;
+	audio::tensionMusic(false);
+}
+
 bool Game::orcLoadRun() {
 	OrcRunSave s = {};
 	if (!orcReadSaveFile(&s)) return false;
@@ -346,16 +361,7 @@ bool Game::orcLoadRun() {
 		bool royal = false;
 		const int bid = orchardBossForRoom(orc.room, orc.runSeed, orc.bossOrder, &royal);
 		if (orc.room == 50 && !gSave.seenRoom50Cutscene && !passName) {
-			orc.boss = {};
-			for (auto& sShot : orc.shots) sShot.on = false;
-			orc.cutscene = true;
-			orc.dialogueLine = 0;
-			orc.dialogueChars = 0;
-			orc.dialogueLastChar = -1;
-			orc.dialoguePauseT = 0;
-			orc.dialogueWaitRelease = false;
-			orc.tensionStarted = false;
-			orc.pendingMilestoneBoss = (u8)bid;
+			orcBeginRoom50Cutscene(bid);
 		} else {
 			bossStart(bid, royal);
 		}
@@ -401,7 +407,7 @@ void Game::orcStart() {
 #if defined(DEV_TOOLS) && !defined(AUTOTEST)
 		if (!passName) {
 			orc.devPrompt = true;
-			orc.devField = 0;
+			orc.devField = 1;
 			orc.devRoomTarget = 1;
 			orc.devLevelTarget = 1;
 			phase = PHASE_PLAY;
@@ -468,6 +474,17 @@ void Game::orcApplyDevSkip(int targetRoom, int targetLevel) {
 	for (auto& o : objs) o = {};
 	for (auto& p : pending) p = {};
 	// Buffer level-ups from Level 1 -> targetLevel so card picks open sequentially upon entry.
+	memset(orc.upgrade, 0, sizeof orc.upgrade);
+	memset(orc.passiveOrder, 0, sizeof orc.passiveOrder);
+	orc.passiveCount = 0;
+	for (int s = 0; s < kSlots; s++) {
+		orc.slot[s] = CARD_NONE;
+		orc.slotOn[s] = orc.slotCool[s] = 0;
+	}
+	const OrchardLevel& lv = orchardLevel(gSave.difficulty);
+	orc.maxHp = orc.hp = (float)lv.startHp;
+	orc.choosing = false;
+	orc.placing = false;
 	orc.level = targetLevel;
 	orc.levelsWaiting = targetLevel > 1 ? targetLevel - 1 : 0;
 	orc.xp = 0;
@@ -479,14 +496,7 @@ void Game::orcApplyDevSkip(int targetRoom, int targetLevel) {
 		bool royal = false;
 		const int bid = orchardBossForRoom(orc.room, orc.runSeed, orc.bossOrder, &royal);
 		if (orc.room == 50 && !gSave.seenRoom50Cutscene && !passName) {
-			orc.cutscene = true;
-			orc.dialogueLine = 0;
-			orc.dialogueChars = 0;
-			orc.dialogueLastChar = -1;
-			orc.dialoguePauseT = 0;
-			orc.dialogueWaitRelease = false;
-			orc.tensionStarted = false;
-			orc.pendingMilestoneBoss = (u8)bid;
+			orcBeginRoom50Cutscene(bid);
 		} else {
 			bossStart(bid, royal);
 		}
@@ -599,7 +609,7 @@ void Game::orcGainXp(float amount) {
 		orc.level++;
 		orc.levelsWaiting++;
 	}
-	if (orc.levelsWaiting > 0 && !orc.choosing && phase == PHASE_PLAY && (feverT > 0 || frenzyT > 0)) orcOffer();
+	if (orc.levelsWaiting > 0 && !orc.choosing && !orcBossExploding() && !orc.cutscene && phase == PHASE_PLAY && (feverT > 0 || frenzyT > 0)) orcOffer();
 }
 
 void Game::orcSliced(const Obj& o) {
@@ -738,16 +748,7 @@ void Game::orcNextRoom() {
 		for (auto& o : objs) o = {};
 		for (auto& p : pending) p = {};
 		if (orc.room == 50 && !gSave.seenRoom50Cutscene && !passName) {
-			orc.boss = {};
-			for (auto& s : orc.shots) s.on = false;
-			orc.cutscene = true;
-			orc.dialogueLine = 0;
-			orc.dialogueChars = 0;
-			orc.dialogueLastChar = -1;
-			orc.dialoguePauseT = 0;
-			orc.dialogueWaitRelease = false;
-			orc.tensionStarted = false;
-			orc.pendingMilestoneBoss = (u8)bid;
+			orcBeginRoom50Cutscene(bid);
 		} else {
 			bossStart(bid, royal);
 		}
@@ -1086,7 +1087,7 @@ void Game::orcUpdate(Blade& blade) {
 		if (orc.roomT >= kRoomSeconds) orcNextRoom();
 	}
 	// A level up opens the cards straight away, even in the middle of a swipe or a Fruit Frenzy.
-	if (orc.levelsWaiting > 0 && !orc.choosing && phase == PHASE_PLAY) {
+	if (orc.levelsWaiting > 0 && !orc.choosing && !orcBossExploding() && !orc.cutscene && phase == PHASE_PLAY) {
 		blade.reset();
 		orcOffer();
 	}
@@ -1885,7 +1886,12 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 		const Settings saveSnapshot = gSave;
 		gSave.seenRoom50Cutscene = 0;
 		orchardClearSave();
+		if (audio::available()) audio::music(MUSIC_PLAY);
 		orcApplyDevSkip(50, 1);
+		if (audio::available()) {
+			audio::update(kDt);
+			check(orc.cutscene && audio::currentTrack() < 0, "Entering the Room 50 dialogue box stops playing music", "");
+		}
 		check(orc.cutscene && orc.pendingMilestoneBoss >= BOSS_DURIAN, "Entering Room 50 for the first time triggers the Milestone cutscene", "");
 		port::AssetFile* tensionFile = port::assetOpen("audio/music_tension.pcm");
 		if (!tensionFile) tensionFile = port::assetOpen("audio/music_tension.ogg");
@@ -1903,6 +1909,86 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 		gSave = saveSnapshot;
 		check(keptAfterResetScores, "Reset Scores preserves seenRoom50Cutscene", "");
 		check(clearedAfterResetAll, "Reset Everything clears seenRoom50Cutscene", "");
+
+		// Normal boss defeat returns natural fruit waves on the following room.
+		setup();
+		bossStart(BOSS_MELON);
+		orc.room = 5;
+		orc.bossRoom = true;
+		orc.boss.enterT = 0;
+		orc.boss.y = orc.boss.baseY;
+		orc.boss.guard = false;
+		orc.boss.dazeT = 0;
+		orc.boss.left = 1;
+		bossHitSlice(orc.boss.x, orc.boss.y, 1, 0);
+		for (int i = 0; i < 110 && orc.boss.on; i++) bossUpdate(kDt);
+		orc.resumeT = 0;
+		bool sawWave5 = false;
+		for (int i = 0; i < 60; i++) {
+			if (orc.choosing) {
+				if (orc.placing) orcPlace(0);
+				else orcPick(0);
+			}
+			update(none);
+			for (const auto& o2 : objs)
+				if (o2.on) sawWave5 = true;
+			for (const auto& p2 : pending)
+				if (p2.on) sawWave5 = true;
+		}
+		check(orc.room == 6 && !orc.bossRoom && sawWave5, "Defeating a boss restores natural fruit waves on the next non-boss room", "");
+
+		// Milestone boss final hit: moves to center with X eyes, explodes screen-wide for 5s, defers level-up until finished, then bursts into fruit pieces.
+		gSave.seenRoom50Cutscene = 1;
+		setup();
+		for (auto& h : halves) h = {};
+		boom::clear();
+		orcApplyDevSkip(50, 1);
+		orc.choosing = false;
+		orc.levelsWaiting = 0;
+		orc.boss.enterT = 0;
+		orc.boss.guard = false;
+		orc.boss.dazeT = 0;
+		orc.boss.hidden = false;
+		orc.boss.left = 1;
+		orc.boss.x = 60.0f;
+		orc.boss.y = kFieldTop + 26.0f;
+		orc.xp = (float)(orcXpNeed() - 1);
+		bossHitSlice(orc.boss.x, orc.boss.y, 1, 0);
+		const bool deferredStart = orc.boss.beaten && orc.boss.on && orc.levelsWaiting >= 1 && !orc.choosing;
+		for (int i = 0; i < 180; i++) {
+			orcUpdate(none);
+			boom::update(kDt);
+		}
+		const float cx = kFieldW * 0.5f;
+		const bool midExploding = orc.boss.beaten && orc.boss.on && fabsf(orc.boss.x - cx) < 12.0f && boom::active() && !orc.choosing;
+		for (int i = 0; i < 126 && !orc.choosing; i++) {
+			orcUpdate(none);
+			boom::update(kDt);
+		}
+		const bool afterBoom = !orc.boss.on && activeHalves() >= 8 && orc.room == 51 && !orc.bossRoom && orc.choosing && orc.offerCount >= 3;
+		check(deferredStart && midExploding && afterBoom,
+		      "Milestone boss explodes at center for 5s, holds level-up until explosion ends, then bursts into pieces and advances room", "");
+		while (orc.choosing) {
+			if (orc.placing) orcPlace(0);
+			else orcPick(0);
+		}
+		orc.resumeT = 0;
+		bool sawWave51 = false;
+		for (int i = 0; i < 60; i++) {
+			update(none);
+			for (const auto& o2 : objs)
+				if (o2.on) sawWave51 = true;
+			for (const auto& p2 : pending)
+				if (p2.on) sawWave51 = true;
+		}
+		check(!orc.choosing && orc.room == 51 && sawWave51, "Fruit spawns normally in Room 51 after Milestone boss finale and deferred level-up", "");
+		addPopup("SOUR BARRAGE", kFieldW * 0.5f, kFieldTop, rgba(255, 230, 120), 0.7f);
+		for (int i = 0; i < 40; i++) updateEffects(kDt);
+		bool popupSafe = true;
+		for (const auto& pp : popups)
+			if (pp.on && pp.y - 12.0f < kFieldTop + 2.0f) popupSafe = false;
+		check(popupSafe, "Floating boss attack popups stay clear below the HUD bar while rising", "");
+		boom::clear();
 
 		orcApplyDevSkip(48, 4);
 		check(orc.room == 48 && !orc.bossRoom && orc.level == 4 && orc.levelsWaiting == 3,

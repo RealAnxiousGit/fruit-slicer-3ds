@@ -142,20 +142,52 @@ void ensureDataDir() {
 bool running() { return aptMainLoop(); }
 
 static char sTyped[64];  // the keyboard hands back UTF-8, which is longer than the letters it holds
-static int sTypeResult;
-void textStart(const char* current, int maxLen) {
+static int sTypeResult, sTypeMax;
+static bool sTyping, sTypeNumeric;
+void textStart(const char* current, int maxLen, bool numericOnly) {
+	sTypeMax = maxLen < (int)sizeof sTyped - 1 ? maxLen : (int)sizeof sTyped - 1;
+	sTypeNumeric = numericOnly;
+#ifdef AUTOTEST
+	snprintf(sTyped, sizeof sTyped, "%s", current ? current : "");
+	sTypeResult = 0;
+	sTyping = true;
+#else
 	SwkbdState kb;
-	swkbdInit(&kb, SWKBD_TYPE_QWERTY, 2, maxLen);
+	swkbdInit(&kb, numericOnly ? SWKBD_TYPE_NUMPAD : SWKBD_TYPE_QWERTY, 2, maxLen);
 	swkbdSetInitialText(&kb, current);
-	swkbdSetHintText(&kb, "Player name");
+	swkbdSetHintText(&kb, numericOnly ? "Enter number" : "Player name");
 	sTyped[0] = 0;
 	sTypeResult = swkbdInputText(&kb, sTyped, sizeof sTyped) == SWKBD_BUTTON_CONFIRM ? 1 : -1;
+	sTyping = true;
+#endif
 }
 int textPoll(char* out, size_t size) {
 	snprintf(out, size, "%s", sTyped);
 	return sTypeResult;
 }
-void textStop() {}
+void textStop() {
+	sTyping = false;
+	sTypeNumeric = false;
+}
+#ifdef AUTOTEST
+void testTextInject(const char* s) {
+	if (!sTyping || sTypeResult || !s) return;
+	for (int n = (int)strlen(sTyped); *s && n < sTypeMax; s++) {
+		if ((unsigned char)*s >= 128) continue;
+		if (sTypeNumeric && (*s < '0' || *s > '9')) continue;
+		sTyped[n++] = *s;
+		sTyped[n] = 0;
+	}
+}
+void testTextBackspace() {
+	if (!sTyping || sTypeResult) return;
+	const size_t n = strlen(sTyped);
+	if (n) sTyped[n - 1] = 0;
+}
+void testTextFinish(bool accept) {
+	if (sTyping && !sTypeResult) sTypeResult = accept ? 1 : -1;
+}
+#endif
 }  // namespace port
 
 static aptHookCookie sAptCookie;

@@ -66,7 +66,7 @@ constexpr int kSceneCount = 6;
 constexpr int kBladeCount = 6;
 
 enum ArtStyle { ART_2D, ART_3D };
-enum Effects { FX_NONE, FX_LOW, FX_MEDIUM, FX_FULL };
+enum Effects { FX_NONE, FX_LOW, FX_SIMPLE, FX_FULL, FX_MEDIUM = FX_SIMPLE };
 enum Difficulty { DIFF_EASY, DIFF_NORMAL, DIFF_HARD, DIFF_INSANE, DIFF_COUNT };
 // The Mixer's switches. Giant and Tiny can't both be on. Daily Fruit and Beat Slice ignore them all,
 // since those two throw a fixed sequence.

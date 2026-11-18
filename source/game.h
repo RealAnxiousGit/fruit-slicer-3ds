@@ -228,6 +228,9 @@ struct Game {
 	// Snap assist: the closest fruit ahead of a moving point, within range. False if none.
 	bool fruitAhead(float x, float y, float dx, float dy, float range, float* fx, float* fy) const;
 	bool calloutShown() const { return calloutT > 0 && !gHudPaused; }  // the big words, hidden behind a menu
+#if PORT_TWO_SCREENS
+	void hudMetrics(float* outH, float* outMeterY, float* outLeftX, float* outRightX) const;
+#endif
 	void drawHud() const;                       // top screen, one eye at a time
 	int activeObjects() const;
 	int activeParticles() const;
@@ -254,6 +257,7 @@ struct Game {
 	bool orcLoadRun();
 	void orcApplyDevSkip(int targetRoom, int targetLevel);
 	void orcStartBossAfterCutscene();
+	bool orcBossExploding() const { return orc.boss.on && orc.boss.beaten && orc.boss.id >= kFirstMilestoneBoss; }
 	void rushPick(int build);   // Boss Rush: takes a build and brings the first boss in
 	void drawModes12Field() const;  // the recipe, the call, the rings
 	int orcRerollPrice() const { return 15 + orc.paidRerolls * 15; }
@@ -276,6 +280,7 @@ struct Game {
 private:
 	// Orchard Blast (orchard.cpp).
 	void orcStart();
+	void orcBeginRoom50Cutscene(int bid);
 	void orcUpdate(Blade& blade);    // rooms, healing, charms, the boss: once a step while playing
 	bool orcWave();                  // throws this room's wave; true when it handled the wave
 	float orcDifficulty() const;
@@ -314,6 +319,7 @@ private:
 	void bossAttack(float dt);
 	void bossFire(int kind, float x, float y, float vx, float vy);
 	void bossHitSlice(float x, float y, float dx, float dy);
+	void bossSpawnPieces(int id, float cx, float cy);
 	int bossDamageBase(int base) const;
 	void shotsUpdate(float dt);
 	void drawBoss(bool solid) const;

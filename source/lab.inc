@@ -274,7 +274,7 @@ static void labInventory() {
 		upgrades += items[i].kind == INV_UPGRADE;
 		buttons += items[i].kind == INV_BUTTON && items[i].y + items[i].h <= kFieldH && items[i].x >= 0 && items[i].x + items[i].w <= kFieldW;
 	}
-	char d[48];
+	char d[128];
 	snprintf(d, sizeof d, "%d upgrades, %d signs on a %.0f by %.0f field", upgrades, buttons, (double)kFieldW, (double)kFieldH);
 	labCheck(upgrades == 9 && buttons == INVB_COUNT, "the Inventory lists every upgrade, and its signs fit the field", d);
 	labCheck(items[0].kind == INV_SLOT && items[0].h >= 44, "the Inventory charm slot boxes are enlarged");
@@ -362,10 +362,15 @@ static void labInventory() {
 			if (gap < worstGap) worstGap = gap;
 			if (lines > B.maxLines || gap < 6.0f || B.y < kFieldTop) wrapFits = false;
 		}
-		snprintf(d, sizeof d, "worstLines %d, minPromptGap %.1f", worstLines, (double)worstGap);
-		labCheck(wrapFits, "Room 50 cutscene text wraps within box and clears PRESS TO CONTINUE prompt", d);
+		const Room50CutsceneBox B1 = room50CutsceneBox("Wait...");
+		const Room50CutsceneBox B3 = room50CutsceneBox(kRoom50Lines[6]);
+		const bool scaledBox = B1.h <= 56.0f && B3.h > B1.h && B3.h < 90.0f;
+		snprintf(d, sizeof d, "worstLines %d, minPromptGap %.1f, B1=%.1f, B3=%.1f", worstLines, (double)worstGap, (double)B1.h, (double)B3.h);
+		labCheck(wrapFits && scaledBox, "Room 50 cutscene box scales per line, stays compact, and clears prompt", d);
 
+		if (audio::available()) audio::tensionMusic(false);
 		o.cutscene = true;
+		o.tensionStarted = false;
 		o.dialogueLine = 0;
 		o.dialogueChars = (float)strlen(kRoom50Lines[0]);
 		o.dialogueLastChar = (int)o.dialogueChars - 1;
@@ -375,8 +380,130 @@ static void labInventory() {
 		const bool startIgnored = o.cutscene && o.dialogueLine == 0;
 		press(KEY_A);
 		const bool aAdvanced = o.cutscene && o.dialogueLine == 1;
+		o.dialogueLine = 4;
+		o.dialogueChars = (float)strlen(kRoom50Lines[4]);
+		o.dialogueLastChar = (int)o.dialogueChars - 1;
+		press(KEY_A);
+		const bool atTension = o.dialogueLine == 5 && o.tensionStarted && (!audio::available() || audio::currentTrack() == -2);
+		const Screen scrKeep = sScreen;
+		const bool fromPauseKeep = sOptionsFromPause;
+		const int secKeep = sSection;
+		sOptionsFromPause = true;
+		sSection = 0;
+		leaveSection(true);
+		const bool cutMusPreserved = !audio::available() || audio::currentTrack() == -2;
+		sOptionsFromPause = fromPauseKeep;
+		sSection = secKeep;
+		sScreen = scrKeep;
+		if (audio::available()) audio::tensionMusic(false);
 		o.cutscene = false;
-		labCheck(startIgnored && aAdvanced, "Room 50 cutscene leaves KEY_START for Pause while KEY_A advances dialogue");
+		o.tensionStarted = false;
+		labCheck(startIgnored && aAdvanced && atTension && cutMusPreserved,
+		         "Room 50 cutscene keeps Start for Pause, starts tension music at line 5, and preserves music state when leaving Pause->Options");
+
+		// Dev Skip UI: small button selectors, press-and-hold acceleration, numeric typing + Backspace, Esc revert, Enter save.
+		{
+			o.devPrompt = true;
+			o.devRoomTarget = 12;
+			o.devLevelTarget = 3;
+			o.devField = 1;
+			float dx, dy, dw, dh;
+			Button db[7];
+			devSkipLayout(&dx, &dy, &dw, &dh, db);
+			press(KEY_LEFT);
+			const bool selLeft = o.devField == 0;
+			press(KEY_DOWN);
+			const bool selDown = o.devField == 3;
+			press(KEY_RIGHT);
+			press(KEY_RIGHT);
+			const bool selPlus = o.devField == 5;
+			// Press-and-hold '+' on Room (db[2]): immediate +1 step, hold delay ~0.34s, then rapid acceleration.
+			in = {};
+			in.touching = true;
+			in.tx = (int)(db[2].x + db[2].w * 0.5f);
+			in.ty = (int)(db[2].y + db[2].h * 0.5f);
+			updateDevSkip(in, false);
+			const int afterTap = o.devRoomTarget;
+			for (int f = 1; f < 10; f++) updateDevSkip(in, true);
+			const int duringDelay = o.devRoomTarget;
+			for (int f = 10; f < 90; f++) updateDevSkip(in, true);
+			const int afterHold = o.devRoomTarget;
+			in.touching = false;
+			updateDevSkip(in, true);
+			// Numeric typing + Backspace + Esc revert + Enter save for BOTH Room and Level.
+			in.touching = true;
+			in.tx = (int)(db[1].x + db[1].w * 0.5f);
+			in.ty = (int)(db[1].y + db[1].h * 0.5f);
+			updateDevSkip(in, false);
+			in.touching = false;
+			port::testTextInject("x");
+			char tbuf[16] = {};
+			port::textPoll(tbuf, sizeof tbuf);
+			const bool nonDigitsIgnored = atoi(tbuf) == afterHold;
+			port::testTextBackspace();
+			port::testTextBackspace();
+			port::testTextInject("99");
+			port::testTextFinish(false);  // Esc reverts!
+			updateDevSkip(Input{}, false);
+			const bool escRevertedRoom = !sDevTyping && o.devRoomTarget == afterHold;
+			in.touching = true;
+			updateDevSkip(in, false);
+			in.touching = false;
+			port::testTextBackspace();
+			port::testTextBackspace();
+			port::testTextInject("50");
+			port::testTextFinish(true);  // Enter saves!
+			updateDevSkip(Input{}, false);
+			const bool enterSavedRoom = !sDevTyping && o.devRoomTarget == 50;
+
+			// Now Level box (db[4]): Esc revert + Enter save.
+			in.touching = true;
+			in.tx = (int)(db[4].x + db[4].w * 0.5f);
+			in.ty = (int)(db[4].y + db[4].h * 0.5f);
+			updateDevSkip(in, false);
+			in.touching = false;
+			port::testTextBackspace();
+			port::testTextInject("88");
+			port::testTextFinish(false);
+			updateDevSkip(Input{}, false);
+			const bool escRevertedLvl = !sDevTyping && o.devLevelTarget == 3;
+			in.touching = true;
+			updateDevSkip(in, false);
+			in.touching = false;
+			port::testTextBackspace();
+			port::testTextInject("7");
+			port::testTextFinish(true);
+			updateDevSkip(Input{}, false);
+			const bool enterSavedLvl = !sDevTyping && o.devLevelTarget == 7;
+			o.devPrompt = false;
+			sDevTyping = 0;
+			snprintf(d, sizeof d, "tap=%d delay=%d hold=%d room=%d lvl=%d", afterTap, duringDelay, afterHold, o.devRoomTarget, o.devLevelTarget);
+			labCheck(selLeft && selDown && selPlus && afterTap == 13 && duringDelay == 13 && afterHold >= 22 &&
+			         nonDigitsIgnored && escRevertedRoom && enterSavedRoom && escRevertedLvl && enterSavedLvl,
+			         "Dev Skip selectors, hold acceleration, numeric Backspace, Esc revert, and Enter save work for Room & Level", d);
+		}
+		// Quick button highlight fade transitions smoothly (neither instant snap nor slow drag) and does not double-step within a frame.
+		{
+			const Screen drawWas = sDrawing;
+			sDrawing = SCREEN_GUIDES;
+			beginHighlightFrame();
+			const float hi0 = highlightFade(444, 55, 42, 26, true);
+			const float sameFrame = highlightFade(444, 55, 42, 26, false);
+			beginHighlightFrame();
+			const float step1 = highlightFade(444, 55, 42, 26, false);
+			beginHighlightFrame();
+			const float step2 = highlightFade(444, 55, 42, 26, false);
+			for (int k = 0; k < 12; k++) {
+				beginHighlightFrame();
+				highlightFade(444, 55, 42, 26, false);
+			}
+			beginHighlightFrame();
+			const float done = highlightFade(444, 55, 42, 26, false);
+			sDrawing = drawWas;
+			snprintf(d, sizeof d, "hi0=%.2f same=%.2f s2=%.2f done=%.2f", (double)hi0, (double)sameFrame, (double)step2, (double)done);
+			labCheck(fabsf(hi0 - 1.0f) < 0.01f && fabsf(sameFrame - 1.0f) < 0.01f && step1 < 1.0f && step2 > 0.0f && step2 < 0.9f && done <= 0.001f,
+			         "Button highlight quick-fades over ~0.11s and stays frame-locked across stereo draws", d);
+		}
 	}
 	// Heat Surge music speed survives updateFrame() when fighting Inferno Pepper unpaused.
 	{
@@ -1489,6 +1616,132 @@ static void labFinish(Input& in) {
 		}
 		labInventory();
 		sGame.labProbes(sBlade, labCheck);
+		{
+			const u8 wasFx = gSave.effects, wasHc = gSave.highContrast;
+			const float wasDull = gBladeDull;
+			labCheck(FX_SIMPLE == 2 && FX_MEDIUM == 2 && FX_FULL == 3, "Effects enum preserves index 2 for Simple/Medium and 3 for Full");
+#if PORT_3DS
+			labCheck(strcmp(kEffectNames[FX_MEDIUM], "Medium") == 0 && strcmp(kEffectNames[FX_FULL], "Full") == 0, "3DS keeps classic Medium and Full Effects labels");
+			gSave.effects = FX_FULL;
+			gSave.highContrast = 0;
+			labCheck(!gfx::fullGpuFx(), "3DS disables Full GPU additive pass");
+			gfx::setAdditive(true);
+			labCheck(!gfx::isAdditive(), "3DS setAdditive stays an inert no-op");
+#else
+			labCheck(strcmp(kEffectNames[FX_SIMPLE], "Simple") == 0 && strcmp(kEffectNames[FX_FULL], "Full") == 0, "Universal exposes Simple and Full Effects labels");
+			gSave.highContrast = 0;
+			gSave.effects = FX_NONE;
+			labCheck(!gfx::fullGpuFx(), "Effects: None disables Full GPU FX");
+			gSave.effects = FX_LOW;
+			labCheck(!gfx::fullGpuFx(), "Effects: Low disables Full GPU FX");
+			gSave.effects = FX_SIMPLE;
+			labCheck(!gfx::fullGpuFx(), "Effects: Simple disables Full GPU FX");
+			gSave.effects = FX_FULL;
+			gSave.highContrast = 1;
+			labCheck(!gfx::fullGpuFx(), "High Contrast disables Full GPU additive FX");
+			gSave.highContrast = 0;
+			labCheck(gfx::fullGpuFx(), "Effects: Full enables GPU additive FX when High Contrast is off");
+			gfx::setAdditive(true);
+			labCheck(gfx::isAdditive(), "gfx::setAdditive(true) enters additive blend state");
+			gfx::setAdditive(false);
+			labCheck(!gfx::isAdditive(), "gfx::setAdditive(false) restores standard blend state");
+			gfx::setAdditive(true);
+			gfx::beginField();
+			labCheck(!gfx::isAdditive(), "gfx::beginField clears lingering additive state");
+
+			sGame.start(MODE_CLASSIC);
+			for (auto& o : sGame.objs) o.on = false;
+			for (auto& r : sGame.rings) r.on = false;
+			for (auto& p : sGame.parts) p.on = false;
+			sGame.objs[0] = {};
+			sGame.objs[0].on = true;
+			sGame.objs[0].kind = OBJ_GOLD;
+			sGame.objs[0].x = 160;
+			sGame.objs[0].y = 120;
+			sGame.rings[0] = {160, 120, 0.2f, 0.4f, 1.4f, WHITE, true};
+			sGame.parts[0] = {160, 120, 0, 0, 0.2f, 0.4f, 1.0f, 0, WHITE, 1, true};
+			sGame.flash = 0.5f;
+			sGame.flashColor = WHITE;
+			boom::start(160, 120, 1.0f);
+			boom::update(0.12f);
+			sBlade.reset();
+			sBlade.count = 4;
+			sBlade.head = 4;
+			for (int i = 0; i < 4; i++) sBlade.trail[i] = {120.0f + i * 20.0f, 120.0f, 0.02f * (3 - i)};
+			gBladeDull = 0;
+
+			gSave.effects = FX_SIMPLE;
+			gfx::beginField();
+			const u32 c0 = gfx::drawCallsLive;
+			sGame.drawField(sBlade);
+			gfx::beginField();
+			const u32 simpleCalls = gfx::drawCallsLive - c0;
+			labCheck(!gfx::isAdditive(), "drawField under Effects: Simple leaves standard blend restored");
+
+			gSave.effects = FX_FULL;
+			gfx::beginField();
+			const u32 c1 = gfx::drawCallsLive;
+			sGame.drawField(sBlade);
+			gfx::beginField();
+			const u32 fullCalls = gfx::drawCallsLive - c1;
+			labCheck(!gfx::isAdditive(), "drawField under Effects: Full leaves standard blend restored");
+
+			char msg[64];
+			snprintf(msg, sizeof msg, "simple=%u full=%u", (unsigned)simpleCalls, (unsigned)fullCalls);
+			labCheck(fullCalls > simpleCalls, "Effects: Full issues additional GPU additive blend passes beyond Simple", msg);
+
+			boom::clear();
+			sBlade.reset();
+			sGame.flash = 0;
+			sGame.objs[0].on = false;
+			sGame.rings[0].on = false;
+			sGame.parts[0].on = false;
+#endif
+			gBladeDull = wasDull;
+			gSave.effects = wasFx;
+			gSave.highContrast = wasHc;
+		}
+		{
+#if PORT_TWO_SCREENS
+			sGame.start(MODE_PRACTICE);
+			float ph = 0, pmy = 0, plx = 0, prx = 0;
+			sGame.hudMetrics(&ph, &pmy, &plx, &prx);
+			labCheck(ph <= 56.0f && pmy > 2.0f + ph && pmy <= 2.0f + ph + 8.0f, "3DS HUD box shrinks snugly when Practice hides coins and timer");
+			labCheck(plx >= 22.0f && prx <= 376.0f, "3DS Practice HUD text stays clear of left and right corner pins");
+			static const Mode kHudModes[] = {MODE_CLASSIC, MODE_ARCADE, MODE_ORCHARD};
+			for (Mode m : kHudModes) {
+				sGame.start(m);
+				float mh = 0, mmy = 0, mlx = 0, mrx = 0;
+				sGame.hudMetrics(&mh, &mmy, &mlx, &mrx);
+				labCheck(mh > ph && mh < 82.0f && mmy > 2.0f + mh, "3DS bottom-row modes expand HUD compactly under 82px and shift meter right below");
+				labCheck(mlx >= 22.0f && mrx <= 376.0f, "3DS HUD text stays clear of corner pins across modes");
+			}
+#else
+#if PORT_PAUSE_BUTTON
+			labCheck(kPauseSign.y >= kFieldTop + 4.0f && kInvSign.x + kInvSign.w <= 80.0f,
+			         "Mobile Pause and Inventory buttons clear the Frenzy meter and coin/power-up lane");
+			{
+				const Screen wasScr = sScreen;
+				const bool wasInv = sOrcInv;
+				sScreen = SCREEN_GAME;
+				sGame.start(MODE_ORCHARD);
+				sGame.orc.devPrompt = true;
+				sOrcInv = false;
+				Input tapInv{};
+				tapInv.touching = true;
+				tapInv.tx = (int)(kInvSign.x + 18);
+				tapInv.ty = (int)(kInvSign.y + 18);
+				updateFrame(tapInv, false);
+				labCheck(!sOrcInv, "Mobile Inventory button ignores taps while Orchard modal holds play");
+				sGame.orc.devPrompt = false;
+				sOrcInv = wasInv;
+				sScreen = wasScr;
+			}
+#endif
+			labCheck(PORT_QUIT_BOMB == (!PORT_WEB), "Quit Game bomb stays disabled only on Web/WASM");
+			labCheck(PORT_PAUSE_BUTTON == (PORT_ANDROID || PORT_WEB), "Mobile Pause and Inventory overlay stays enabled on Android and Web");
+#endif
+		}
 		step = 1;
 #if PORT_3DS
 		labSummary();

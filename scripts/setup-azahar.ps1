@@ -58,18 +58,22 @@ foreach ($k in $keys.Keys) {
 $lines = if (Test-Path $cfg) { @(Get-Content $cfg) } else { @('[Controls]') }
 if ($lines -notcontains '[Controls]') { $lines = @('[Controls]') + $lines }
 $kept = $lines | Where-Object { $_ -notmatch '^profile(\\default)?=' -and $_ -notmatch '^profiles\\2\\' -and $_ -notmatch '^profiles\\size=' }
-# The speed settings measured best on low-end PCs: OpenGL uses far less memory than Vulkan here (about
-# 0.7 GB against 1.3 GB), and vsync would halve the frame rate on any frame that runs a little late.
-$speed = [ordered]@{ graphics_api = '1'; use_vsync = 'false'; shaders_accurate_mul = 'false'; async_shader_compilation = 'true'; use_disk_shader_cache = 'true'; use_hw_shader = 'true' }
-$pattern = '^(' + (($speed.Keys | ForEach-Object { [regex]::Escape($_) }) -join '|') + ')(\\default)?='
+# Use Vulkan by default for testing and smooth hardware acceleration; disable vsync so late frames don't halve framerate.
+$speed = [ordered]@{ graphics_api = '2'; use_vsync = 'false'; shaders_accurate_mul = 'false'; async_shader_compilation = 'true'; use_disk_shader_cache = 'true'; use_hw_shader = 'true' }
+$layout = [ordered]@{ layout_option = '0'; aspect_ratio = '0'; screen_top_stretch = 'false'; screen_bottom_stretch = 'false' }
+$pattern = '^(' + (($speed.Keys + $layout.Keys | ForEach-Object { [regex]::Escape($_) }) -join '|') + ')(\\default)?='
 $kept = $kept | Where-Object { $_ -notmatch $pattern }
 if ($kept -notcontains '[Renderer]') { $kept = @($kept) + '[Renderer]' }
+if ($kept -notcontains '[Layout]') { $kept = @($kept) + '[Layout]' }
 $out = New-Object System.Collections.ArrayList
 foreach ($l in $kept) {
     [void]$out.Add($l)
     if ($l -eq '[Controls]') { foreach ($b in $block) { [void]$out.Add($b) } }
     if ($l -eq '[Renderer]') {
         foreach ($k in $speed.Keys) { [void]$out.Add("$k\default=false"); [void]$out.Add("$k=$($speed[$k])") }
+    }
+    if ($l -eq '[Layout]') {
+        foreach ($k in $layout.Keys) { [void]$out.Add("$k\default=false"); [void]$out.Add("$k=$($layout[$k])") }
     }
 }
 [IO.File]::WriteAllLines($cfg, [string[]]$out.ToArray())

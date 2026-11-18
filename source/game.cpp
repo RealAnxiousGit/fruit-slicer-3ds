@@ -1869,6 +1869,8 @@ void Game::updateEffects(float dt) {
 		if (!p.on) continue;
 		p.life -= dt;
 		p.y -= 26 * dt;
+		const float floorY = kFieldTop + ((p.x - gfx::textWidth(p.text, p.scale) * 0.5f < 72.0f) ? 26.0f : 16.0f);
+		if (p.y < floorY) p.y = floorY;
 		if (p.life <= 0) p.on = false;
 	}
 	for (auto& r : rings) {
@@ -2283,6 +2285,37 @@ void Game::drawField(const Blade& blade) const {
 		if (bloom >= 2) gfx::sprite(SHEET_SPRITES, sprites_glow_idx, finaleX, finaleY, g * 2.3f, g * 2.3f, 0, rgba(255, 190, 70, 60));
 		gfx::sprite(SHEET_SPRITES, sprites_glow_idx, finaleX, finaleY, g * 1.5f, g * 1.5f, 0, rgba(255, 190, 70, 170));
 	}
+#if !PORT_3DS
+	if (gfx::fullGpuFx()) {
+		const float calm = gSave.calmFx ? 0.45f : 1.0f;
+		gfx::setAdditive(true);
+		for (const auto& o : objs) {
+			if (!o.on || o.y < -30) continue;
+			if (o.kind == OBJ_BOMB) {
+				const float p = 1.65f + sinf(o.age * 14) * 0.25f;
+				const u32 c = gSave.colorBlind == 1 || gSave.colorBlind == 2 ? rgba(95, 130, 255, (u8)(95 * calm)) : rgba(255, 65, 40, (u8)(95 * calm));
+				gfx::sprite(SHEET_SPRITES, sprites_glow_idx, o.x, o.y, p, p, 0, c);
+			} else if (o.kind == OBJ_GOLD && bloom > 0) {
+				const float p = (1.85f + sinf(o.age * 9) * 0.16f) * bloomSize;
+				gfx::sprite(SHEET_SPRITES, sprites_glow_idx, o.x, o.y, p, p, 0, rgba(255, 220, 95, (u8)(115 * calm)));
+			} else if (powerSprite(o.kind) >= 0) {
+				const u32 pc = o.kind == OBJ_FREEZE ? rgba(110, 225, 255, (u8)(105 * calm)) :
+				               o.kind == OBJ_FRENZY ? rgba(255, 130, 225, (u8)(105 * calm)) : rgba(140, 255, 140, (u8)(105 * calm));
+				gfx::sprite(SHEET_SPRITES, sprites_glow_idx, o.x, o.y, 1.55f + sinf(o.age * 8) * 0.15f, 1.55f + sinf(o.age * 8) * 0.15f, 0, pc);
+			}
+		}
+		if (finaleOn) {
+			const float g = (2.1f + finaleSwell * 3.1f) * (bloom > 0 ? bloomSize : 0.85f);
+			gfx::sprite(SHEET_SPRITES, sprites_glow_idx, finaleX, finaleY, g * 1.9f, g * 1.9f, 0, rgba(255, 200, 80, (u8)(105 * calm)));
+		}
+		if (feverT > 0 && !gSave.calmFx && !sLightFrenzy) {
+			const float fw = 0.28f + 0.14f * sinf(elapsed * 8.0f);
+			gfx::sprite(SHEET_SPRITES, sprites_glow_idx, 0, kFieldH, 3.6f, 3.6f, 0, withAlpha(cycleColor(elapsed * 0.9f), fw * 0.45f));
+			gfx::sprite(SHEET_SPRITES, sprites_glow_idx, kFieldW, kFieldH, 3.6f, 3.6f, 0, withAlpha(cycleColor(elapsed * 0.9f + 0.5f), fw * 0.45f));
+		}
+		gfx::setAdditive(false);
+	}
+#endif
 
 	if (orchardLike()) drawOrchardField();  // the boss sits behind the fruit
 	drawMarks(false, 0, 0);
@@ -2321,18 +2354,49 @@ void Game::drawField(const Blade& blade) const {
 		gfx::rect(kFieldW * 0.5f - 130, kFieldTop + 8, 260, 8, rgba(16, 10, 34, 190));
 		gfx::rect(kFieldW * 0.5f - 130, kFieldTop + 8, 260 * clampf(left, 0, 1), 8, left < 0.3f ? rgba(255, 90, 80) : rgba(255, 210, 90));
 	}
-	for (const auto& r : rings) {
-		if (!r.on) continue;
-		float t = 1 - r.life / r.maxLife;
-		float s = 0.2f + t * r.maxScale;
-		gfx::sprite(SHEET_SPRITES, sprites_ring_idx, r.x, r.y, s, s, 0, withAlpha(r.color, (1 - t) * 0.9f));
-	}
-	jobs::wait();
-	for (const auto& p : parts) {
-		if (!p.on || p.y < -8) continue;
-		float life = p.life / p.maxLife;
-		gfx::sprite(SHEET_SPRITES, p.sprite ? sprites_spark_idx : sprites_drop_idx, p.x, p.y, p.size, p.size, 0,
-		            withAlpha(p.color, clampf(life * 1.6f, 0, 1)));
+#if !PORT_3DS
+	const bool addFx = gfx::fullGpuFx();
+	if (addFx) {
+		const float calm = gSave.calmFx ? 0.55f : 1.0f;
+		jobs::wait();
+		for (const auto& p : parts) {
+			if (!p.on || p.y < -8 || p.sprite) continue;
+			float life = p.life / p.maxLife;
+			gfx::sprite(SHEET_SPRITES, sprites_drop_idx, p.x, p.y, p.size, p.size, 0, withAlpha(p.color, clampf(life * 1.6f, 0, 1)));
+		}
+		gfx::setAdditive(true);
+		for (const auto& r : rings) {
+			if (!r.on) continue;
+			float t = 1 - r.life / r.maxLife;
+			float s = 0.2f + t * r.maxScale;
+			gfx::sprite(SHEET_SPRITES, sprites_ring_idx, r.x, r.y, s, s, 0, withAlpha(r.color, (1 - t) * 0.92f * calm));
+		}
+		for (const auto& p : parts) {
+			if (!p.on || p.y < -8) continue;
+			float life = p.life / p.maxLife;
+			if (p.sprite) {
+				gfx::sprite(SHEET_SPRITES, sprites_spark_idx, p.x, p.y, p.size * 1.15f, p.size * 1.15f, 0, withAlpha(p.color, clampf(life * 1.6f, 0, 1) * calm));
+			} else if (p.size >= 0.7f && !sLightFrenzy) {
+				gfx::sprite(SHEET_SPRITES, sprites_glow_idx, p.x, p.y, p.size * 0.38f, p.size * 0.38f, 0, withAlpha(p.color, clampf(life * 1.2f, 0, 1) * 0.22f * calm));
+			}
+		}
+		gfx::setAdditive(false);
+	} else
+#endif
+	{
+		for (const auto& r : rings) {
+			if (!r.on) continue;
+			float t = 1 - r.life / r.maxLife;
+			float s = 0.2f + t * r.maxScale;
+			gfx::sprite(SHEET_SPRITES, sprites_ring_idx, r.x, r.y, s, s, 0, withAlpha(r.color, (1 - t) * 0.9f));
+		}
+		jobs::wait();
+		for (const auto& p : parts) {
+			if (!p.on || p.y < -8) continue;
+			float life = p.life / p.maxLife;
+			gfx::sprite(SHEET_SPRITES, p.sprite ? sprites_spark_idx : sprites_drop_idx, p.x, p.y, p.size, p.size, 0,
+			            withAlpha(p.color, clampf(life * 1.6f, 0, 1)));
+		}
 	}
 	boom::draw();
 	if (mode == MODE_BEAT) drawBeatPulse();
@@ -2346,7 +2410,17 @@ void Game::drawField(const Blade& blade) const {
 #if PORT_TWO_SCREENS
 	if (mode == MODE_PRACTICE) drawPractice();  // one screen: drawn over the score sign instead, in drawHud
 #endif
-	if (flash > 0) gfx::rect(kFillX, kFillX, kFillW, kFillW, withAlpha(flashColor, clampf(flash, 0, 1) * (gSave.calmFx ? 0.25f : 1.0f)));
+	if (flash > 0) {
+		const float fa = clampf(flash, 0, 1) * (gSave.calmFx ? 0.25f : 1.0f);
+		gfx::rect(kFillX, kFillX, kFillW, kFillW, withAlpha(flashColor, fa));
+#if !PORT_3DS
+		if (addFx && !gSave.calmFx) {
+			gfx::setAdditive(true);
+			gfx::sprite(SHEET_SPRITES, sprites_glow_idx, kFieldW * 0.5f, kFieldH * 0.5f, 5.5f, 4.0f, 0, withAlpha(flashColor, fa * 0.26f));
+			gfx::setAdditive(false);
+		}
+#endif
+	}
 	drawCaptions(kFieldH - 4, kFieldW * 0.5f);
 }
 
@@ -2383,11 +2457,26 @@ void Game::drawFieldTop() const {
 	}
 }
 
+void Game::hudMetrics(float* outH, float* outMeterY, float* outLeftX, float* outRightX) const {
+	const bool hasCoins = mode != MODE_PRACTICE;
+	const bool hasBottomInfo = hasCoins || maxStrikes > 0 || timed() || mode == MODE_BEAT || orchardLike();
+	const float hudH = hasBottomInfo ? 78.0f : 52.0f;
+	if (outH) *outH = hudH;
+	if (outMeterY) *outMeterY = 2.0f + hudH + 3.0f;
+	if (outLeftX) *outLeftX = 24.0f;
+	if (outRightX) *outRightX = 374.0f;
+}
+
 void Game::drawHud() const {
 	char buf[32];
+	const bool hasCoins = mode != MODE_PRACTICE;
+	float hudH = 78.0f, by = 83.0f, kHudLeft = 24.0f, kHudRight = 374.0f;
+	hudMetrics(&hudH, &by, &kHudLeft, &kHudRight);
+	const bool hasBottomInfo = hudH > 60.0f;
+
 	// Status panel plane.
 	gfx::setDepth(0.5f);
-	gfx::sign(sprites_plank_idx, 6, 2, 388, 86, COL_PLANK);
+	gfx::sign(sprites_plank_idx, 6, 2, 388, hudH, COL_PLANK);
 
 	// Score: closest plane.
 	gfx::setDepth(1.3f);
@@ -2395,26 +2484,26 @@ void Game::drawHud() const {
 	snprintf(buf, sizeof buf, "%lu", (unsigned long)score);
 	float ss = 1.05f;
 	const float sw = gfx::textWidth(buf, ss);
-	if (sw > 112) ss *= 112 / sw;
-	gfx::text(buf, 20, 8 - (pulse - 1) * 16, ss * pulse, feverT > 0 ? cycleColor(elapsed * 0.6f) : COL_ACCENT);
+	if (sw > 106) ss *= 106 / sw;
+	gfx::text(buf, kHudLeft, 7.0f - (pulse - 1) * 16, ss * pulse, feverT > 0 ? cycleColor(elapsed * 0.6f) : COL_ACCENT);
 
 	// Coins made this run sit cleanly under the score on the left, independent of combo width.
-	if (mode != MODE_PRACTICE) {
+	if (hasCoins) {
 		float cp = 1.0f + clampf(coinPulse, 0, 1) * 0.3f;
 		snprintf(buf, sizeof buf, "%lu", (unsigned long)runCoins());
-		gfx::sprite(SHEET_SPRITES, sprites_coin_idx, 27, 67, 0.42f * cp, 0.42f * cp);
-		gfx::text(buf, 39, 59, 0.42f, COL_CREAM);
+		gfx::sprite(SHEET_SPRITES, sprites_coin_idx, 30, 61, 0.42f * cp, 0.42f * cp);
+		gfx::text(buf, 42, 53, 0.42f, COL_CREAM);
 	}
 
 	gfx::setDepth(0.9f);
-	gfx::text(modeName(mode), 380, orchardLike() ? 9.0f : 10.0f, orchardLike() ? 0.44f : 0.48f, COL_CREAM, ALIGN_RIGHT);
+	gfx::text(modeName(mode), kHudRight, orchardLike() ? 8.0f : 9.0f, orchardLike() ? 0.44f : 0.48f, COL_CREAM, ALIGN_RIGHT);
 	if (orchardLike()) {
-		drawOrchardHud(380, 44, 240, 1);
+		drawOrchardHud(kHudRight, 40, 232, 1);
 	} else {
 		if (spChallenge) snprintf(buf, sizeof buf, "BEAT %s: %lu", spRival, (unsigned long)spTarget);
 		else if (passName) snprintf(buf, sizeof buf, "%s", passName);
 		else snprintf(buf, sizeof buf, mixed ? "MIXER BEST %lu" : (assisted ? "ASSISTED BEST %lu" : "BEST %lu"), (unsigned long)(score > best ? score : best));
-		gfx::text(buf, 380, 31, 0.40f, spChallenge ? rgba(160, 240, 170) : COL_DIM, ALIGN_RIGHT);
+		gfx::text(buf, kHudRight, 29, 0.40f, spChallenge ? rgba(160, 240, 170) : COL_DIM, ALIGN_RIGHT);
 	}
 
 	if (maxStrikes > 0) {
@@ -2422,22 +2511,22 @@ void Game::drawHud() const {
 			bool used = i < strikes;
 			float s = 0.7f + (used && i == strikes - 1 ? clampf(strikePulse, 0, 1) * 0.6f : 0);
 			gfx::sprite(SHEET_SPRITES, used ? sprites_pip_on_idx : sprites_pip_off_idx,
-			            368 - (maxStrikes - 1 - i) * 24, 60, s, s);
+			            364 - (maxStrikes - 1 - i) * 24, 57, s, s);
 		}
 	}
-	if (mode == MODE_BEAT) drawBeat(326, 62, 1.0f);
+	if (mode == MODE_BEAT) drawBeat(318, 59, 1.0f);
 	if (timed()) {
 		int secs = (int)ceilf(timeLeft);
 		snprintf(buf, sizeof buf, "%d:%02d", secs / 60, secs % 60);
 		bool urgent = secs <= 10 && phase == PHASE_PLAY;
 		float s = urgent ? 0.62f + 0.06f * sinf(elapsed * 12) : 0.56f;
-		gfx::text(buf, 380, 50, s, urgent ? (gSave.colorBlind == 1 || gSave.colorBlind == 2 ? rgba(255, 200, 40) : rgba(255, 110, 100)) : COL_CREAM, ALIGN_RIGHT);
+		gfx::text(buf, kHudRight, 47, s, urgent ? (gSave.colorBlind == 1 || gSave.colorBlind == 2 ? rgba(255, 200, 40) : rgba(255, 110, 100)) : COL_CREAM, ALIGN_RIGHT);
 	}
 
 	// Combo & swipe readouts: centered horizontally in the open middle lane, always above the Orchard HUD row.
 	gfx::setDepth(0.7f);
-	const float comboX = orchardLike() ? 188.0f : 195.0f;
-	const float comboMaxW = orchardLike() ? 96.0f : 106.0f;
+	const float comboX = orchardLike() ? 186.0f : 195.0f;
+	const float comboMaxW = orchardLike() ? 92.0f : 104.0f;
 	if ((chain >= 2 || comboFadeT > 0) && meterLive()) {
 		const int shown = chain >= 2 ? chain : fadingChain;
 		char line[20];
@@ -2445,7 +2534,7 @@ void Game::drawHud() const {
 		float cs = (orchardLike() ? 0.42f : 0.48f) + clampf(shown * 0.004f, 0, 0.12f);
 		const float cw = gfx::textWidth(line, cs);
 		if (cw > comboMaxW) cs *= comboMaxW / cw;
-		gfx::text(line, comboX, orchardLike() ? 8.0f : 14.0f, cs, chain >= 2 ? COL_CREAM : withAlpha(COL_CREAM, comboFadeT / kComboFade), ALIGN_CENTER);
+		gfx::text(line, comboX, orchardLike() ? 7.0f : (hasBottomInfo ? 11.0f : 7.0f), cs, chain >= 2 ? COL_CREAM : withAlpha(COL_CREAM, comboFadeT / kComboFade), ALIGN_CENTER);
 	}
 	if (comboCount >= 2) {
 		char line[20];
@@ -2453,12 +2542,12 @@ void Game::drawHud() const {
 		float sws = orchardLike() ? 0.34f : 0.40f;
 		const float sww = gfx::textWidth(line, sws);
 		if (sww > comboMaxW) sws *= comboMaxW / sww;
-		gfx::text(line, comboX, orchardLike() ? 25.0f : 38.0f, sws, cycleColor(comboCount * 0.09f), ALIGN_CENTER);
+		gfx::text(line, comboX, orchardLike() ? 23.0f : (hasBottomInfo ? 32.0f : 27.0f), sws, cycleColor(comboCount * 0.09f), ALIGN_CENTER);
 	}
 
 	// The Fruit Frenzy meter (hidden in the lessons before the Frenzy one).
 	gfx::setDepth(0.6f);
-	const float bx = 24, by = 91, bw = 352;
+	const float bx = 24, bw = 352;
 	if (meterLive()) gfx::rect(bx - 2, by - 2, bw + 4, 11, gfx::themeBar());
 	if (!meterLive()) {
 		// No meter yet: the lessons before the Frenzy one leave it out.
@@ -2473,11 +2562,12 @@ void Game::drawHud() const {
 	struct Meter { float t, max; int spr; };
 	const Meter meters[] = {{freezeT, 6, sprites_pw_freeze_idx}, {doubleT, 8, sprites_pw_double_idx}, {frenzyT, 5, sprites_pw_frenzy_idx}, {magnetT, 6, sprites_pw_magnet_idx}, {wideT, 8, sprites_pw_wide_idx}, {shield ? 1.0f : 0.0f, 1, sprites_pw_shield_idx}};
 	float mx = 24;
+	const float my = by + 28.0f;
 	for (const auto& m : meters) {
 		if (m.t <= 0) continue;
-		gfx::sprite(SHEET_SPRITES, m.spr, mx + 8, 121, 0.42f, 0.42f);
-		gfx::rect(mx + 22, 117, 60, 8, rgba(0, 0, 0, 120));
-		gfx::rect(mx + 22, 117, 60 * clampf(m.t / m.max, 0, 1), 8, COL_CREAM);
+		gfx::sprite(SHEET_SPRITES, m.spr, mx + 8, my, 0.42f, 0.42f);
+		gfx::rect(mx + 22, my - 4.0f, 60, 8, rgba(0, 0, 0, 120));
+		gfx::rect(mx + 22, my - 4.0f, 60 * clampf(m.t / m.max, 0, 1), 8, COL_CREAM);
 		mx += 94;
 	}
 
@@ -2492,7 +2582,7 @@ void Game::drawHud() const {
 		gfx::setDepth(1.6f);
 		bool go = phaseT > 0.9f;
 		float s = go ? 1.8f : 1.2f + 0.1f * sinf(phaseT * 8);
-		gfx::text(go ? "GO!" : "READY", 200, 118 - s * 20, s, go ? rgba(140, 240, 150) : rgba(255, 230, 140), ALIGN_CENTER);
+		gfx::text(go ? "GO!" : "READY", 200, fmaxf(120.0f, by + 38.0f) - s * 20, s, go ? rgba(140, 240, 150) : rgba(255, 230, 140), ALIGN_CENTER);
 	} else if (calloutShown()) {
 		gfx::setDepth(1.6f);
 		float in = clampf((1.4f - calloutT) * 8, 0, 1);
@@ -2500,7 +2590,7 @@ void Game::drawHud() const {
 		// Long combo lines must always fit on the top screen.
 		float w = gfx::textWidth(callout, s);
 		if (w > 380) s *= 380 / w;
-		gfx::text(callout, 200, phase == PHASE_FINALE ? 88 : 120, s, withAlpha(calloutColor, clampf(calloutT * 2.5f, 0, 1)), ALIGN_CENTER);
+		gfx::text(callout, 200, phase == PHASE_FINALE ? 96 : fmaxf(120.0f, by + 38.0f), s, withAlpha(calloutColor, clampf(calloutT * 2.5f, 0, 1)), ALIGN_CENTER);
 	}
 }
 #else
@@ -2516,8 +2606,8 @@ void Game::drawHud() const {
 
 	float pulse = 1.0f + clampf(scorePulse, 0, 1) * 0.16f;
 	snprintf(buf, sizeof buf, "%lu", (unsigned long)score);
-	gfx::text(buf, 16, 5 * u - (pulse - 1) * 10, 0.58f * u * pulse, feverT > 0 ? cycleColor(elapsed * 0.6f) : COL_ACCENT);
-	const float px = 16 + gfx::textWidth(buf, 0.58f * u) + 10;
+	gfx::text(buf, 20, 5 * u - (pulse - 1) * 10, 0.58f * u * pulse, feverT > 0 ? cycleColor(elapsed * 0.6f) : COL_ACCENT);
+	const float px = 20 + gfx::textWidth(buf, 0.58f * u) + 10;
 
 	float rx = right;
 	if (timed()) {

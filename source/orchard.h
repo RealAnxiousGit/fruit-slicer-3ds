@@ -150,6 +150,7 @@ struct Boss {
 	s8 track;         // the Shop music track playing for this fight
 	u8 attackCycle;   // tracks cycles between special events (Pineapple bomb lob, Chili surge)
 	float surgeT;     // The Inferno Pepper's temporary speedup duration
+	float boomT;      // Milestone boss 5s death sequence: countdown to the next blast
 	AppleWorm worms[4];  // Aggro Apple's peeking worms
 };
 

@@ -1241,12 +1241,18 @@ def build_audio():
     write_pcm("whoosh", whoosh(), s)
     write_pcm("launch", launch(), s)
     write_pcm("levelup", levelup(), s)
-    # Ominous low retro major-boss voice blip (Room 50 encounter).
-    bt = np.arange(n_of(0.072)) / s
-    bf = 132.0 - 22.0 * (bt / 0.072)
+    # Warm resonant boss voice dialogue blip (Room 50 encounter): soft fundamental + triangle blend, filtered edges.
+    dur_blip = 0.062
+    bt = np.arange(n_of(dur_blip)) / s
+    bf = 122.0 - 24.0 * (bt / dur_blip) ** 0.75
     bph = 2 * np.pi * np.cumsum(bf) / s
-    blip = (np.sign(np.sin(bph)) * 0.55 + np.sin(bph) * 0.45 + 0.25 * np.sin(2.0 * bph)) * np.minimum(1, bt / 0.004) * np.exp(-bt / 0.038)
-    write_pcm("boss_blip", norm(blip, 0.72), s)
+    tri = (2.0 / np.pi) * np.arcsin(np.sin(bph))
+    tone = 0.62 * np.sin(bph) + 0.28 * tri + 0.14 * np.sin(2.0 * bph) + 0.04 * np.sin(3.0 * bph)
+    tone = band(tone, 60, 1200, s)
+    atk = 0.5 - 0.5 * np.cos(np.pi * np.minimum(1.0, bt / 0.008))
+    rel = np.minimum(1.0, np.maximum(0.0, (dur_blip - bt) / 0.018)) ** 1.3
+    blip = tone * atk * np.exp(-bt / 0.032) * rel
+    write_pcm("boss_blip", norm(blip, 0.50), s)
 
     # Original tracks: all slow, soft and major-leaning.
     menu = [[60, 64, 67, 71, 74], [57, 60, 64, 67, 71], [65, 69, 72, 76], [55, 59, 62, 67, 69]]

@@ -98,59 +98,91 @@ void update(float dt) {
 	}
 }
 
+static void drawSmoke(const Blast& b, float ox, float oy, float calm) {
+	for (int i = 0; i < b.smoke; i++) {
+		const Bit& s = b.smokeBit[i];
+		const float u = clampf((b.t - 0.08f) / kSmokeLife, 0, 1);
+		if (u <= 0 || u >= 1) continue;
+		const float r = s.size * (0.6f + 1.2f * u);
+		gfx::sprite(SHEET_SPRITES, sprites_glow_idx, s.x + ox, s.y + oy, r / 18, r / 18, 0, rgba(58, 52, 50, (u8)(150 * (1 - u) * (1 - u) * calm)));
+	}
+}
+
+static void drawShards(const Blast& b, float ox, float oy) {
+	for (int i = 0; i < b.shards; i++) {
+		const Bit& s = b.shard[i];
+		const float u = b.t / kShardLife;
+		if (u >= 1) continue;
+		const float c = cosf(s.rot) * s.size, sn = sinf(s.rot) * s.size, px = s.x + ox, py = s.y + oy;
+		const u32 col = rgba(34, 30, 40, (u8)(255 * clampf((1 - u) * 3, 0, 1)));
+		gfx::tri(px + c, py + sn, col, px - sn * 0.7f, py + c * 0.7f, col, px - c * 0.8f, py - sn * 0.8f, col);
+	}
+}
+
+static void drawFireAndWave(const Blast& b, float ox, float oy, float calm, bool add) {
+	const float x = b.x + ox, y = b.y + oy, t = b.t;
+	const float fl = fireLife(b), f = clampf(t / fl, 0, 1);
+	if (f < 1) {
+		const float grow = 1 - (1 - f) * (1 - f) * (1 - f), r = 34 * b.size * (0.35f + 0.65f * grow), fade = 1 - f * f;
+		const float seed = b.x * 0.37f + b.y * 0.61f;
+		const float k = add ? 0.74f : 1.0f;
+		if (add) gfx::sprite(SHEET_SPRITES, sprites_glow_idx, x, y, r / 10, r / 10, 0, rgba(255, 110, 30, (u8)(85 * fade * calm)));
+		for (int i = 0; i < 5; i++) {
+			const float a = seed + i * 1.2566f, d = r * (0.25f + 0.2f * grow);
+			const float lx = x + cosf(a) * d, ly = y + sinf(a) * d * 0.8f - r * 0.1f * f, lr = r * (0.55f + 0.1f * sinf(seed + i));
+			gfx::sprite(SHEET_SPRITES, sprites_glow_idx, lx, ly, lr / 14, lr / 14, 0, rgba(190, 40, 20, (u8)(170 * fade * calm * k)));
+			gfx::sprite(SHEET_SPRITES, sprites_glow_idx, lx, ly, lr / 19, lr / 19, 0, rgba(255, 120, 30, (u8)(220 * fade * calm * k)));
+		}
+		gfx::sprite(SHEET_SPRITES, sprites_glow_idx, x, y, r / 15, r / 15, 0, rgba(255, 140, 40, (u8)(255 * fade * calm * (add ? 0.78f : 1.0f))));
+		gfx::sprite(SHEET_SPRITES, sprites_glow_idx, x, y, r / 21, r / 21, 0, rgba(255, 210, 90, (u8)(255 * fade * calm * (add ? 0.84f : 1.0f))));
+		const float core = clampf(1 - t / (fl * 0.5f), 0, 1);
+		if (core > 0) gfx::sprite(SHEET_SPRITES, sprites_glow_idx, x, y, r / 26, r / 26, 0, rgba(255, 255, 235, (u8)(255 * core * calm * (add ? 0.9f : 1.0f))));
+	}
+	const float w = t / kWaveLife;
+	if (w < 1) {
+		const float r = (add ? 32 : 30) * b.size * (0.4f + (add ? 2.3f : 2.2f) * w);
+		gfx::sprite(SHEET_SPRITES, sprites_ring_idx, x, y, r / 32, r / 32, 0, rgba(255, 210, 140, (u8)((add ? 195 : 170) * (1 - w) * (1 - w) * calm)));
+	}
+}
+
+static void drawEmbers(const Blast& b, float ox, float oy, float calm, bool add) {
+	const float sc = add ? 1.15f : 1.0f;
+	for (int i = 0; i < b.embers; i++) {
+		const Bit& e = b.ember[i];
+		const float u = b.t / kEmberLife;
+		if (u >= 1) continue;
+		const u8 g = (u8)((add ? 200 : 190) - 150 * u);
+		gfx::sprite(SHEET_SPRITES, sprites_spark_idx, e.x + ox, e.y + oy, e.size * sc, e.size * sc, 0, rgba(255, g, add ? 35 : 30, (u8)(255 * (1 - u) * (add ? calm : 1.0f))));
+	}
+}
+
 void draw(float ox, float oy) {
+#if !PORT_3DS
+	if (gfx::fullGpuFx()) {
+		for (const Blast& b : sBlasts) {
+			if (!b.on || b.t < 0) continue;
+			const float calm = gSave.calmFx ? 0.55f : 1.0f;
+			drawSmoke(b, ox, oy, calm);
+			drawShards(b, ox, oy);
+		}
+		gfx::setAdditive(true);
+		for (const Blast& b : sBlasts) {
+			if (!b.on || b.t < 0) continue;
+			const float calm = gSave.calmFx ? 0.55f : 1.0f;
+			drawFireAndWave(b, ox, oy, calm, true);
+			drawEmbers(b, ox, oy, calm, true);
+		}
+		gfx::setAdditive(false);
+		return;
+	}
+#endif
 	for (const Blast& b : sBlasts) {
 		if (!b.on || b.t < 0) continue;
-		const float x = b.x + ox, y = b.y + oy, t = b.t;
 		const float calm = gSave.calmFx ? 0.6f : 1.0f;
-		// Smoke first, behind everything: dark puffs that swell and thin out.
-		for (int i = 0; i < b.smoke; i++) {
-			const Bit& s = b.smokeBit[i];
-			const float u = clampf((t - 0.08f) / kSmokeLife, 0, 1);
-			if (u <= 0 || u >= 1) continue;
-			const float r = s.size * (0.6f + 1.2f * u);
-			gfx::sprite(SHEET_SPRITES, sprites_glow_idx, s.x + ox, s.y + oy, r / 18, r / 18, 0, rgba(58, 52, 50, (u8)(150 * (1 - u) * (1 - u) * calm)));
-		}
-		// The fireball: dark red outside, then orange and yellow, with a white-hot core that goes first.
-		// A few lumps round the middle billow out with it, so it never looks like a perfect circle.
-		const float fl = fireLife(b), f = clampf(t / fl, 0, 1);
-		if (f < 1) {
-			const float grow = 1 - (1 - f) * (1 - f) * (1 - f), r = 34 * b.size * (0.35f + 0.65f * grow), fade = 1 - f * f;
-			const float seed = b.x * 0.37f + b.y * 0.61f;
-			for (int k = 0; k < 5; k++) {
-				const float a = seed + k * 1.2566f, d = r * (0.25f + 0.2f * grow);
-				const float lx = x + cosf(a) * d, ly = y + sinf(a) * d * 0.8f - r * 0.1f * f, lr = r * (0.55f + 0.1f * sinf(seed + k));
-				gfx::sprite(SHEET_SPRITES, sprites_glow_idx, lx, ly, lr / 14, lr / 14, 0, rgba(190, 40, 20, (u8)(170 * fade * calm)));
-				gfx::sprite(SHEET_SPRITES, sprites_glow_idx, lx, ly, lr / 19, lr / 19, 0, rgba(255, 120, 30, (u8)(220 * fade * calm)));
-			}
-			gfx::sprite(SHEET_SPRITES, sprites_glow_idx, x, y, r / 15, r / 15, 0, rgba(255, 140, 40, (u8)(255 * fade * calm)));
-			gfx::sprite(SHEET_SPRITES, sprites_glow_idx, x, y, r / 21, r / 21, 0, rgba(255, 210, 90, (u8)(255 * fade * calm)));
-			const float core = clampf(1 - t / (fl * 0.5f), 0, 1);
-			if (core > 0) gfx::sprite(SHEET_SPRITES, sprites_glow_idx, x, y, r / 26, r / 26, 0, rgba(255, 255, 235, (u8)(255 * core * calm)));
-		}
-		// The shockwave: a thin warm ring racing out.
-		const float w = t / kWaveLife;
-		if (w < 1) {
-			const float r = 30 * b.size * (0.4f + 2.2f * w);
-			gfx::sprite(SHEET_SPRITES, sprites_ring_idx, x, y, r / 32, r / 32, 0, rgba(255, 210, 140, (u8)(170 * (1 - w) * (1 - w) * calm)));
-		}
-		// Pieces of the black shell, tumbling as they fall.
-		for (int i = 0; i < b.shards; i++) {
-			const Bit& s = b.shard[i];
-			const float u = t / kShardLife;
-			if (u >= 1) continue;
-			const float c = cosf(s.rot) * s.size, sn = sinf(s.rot) * s.size, px = s.x + ox, py = s.y + oy;
-			const u32 col = rgba(34, 30, 40, (u8)(255 * clampf((1 - u) * 3, 0, 1)));
-			gfx::tri(px + c, py + sn, col, px - sn * 0.7f, py + c * 0.7f, col, px - c * 0.8f, py - sn * 0.8f, col);
-		}
-		// Embers: hot sparks that cool from yellow to red.
-		for (int i = 0; i < b.embers; i++) {
-			const Bit& e = b.ember[i];
-			const float u = t / kEmberLife;
-			if (u >= 1) continue;
-			const u8 g = (u8)(190 - 150 * u);
-			gfx::sprite(SHEET_SPRITES, sprites_spark_idx, e.x + ox, e.y + oy, e.size, e.size, 0, rgba(255, g, 30, (u8)(255 * (1 - u))));
-		}
+		drawSmoke(b, ox, oy, calm);
+		drawFireAndWave(b, ox, oy, calm, false);
+		drawShards(b, ox, oy);
+		drawEmbers(b, ox, oy, calm, false);
 	}
 }
 

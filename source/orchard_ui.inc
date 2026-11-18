@@ -653,7 +653,7 @@ static bool newModeOn() { return sGame.mode >= MODE_ORCHARD && sGame.mode <= MOD
 static void drawRushPick();
 static void drawResumePrompt();
 static void drawRoom50Cutscene();
-#if defined(DEV_TOOLS) && !defined(AUTOTEST)
+#ifdef DEV_TOOLS
 static void drawDevSkip();
 #endif
 
@@ -668,7 +668,7 @@ static void drawOrchardMenus() {
 		drawResumePrompt();
 		return;
 	}
-#if defined(DEV_TOOLS) && !defined(AUTOTEST)
+#ifdef DEV_TOOLS
 	if (o.devPrompt) {
 		drawDevSkip();
 		return;
@@ -856,13 +856,20 @@ struct Room50CutsceneBox {
 };
 
 static Room50CutsceneBox room50CutsceneBox(const char* line = nullptr) {
+	static char sLastText[256] = {};
+	static float sLastFieldW = -1.0f;
+	static u8 sLastLarge = 255;
+	static Room50CutsceneBox sCachedBox;
+	if (line && sLastFieldW == kFieldW && sLastLarge == gSave.largeText && strcmp(line, sLastText) == 0) {
+		return sCachedBox;
+	}
 	Room50CutsceneBox B;
 	const float padX = (PORT_3DS || kFieldW < 340.0f) ? 12.0f : 24.0f;
 	B.w = fminf(kFieldW - padX * 2.0f, 440.0f);
 	const bool narrow = B.w < 320.0f;
 	B.textScale = PORT_3DS ? 0.30f : (narrow ? 0.30f : 0.34f);
-	B.step = PORT_3DS ? 12.0f : (narrow ? 12.0f : 14.0f);
-	B.maxW = B.w - 28.0f;
+	B.step = PORT_3DS ? 11.5f : (narrow ? 11.5f : 13.5f);
+	B.maxW = B.w - 36.0f;
 	B.maxLines = 6;
 	if (line) {
 		while (B.textScale > 0.24f && orcCountWrapLines(line, B.maxW, B.textScale, 8) > 5) {
@@ -871,13 +878,19 @@ static Room50CutsceneBox room50CutsceneBox(const char* line = nullptr) {
 		}
 	}
 	const int linesNeeded = line ? orcCountWrapLines(line, B.maxW, B.textScale, B.maxLines) : 5;
-	const float minH = PORT_3DS ? 110.0f : (narrow ? 118.0f : 114.0f);
-	const float topPad = PORT_3DS ? 14.0f : 16.0f;
-	B.h = fmaxf(minH, topPad + linesNeeded * B.step + 28.0f);
+	const float minH = PORT_3DS ? 50.0f : (narrow ? 50.0f : 54.0f);
+	const float topPad = PORT_3DS ? 12.0f : 14.0f;
+	B.h = fmaxf(minH, topPad + linesNeeded * B.step + 24.0f);
 	B.x = (kFieldW - B.w) * 0.5f;
 	B.y = kFieldH - B.h - (PORT_3DS ? 10.0f : 16.0f);
 	B.textY = B.y + topPad;
-	B.promptY = B.y + B.h - 20.0f;
+	B.promptY = B.y + B.h - 17.0f;
+	if (line) {
+		snprintf(sLastText, sizeof sLastText, "%s", line);
+		sLastFieldW = kFieldW;
+		sLastLarge = gSave.largeText;
+		sCachedBox = B;
+	}
 	return B;
 }
 
@@ -919,12 +932,18 @@ static bool updateRoom50Cutscene(const Input& in, bool wasTouching) {
 			o.dialogueChars += rate * kDt;
 			int cur = (int)o.dialogueChars;
 			if (cur > total) cur = total;
+			static float sLastBlipT = -10.0f;
+			if (sTime < sLastBlipT || (o.dialogueLine == 0 && o.dialogueChars < 0.5f)) sLastBlipT = -10.0f;
 			while (o.dialogueLastChar + 1 < cur) {
 				o.dialogueLastChar++;
 				const char ch = full[o.dialogueLastChar];
 				if (ch != ' ' && ch != '\n') {
-					const float pitch = 0.92f + (float)(((unsigned)ch * 37u + (unsigned)o.dialogueLastChar * 19u) % 21u) * 0.01f;
-					audio::play(SFX_BOSS_BLIP, 0.72f, 0.0f, pitch);
+					const float cooldown = proceedHeld ? 0.055f : 0.042f;
+					if (sTime - sLastBlipT >= cooldown) {
+						sLastBlipT = sTime;
+						const float pitch = 0.94f + (float)(((unsigned)ch * 37u + (unsigned)o.dialogueLastChar * 19u) % 13u) * 0.01f;
+						audio::play(SFX_BOSS_BLIP, 0.46f, 0.0f, pitch);
+					}
 				}
 				if (ch == '.' || ch == '!' || ch == '?') {
 					o.dialoguePauseT = 0.13f;
@@ -965,18 +984,22 @@ static bool updateRoom50Cutscene(const Input& in, bool wasTouching) {
 	return true;
 }
 
-#if defined(DEV_TOOLS) && !defined(AUTOTEST)
+#ifdef DEV_TOOLS
 static int sDevTyping = 0;  // 0 none, 1 room, 2 level
+static int sDevPrevValue = 1;
+static int sDevTouchBtn = -1;
+static int sDevHoldBtn = -1;
+static HoldRepeat sDevHold;
 
 static void devSkipLayout(float* px, float* py, float* pw, float* ph, Button* outBtns) {
 	const float w = PORT_3DS ? 290.0f : clampf(kFieldW - 32.0f, 280.0f, 340.0f);
-	const float h = 166.0f;
+	const float h = 160.0f;
 	const float x = (kFieldW - w) * 0.5f, y = kFieldTop + (kFieldH - kFieldTop - h) * 0.5f;
 	if (px) *px = x;
 	if (py) *py = y;
 	if (pw) *pw = w;
 	if (ph) *ph = h;
-	const float r1y = y + 48.0f, r2y = y + 84.0f, r3y = y + h - 38.0f;
+	const float r1y = y + 40.0f, r2y = y + 74.0f, r3y = y + 114.0f;
 	outBtns[0] = {x + 12.0f, r1y, 38.0f, 26.0f, "-"};
 	outBtns[1] = {x + 56.0f, r1y, w - 112.0f, 26.0f, nullptr};
 	outBtns[2] = {x + w - 50.0f, r1y, 38.0f, 26.0f, "+"};
@@ -984,6 +1007,15 @@ static void devSkipLayout(float* px, float* py, float* pw, float* ph, Button* ou
 	outBtns[4] = {x + 56.0f, r2y, w - 112.0f, 26.0f, nullptr};
 	outBtns[5] = {x + w - 50.0f, r2y, 38.0f, 26.0f, "+"};
 	outBtns[6] = {x + 40.0f, r3y, w - 80.0f, 30.0f, "Start Run"};
+}
+
+static void devStepField(int btnIdx) {
+	Orchard& o = sGame.orc;
+	audio::click();
+	if (btnIdx == 0 && o.devRoomTarget > 1) o.devRoomTarget--;
+	else if (btnIdx == 2 && o.devRoomTarget < 999) o.devRoomTarget++;
+	else if (btnIdx == 3 && o.devLevelTarget > 1) o.devLevelTarget--;
+	else if (btnIdx == 5 && o.devLevelTarget < 255) o.devLevelTarget++;
 }
 
 static void drawDevSkip() {
@@ -994,75 +1026,151 @@ static void drawDevSkip() {
 	gfx::rect(kFillX, kFillX, kFillW, kFillW, rgba(16, 10, 8, 195));
 	drawPlank(x, y, w, h, false, false);
 	orcFit("DEV: SKIP TO WHICH ROOM?", x + w * 0.5f, y + 12.0f, 0.39f, w - 20.0f, COL_ACCENT);
-	char buf[48];
-	drawSign(b[0], b[0].label, false, false, 0.36f);
-	snprintf(buf, sizeof buf, sDevTyping == 1 ? "ROOM: %d (TYPING...)" : "ROOM: %d (TAP TO TYPE)", o.devRoomTarget);
-	drawSign(b[1], buf, o.devField == 0, false, 0.31f);
-	drawSign(b[2], b[2].label, false, false, 0.36f);
+	char buf[48], typed[16] = {};
+	if (sDevTyping > 0) port::textPoll(typed, sizeof typed);
 
-	drawSign(b[3], b[3].label, false, false, 0.36f);
-	snprintf(buf, sizeof buf, sDevTyping == 2 ? "LEVEL: %d (TYPING...)" : "LEVEL: %d (TAP TO TYPE)", o.devLevelTarget);
-	drawSign(b[4], buf, o.devField == 1, false, 0.31f);
-	drawSign(b[5], b[5].label, false, false, 0.36f);
+	drawSign(b[0], b[0].label, o.devField == 0, sDevHoldBtn == 0, 0.38f);
+	if (sDevTyping == 1) {
+		drawSign(b[1], "", true, false, 0.33f);
+		snprintf(buf, sizeof buf, "ROOM: %s", typed);
+		drawTypingWithCursor(buf, b[1].x + b[1].w * 0.5f, b[1].y + b[1].h * 0.5f - 20 * 0.33f - 1, 0.33f, b[1].w - 22.0f, COL_ACCENT, true);
+	} else {
+		snprintf(buf, sizeof buf, "ROOM: %d", o.devRoomTarget);
+		drawSign(b[1], buf, o.devField == 1, sDevHoldBtn == 1, 0.33f);
+	}
+	drawSign(b[2], b[2].label, o.devField == 2, sDevHoldBtn == 2, 0.38f);
 
-	drawSign(b[6], b[6].label, o.devField == 2, false, 0.42f);
+	drawSign(b[3], b[3].label, o.devField == 3, sDevHoldBtn == 3, 0.38f);
+	if (sDevTyping == 2) {
+		drawSign(b[4], "", true, false, 0.33f);
+		snprintf(buf, sizeof buf, "LEVEL: %s", typed);
+		drawTypingWithCursor(buf, b[4].x + b[4].w * 0.5f, b[4].y + b[4].h * 0.5f - 20 * 0.33f - 1, 0.33f, b[4].w - 22.0f, COL_ACCENT, true);
+	} else {
+		snprintf(buf, sizeof buf, "LEVEL: %d", o.devLevelTarget);
+		drawSign(b[4], buf, o.devField == 4, sDevHoldBtn == 4, 0.33f);
+	}
+	drawSign(b[5], b[5].label, o.devField == 5, sDevHoldBtn == 5, 0.38f);
+
+	drawSign(b[6], b[6].label, o.devField == 6, sDevHoldBtn == 6, 0.42f);
 }
 
 static bool updateDevSkip(const Input& in, bool wasTouching) {
 	Orchard& o = sGame.orc;
 	if (!o.devPrompt) return false;
-	if (sDevTyping > 0) {
-		char typed[16] = {};
-		const int res = port::textPoll(typed, sizeof typed);
-		if (res == 0) return true;
-		if (res > 0) {
-			int v = atoi(typed);
-			if (sDevTyping == 1) o.devRoomTarget = v < 1 ? 1 : (v > 999 ? 999 : v);
-			else o.devLevelTarget = v < 1 ? 1 : (v > 255 ? 255 : v);
-		}
-		port::textStop();
-		sDevTyping = 0;
-		return true;
-	}
 	float x, y, w, h;
 	Button b[7];
 	devSkipLayout(&x, &y, &w, &h, b);
+	auto finishTyping = [&](bool accept, const char* typedStr) {
+		if (accept) {
+			if (typedStr[0]) {
+				const int v = atoi(typedStr);
+				if (sDevTyping == 1) o.devRoomTarget = v < 1 ? 1 : (v > 999 ? 999 : v);
+				else o.devLevelTarget = v < 1 ? 1 : (v > 255 ? 255 : v);
+			} else {
+				if (sDevTyping == 1) o.devRoomTarget = sDevPrevValue;
+				else o.devLevelTarget = sDevPrevValue;
+			}
+		} else {
+			if (sDevTyping == 1) o.devRoomTarget = sDevPrevValue;
+			else o.devLevelTarget = sDevPrevValue;
+		}
+		port::textStop();
+		sDevTyping = 0;
+	};
+	if (sDevTyping > 0) {
+		char typed[16] = {};
+		const int res = port::textPoll(typed, sizeof typed);
+		if (res != 0) {
+			finishTyping(res > 0, typed);
+			return true;
+		}
+		if (in.touching && !wasTouching) {
+			const int own = sDevTyping == 1 ? 1 : 4;
+			if (!hit(b[own], in.tx, in.ty)) {
+				finishTyping(true, typed);
+			} else {
+				return true;
+			}
+		} else {
+			return true;
+		}
+	}
 #if PORT_MOUSE
 	if (in.hovering) {
-		for (int i = 0; i < 3; i++)
-			if (in.tx >= b[i].x && in.tx < b[i].x + b[i].w && in.ty >= b[i].y && in.ty < b[i].y + b[i].h) o.devField = 0;
-		for (int i = 3; i < 6; i++)
-			if (in.tx >= b[i].x && in.tx < b[i].x + b[i].w && in.ty >= b[i].y && in.ty < b[i].y + b[i].h) o.devField = 1;
-		if (in.tx >= b[6].x && in.tx < b[6].x + b[6].w && in.ty >= b[6].y && in.ty < b[6].y + b[6].h) o.devField = 2;
+		for (int i = 0; i < 7; i++)
+			if (hit(b[i], in.tx, in.ty)) o.devField = (u8)i;
 	}
 #endif
-	if (in.down & KEY_UP) o.devField = o.devField == 0 ? 2 : o.devField - 1;
-	if (in.down & KEY_DOWN) o.devField = (o.devField + 1) % 3;
-	const int delta = (in.repeat & KEY_LEFT) ? -1 : ((in.repeat & KEY_RIGHT) ? 1 : 0);
-	if (delta != 0) {
-		if (o.devField == 0) o.devRoomTarget = o.devRoomTarget + delta < 1 ? 1 : (o.devRoomTarget + delta > 999 ? 999 : o.devRoomTarget + delta);
-		else if (o.devField == 1) o.devLevelTarget = o.devLevelTarget + delta < 1 ? 1 : (o.devLevelTarget + delta > 255 ? 255 : o.devLevelTarget + delta);
+	if (in.down & KEY_UP) {
+		if (o.devField < 3) o.devField = 6;
+		else if (o.devField < 6) o.devField -= 3;
+		else o.devField = 4;
+		audio::click(0.5f);
 	}
-	if (tapped(in, wasTouching, b[0].x, b[0].y, b[0].w, b[0].h)) { audio::click(); if (o.devRoomTarget > 1) o.devRoomTarget--; }
-	if (tapped(in, wasTouching, b[2].x, b[2].y, b[2].w, b[2].h)) { audio::click(); if (o.devRoomTarget < 999) o.devRoomTarget++; }
-	if (tapped(in, wasTouching, b[3].x, b[3].y, b[3].w, b[3].h)) { audio::click(); if (o.devLevelTarget > 1) o.devLevelTarget--; }
-	if (tapped(in, wasTouching, b[5].x, b[5].y, b[5].w, b[5].h)) { audio::click(); if (o.devLevelTarget < 255) o.devLevelTarget++; }
+	if (in.down & KEY_DOWN) {
+		if (o.devField < 3) o.devField += 3;
+		else if (o.devField < 6) o.devField = 6;
+		else o.devField = 1;
+		audio::click(0.5f);
+	}
+	if (in.down & KEY_LEFT) {
+		if (o.devField < 3) o.devField = (u8)((o.devField + 2) % 3);
+		else if (o.devField < 6) o.devField = (u8)(3 + (o.devField - 3 + 2) % 3);
+		audio::click(0.5f);
+	}
+	if (in.down & KEY_RIGHT) {
+		if (o.devField < 3) o.devField = (u8)((o.devField + 1) % 3);
+		else if (o.devField < 6) o.devField = (u8)(3 + (o.devField - 3 + 1) % 3);
+		audio::click(0.5f);
+	}
+
+	int activeStepBtn = -1;
+	sDevHoldBtn = -1;
+	if (in.touching) {
+		if (!wasTouching) {
+			sDevTouchBtn = -1;
+			for (int i = 0; i < 7; i++) {
+				if (hit(b[i], in.tx, in.ty)) {
+					sDevTouchBtn = i;
+					o.devField = (u8)i;
+					break;
+				}
+			}
+		}
+		if (sDevTouchBtn >= 0 && hit(b[sDevTouchBtn], in.tx, in.ty)) {
+			sDevHoldBtn = sDevTouchBtn;
+			if (sDevTouchBtn == 0 || sDevTouchBtn == 2 || sDevTouchBtn == 3 || sDevTouchBtn == 5)
+				activeStepBtn = sDevTouchBtn;
+		}
+	} else {
+		sDevTouchBtn = -1;
+		if ((in.held & KEY_A) && (o.devField == 0 || o.devField == 2 || o.devField == 3 || o.devField == 5)) {
+			sDevHoldBtn = o.devField;
+			activeStepBtn = o.devField;
+		}
+	}
+	if (sDevHold.step(activeStepBtn, activeStepBtn >= 0)) devStepField(activeStepBtn);
+
 	auto startTyping = [&](int which, int cur) {
 		char init[12];
+		sDevPrevValue = cur;
 		snprintf(init, sizeof init, "%d", cur);
 		sDevTyping = which;
-		port::textStart(init, 3);
+		port::textStart(init, 3, true);
 	};
-	if (tapped(in, wasTouching, b[1].x, b[1].y, b[1].w, b[1].h)) { audio::click(); o.devField = 0; startTyping(1, o.devRoomTarget); return true; }
-	if (tapped(in, wasTouching, b[4].x, b[4].y, b[4].w, b[4].h)) { audio::click(); o.devField = 1; startTyping(2, o.devLevelTarget); return true; }
-	if (tapped(in, wasTouching, b[6].x, b[6].y, b[6].w, b[6].h) || ((in.down & KEY_A) && o.devField == 2)) {
+	if (tapped(in, wasTouching, b[1].x, b[1].y, b[1].w, b[1].h)) { audio::click(); o.devField = 1; startTyping(1, o.devRoomTarget); return true; }
+	if (tapped(in, wasTouching, b[4].x, b[4].y, b[4].w, b[4].h)) { audio::click(); o.devField = 4; startTyping(2, o.devLevelTarget); return true; }
+	if (tapped(in, wasTouching, b[6].x, b[6].y, b[6].w, b[6].h) || ((in.down & KEY_A) && o.devField == 6)) {
 		audio::click();
+		sDevHoldBtn = -1;
+		sDevTouchBtn = -1;
+		sDevHold.reset();
 		sGame.orcApplyDevSkip(o.devRoomTarget, o.devLevelTarget);
 		return true;
 	}
-	if ((in.down & KEY_A) && o.devField < 2) {
+	if ((in.down & KEY_A) && (o.devField == 1 || o.devField == 4)) {
 		audio::click();
-		startTyping(o.devField + 1, o.devField == 0 ? o.devRoomTarget : o.devLevelTarget);
+		startTyping(o.devField == 1 ? 1 : 2, o.devField == 1 ? o.devRoomTarget : o.devLevelTarget);
 		return true;
 	}
 	return true;
@@ -1084,7 +1192,7 @@ static bool updateOrchardMenus(const Input& in, bool wasTouching) {
 		sOrcInv = false;
 		return updateResumePrompt(in, wasTouching);
 	}
-#if defined(DEV_TOOLS) && !defined(AUTOTEST)
+#ifdef DEV_TOOLS
 	if (o.devPrompt) {
 		sOrcInv = false;
 		return updateDevSkip(in, wasTouching);

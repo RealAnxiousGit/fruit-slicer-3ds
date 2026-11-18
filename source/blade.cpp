@@ -135,15 +135,37 @@ void Blade::draw() const {
 	const int style = gBladeDull > 0 ? TR_PLAIN : trailShape(gSave.trail);
 	if (style == TR_PLAIN) {
 		drawStroke(TR_PLAIN, kTrailLife, 1.0f, true);
+#if !PORT_3DS
+		if (gfx::fullGpuFx() && gBladeDull <= 0) {
+			const float calm = gSave.calmFx ? 0.45f : 1.0f;
+			gfx::setAdditive(true);
+			drawStroke(TR_PLAIN, kTrailLife, 1.52f, true, 0.28f * calm);
+			gfx::setAdditive(false);
+		}
+#endif
 		return;
 	}
 	drawStroke(style, kStyledLife, 1.15f, false);
+#if !PORT_3DS
+	const bool gpuFx = gfx::fullGpuFx() && gBladeDull <= 0;
+	if (!gpuFx && (style == TR_SPARKLE || style == TR_COMET)) drawExtras(style);
+	drawStroke(TR_PLAIN, kEdgeLife, 0.8f, true);
+	if (gpuFx) {
+		const float calm = gSave.calmFx ? 0.45f : 1.0f;
+		gfx::setAdditive(true);
+		if (style != TR_INK) drawStroke(style, kStyledLife, 1.60f, false, 0.26f * calm);
+		drawStroke(TR_PLAIN, kEdgeLife, 1.38f, true, 0.22f * calm);
+		if (style == TR_SPARKLE || style == TR_COMET) drawExtras(style);
+		gfx::setAdditive(false);
+	}
+#else
 	if (style == TR_SPARKLE || style == TR_COMET) drawExtras(style);
 	drawStroke(TR_PLAIN, kEdgeLife, 0.8f, true);
+#endif
 }
 
 // One tapered strip through the points younger than `life`, thick at the head.
-void Blade::drawStroke(int style, float life, float width, bool tip) const {
+void Blade::drawStroke(int style, float life, float width, bool tip, float alphaScale) const {
 	static const u32 kColors[kBladeCount] = {0xFF3A8CFFu, 0xFFFFD060u, 0xFFA070FFu, 0xFF70F090u, 0xFF30C0FFu, 0};
 	const bool rainbow = gSave.blade == kBladeCount - 1 && gBladeDull <= 0;
 	const u32 baseColor = gBladeDull > 0 ? rgba(130, 130, 140) : kColors[gSave.blade % kBladeCount];
@@ -187,8 +209,8 @@ void Blade::drawStroke(int style, float life, float width, bool tip) const {
 			case TR_COMET: color = trailSwatch(gSave.trail, t); break;
 			default: break;
 		}
-		u32 col = withAlpha(color, fade * (style == TR_INK ? 0.92f : 0.75f));
-		u32 core = withAlpha(coreColor, fade);
+		u32 col = withAlpha(color, fade * (style == TR_INK ? 0.92f : 0.75f) * alphaScale);
+		u32 core = withAlpha(coreColor, fade * alphaScale);
 		if (i > 0) {
 			gfx::tri(prevLx, prevLy, prevCol, prevRx, prevRy, prevCol, lx, ly, col);
 			gfx::tri(lx, ly, col, prevRx, prevRy, prevCol, rx, ry, col);

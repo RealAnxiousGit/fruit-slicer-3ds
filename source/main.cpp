@@ -45,6 +45,7 @@ enum Screen {
 };
 
 static Screen sScreen = SCREEN_LOADING;
+static Screen sDrawing = SCREEN_LOADING;  // the screen whose signs are being drawn, during a slide too
 static Game sGame;  // static storage: all gameplay pools are allocated once at load time
 static Blade sBlade;
 static int sFocus[SCREEN_COUNT];
@@ -111,6 +112,112 @@ struct Button {
 };
 
 static const Button kBack = {6, 5, 46, 34, nullptr};
+
+static u32 lerpColor(u32 a, u32 b, float t) {
+	t = clampf(t, 0.0f, 1.0f);
+	const int ar = (int)(a & 255), ag = (int)((a >> 8) & 255), ab = (int)((a >> 16) & 255), aa = (int)((a >> 24) & 255);
+	const int br = (int)(b & 255), bg = (int)((b >> 8) & 255), bb = (int)((b >> 16) & 255), ba = (int)((b >> 24) & 255);
+	return rgba((int)(ar + (br - ar) * t + 0.5f), (int)(ag + (bg - ag) * t + 0.5f), (int)(ab + (bb - ab) * t + 0.5f), (int)(aa + (ba - aa) * t + 0.5f));
+}
+
+struct HighlightSlot {
+	int x, y, w, h;
+	Screen scr;
+	bool used;
+	float v;
+	u32 lastFrame;
+};
+static constexpr int kHiSlots = 64;
+static HighlightSlot sHiSlots[kHiSlots];
+static u32 sHiFrame = 1;
+
+static void beginHighlightFrame() {
+	sHiFrame++;
+	if (!sHiFrame) {
+		for (auto& s : sHiSlots) s.lastFrame = 0;
+		sHiFrame = 1;
+	}
+}
+
+static float highlightFade(float x, float y, float w, float h, bool focused) {
+	const int ix = (int)roundf(x), iy = (int)roundf(y), iw = (int)roundf(w), ih = (int)roundf(h);
+	HighlightSlot* pick = nullptr;
+	HighlightSlot* oldest = &sHiSlots[0];
+	for (auto& s : sHiSlots) {
+		if (s.used && s.scr == sDrawing && s.x == ix && s.y == iy && s.w == iw && s.h == ih) {
+			pick = &s;
+			break;
+		}
+		if (!s.used || sHiFrame - s.lastFrame > 4) {
+			if (!pick) pick = &s;
+		} else if (s.lastFrame < oldest->lastFrame) {
+			oldest = &s;
+		}
+	}
+	if (!pick) pick = oldest;
+	const bool fresh = !pick->used || pick->scr != sDrawing || pick->x != ix || pick->y != iy || pick->w != iw || pick->h != ih || (sHiFrame - pick->lastFrame > 4);
+	if (fresh) {
+		pick->x = ix;
+		pick->y = iy;
+		pick->w = iw;
+		pick->h = ih;
+		pick->scr = sDrawing;
+		pick->used = true;
+		pick->v = focused ? 1.0f : 0.0f;
+		pick->lastFrame = sHiFrame;
+		return pick->v;
+	}
+	if (pick->lastFrame != sHiFrame) {
+		pick->lastFrame = sHiFrame;
+		const float target = focused ? 1.0f : 0.0f;
+		const float step = kDt * 9.5f;  // ~0.105s crisp highlight fade
+		if (pick->v < target) pick->v = fminf(target, pick->v + step);
+		else if (pick->v > target) pick->v = fmaxf(target, pick->v - step);
+	}
+	return pick->v;
+}
+
+struct HoldRepeat {
+	int id = -1;
+	float elapsed = 0;
+	float nextAt = 0;
+	void reset() { id = -1; elapsed = nextAt = 0; }
+	bool step(int which, bool active, bool fireOnPress = true) {
+		if (!active || which < 0) {
+			reset();
+			return false;
+		}
+		if (which != id) {
+			id = which;
+			elapsed = 0;
+			nextAt = 0.34f;  // short hold delay before auto-repeat begins
+			return fireOnPress;
+		}
+		elapsed += kDt;
+		if (elapsed >= nextAt) {
+			const float interval = clampf(0.16f * powf(0.45f, fmaxf(0.0f, elapsed - 0.34f)), 0.03f, 0.16f);
+			nextAt += interval;
+			return true;
+		}
+		return false;
+	}
+};
+
+static bool cursorVisible() { return (((int)(sTime * 2.4f)) & 1) == 0; }
+
+static void drawTypingWithCursor(const char* typed, float cx, float y, float scale, float room, u32 color, bool active = true) {
+	float w = gfx::textWidth(typed, scale);
+	const float avail = room > 8.0f ? room - 6.0f : room;
+	if (w > avail && w > 0) scale *= avail / w;
+	w = gfx::textWidth(typed, scale);
+	gfx::text(typed, cx, y, scale, color, ALIGN_CENTER);
+	if (active && cursorVisible()) {
+		const float curX = cx + w * 0.5f + 1.5f;
+		const float curW = fmaxf(1.5f, 3.0f * scale);
+		const float curH = 34.0f * scale;
+		gfx::rect(curX, y + 2.0f * scale, curW, curH, COL_ACCENT);
+	}
+}
 
 static const Button kTitleButtons[] = {
 #if PORT_3DS
@@ -234,9 +341,10 @@ static void inkWithHole(const float* outer, int no, const float* hole, int nh, f
 // until the icon is pointed at or selected.
 static void drawLinkIcon(const Button& b, int which, bool focused) {
 	const float cx = b.x + b.w * 0.5f, cy = b.y + b.h * 0.5f, r = b.w * 0.5f;
-	const float a = focused ? 1.0f : 0.55f;
-	const u32 ink = withAlpha(rgba(16, 16, 18), focused ? 1.0f : 0.8f), plate = withAlpha(COL_CREAM, a);
-	if (focused) softEllipse(cx, cy, r + 2.5f, r + 2.5f, COL_ACCENT);
+	const float hi = highlightFade(b.x, b.y, b.w, b.h, focused);
+	const float a = lerpf(0.55f, 1.0f, hi);
+	const u32 ink = withAlpha(rgba(16, 16, 18), lerpf(0.8f, 1.0f, hi)), plate = withAlpha(COL_CREAM, a);
+	if (hi > 0.01f) softEllipse(cx, cy, r + 2.5f, r + 2.5f, withAlpha(COL_ACCENT, hi));
 	softEllipse(cx, cy, r, r, plate);
 	const float s = r * 0.7f;  // the mark's own radius
 	if (which == 0) {
@@ -432,8 +540,8 @@ static bool sCardFrame;          // this frame is the score card: the sign shows
 static const char* sCardNote;    // what became of the last card, shown for a while
 static float sCardNoteT;
 #if PORT_PAUSE_BUTTON
-static const Button kPauseSign = {2, kFieldTop + 2, 36, 36, nullptr};  // in field units: top-left, just under the score sign
-static const Button kInvSign = {40, kFieldTop + 2, 36, 36, nullptr};   // mobile: opens Inventory in Orchard Blast
+static const Button kPauseSign = {2, kFieldTop + 5, 36, 36, nullptr};  // in field units: top-left, cleanly below score bar & Frenzy meter
+static const Button kInvSign = {40, kFieldTop + 5, 36, 36, nullptr};   // mobile: opens Inventory in Orchard Blast
 #endif
 static const Button kPauseButtons[] = {kBack, {50, 44, 220, 56, "Resume"}, {50, 108, 220, 56, "Options"}, {50, 172, 220, 56, "Main Menu"}};
 
@@ -452,8 +560,9 @@ static u32 withDim(u32 c) {
 
 static void drawPlank(float x, float y, float w, float h, bool focused, bool pressed) {
 	float dy = pressed ? 2 : 0;
+	const float hi = highlightFade(x, y, w, h, focused);
 	gfx::sign(sprites_plank_idx, x, y + dy, w, h, pressed ? withDim(COL_PLANK) : COL_PLANK);
-	if (focused) gfx::sign(sprites_plank_focus_idx, x - 2, y - 2 + dy, w + 4, h + 4, COL_ACCENT);
+	if (hi > 0.01f) gfx::sign(sprites_plank_focus_idx, x - 2, y - 2 + dy, w + 4, h + 4, withAlpha(COL_ACCENT, hi));
 }
 
 // A line centred on x, made smaller only if it would still be wider than room.
@@ -553,7 +662,6 @@ static struct {
 	float x, y, ang;
 	Screen screen;
 } sCut;
-static Screen sDrawing = SCREEN_LOADING;  // the screen whose signs are being drawn, during a slide too
 static bool isCut(const Button& b) {
 	return sCut.on && sCut.screen == sDrawing && sCut.btn.x == b.x && sCut.btn.y == b.y && sCut.btn.w == b.w && sCut.btn.h == b.h;
 }
@@ -653,8 +761,10 @@ static void drawFruitChoice(const Button& b, const char* label, bool focused, bo
 	fruitSpot(b, &x, &y, &d);
 	float dy = pressed ? 2 : 0;
 	bool cut = isCut(b);
-	if (focused) gfx::sprite(SHEET_SPRITES, sprites_ring_idx, x, y + dy, d / 34, d / 34, 0, withAlpha(COL_ACCENT, 0.9f));
-	float bob = focused && !gSave.calmFx ? sinf(sTime * 4) * 1.5f : 0;
+	const float hi = highlightFade(b.x, b.y, b.w, b.h, focused);
+	const u32 labelCol = lerpColor(COL_CREAM, COL_ACCENT, hi);
+	if (hi > 0.01f) gfx::sprite(SHEET_SPRITES, sprites_ring_idx, x, y + dy, d / 34, d / 34, 0, withAlpha(COL_ACCENT, 0.9f * hi));
+	float bob = hi > 0.25f && !gSave.calmFx ? sinf(sTime * 4) * 1.5f * hi : 0;
 	float spin = sTime * 0.8f + b.x * 0.05f;
 	if (fruit3D()) {
 		float ts = scale * 0.9f;
@@ -668,16 +778,16 @@ static void drawFruitChoice(const Button& b, const char* label, bool focused, bo
 			snprintf(second, sizeof second, "%s", split + 5);
 		}
 		if (split || (ringFit(label, d, b.w, ts) < 0.8f && splitLine(label, ts, 0, first, second, sizeof first))) {
-			drawRingText(first, x, y + dy - 6, d, b.w, ts * 0.8f, focused ? COL_ACCENT : COL_CREAM);
-			drawRingText(second, x, y + dy + 9, d, b.w, ts * 0.8f, focused ? COL_ACCENT : COL_CREAM);
+			drawRingText(first, x, y + dy - 6, d, b.w, ts * 0.8f, labelCol);
+			drawRingText(second, x, y + dy + 9, d, b.w, ts * 0.8f, labelCol);
 		} else {
-			drawRingText(label, x, y + dy, d, b.w, ts, focused ? COL_ACCENT : COL_CREAM);
+			drawRingText(label, x, y + dy, d, b.w, ts, labelCol);
 		}
 	} else {
 		if (!cut) drawMenuFruit(fruit, x, y + dy + bob, d, spin);
 		float ts = 0.4f, w = gfx::textWidth(label, ts);
 		if (w > b.w - 6) ts *= (b.w - 6) / w;
-		gfx::text(label, x, y + d * 0.5f + 1 + dy, ts, focused ? COL_ACCENT : COL_CREAM, ALIGN_CENTER);
+		gfx::text(label, x, y + d * 0.5f + 1 + dy, ts, labelCol, ALIGN_CENTER);
 	}
 }
 
@@ -687,6 +797,7 @@ static void drawSign(const Button& b, const char* label, bool focused, bool pres
 		return;
 	}
 	drawPlank(b.x, b.y, b.w, b.h, focused, pressed);
+	const float hi = highlightFade(b.x, b.y, b.w, b.h, focused);
 	float dy = pressed ? 2 : 0;
 	float lead = icon >= 0 ? 30 : 0;
 	float w = gfx::textWidth(label, scale);
@@ -696,24 +807,26 @@ static void drawSign(const Button& b, const char* label, bool focused, bool pres
 	// The coin sprite is drawn bigger than the mode icons, so it is scaled down to match them.
 	const float iconScale = icon == sprites_coin_idx ? 0.46f : 0.8f;
 	if (icon >= 0) gfx::sprite(SHEET_SPRITES, icon, b.x + 21, b.y + b.h * 0.5f + dy, iconScale, iconScale);
-	gfx::text(label, cx, b.y + b.h * 0.5f - 20 * scale - 1 + dy, scale, focused ? COL_ACCENT : COL_CREAM, ALIGN_CENTER);
+	gfx::text(label, cx, b.y + b.h * 0.5f - 20 * scale - 1 + dy, scale, lerpColor(COL_CREAM, COL_ACCENT, hi), ALIGN_CENTER);
 }
 
 // A mode on Pick a Game: its icon over its name, so the whole width of the sign goes to the name.
 static void drawModeTile(const Button& b, int icon, bool focused, bool pressed) {
 	drawPlank(b.x, b.y, b.w, b.h, focused, pressed);
+	const float hi = highlightFade(b.x, b.y, b.w, b.h, focused);
 	const float dy = pressed ? 2 : 0, cx = b.x + b.w * 0.5f, iconScale = icon == sprites_coin_idx ? 0.42f : 0.72f;
 	float scale = 0.44f;
 	const float w = gfx::textWidth(b.label, scale);
 	if (w > b.w - 22) scale *= (b.w - 22) / w;
 	gfx::sprite(SHEET_SPRITES, icon, cx, b.y + 16 + dy, iconScale, iconScale, icon == sprites_arrow_idx ? 3.14159265f : 0);  // the arrow points on to the next player
-	gfx::text(b.label, cx, b.y + 28 + dy, scale, COL_CREAM, ALIGN_CENTER);
+	gfx::text(b.label, cx, b.y + 28 + dy, scale, lerpColor(COL_CREAM, COL_ACCENT, hi), ALIGN_CENTER);
 }
 
 static void drawPageArrow(int side) {
 	const float x = side ? 291 : 3, dy = sArrowPressed == side ? 2 : 0;
 	drawPlank(x, kPageArrowY, 26, 50, sArrowHover == side, sArrowPressed == side);
-	gfx::sprite(SHEET_SPRITES, sprites_arrow_idx, x + 13, kPageArrowY + 24 + dy, 0.62f, 0.62f, side ? 3.14159265f : 0, COL_CREAM);
+	const float hi = highlightFade(x, kPageArrowY, 26, 50, sArrowHover == side);
+	gfx::sprite(SHEET_SPRITES, sprites_arrow_idx, x + 13, kPageArrowY + 24 + dy, 0.62f, 0.62f, side ? 3.14159265f : 0, lerpColor(COL_CREAM, COL_ACCENT, hi));
 }
 
 static void drawBackArrow(bool focused, bool pressed) {
@@ -1125,7 +1238,11 @@ static const char* const kBoardNames[kBoardCount] = {
 static const char* const kSceneNames[kSceneCount] = {"Dusk Orchard", "Morning Meadow", "Moonlit Bay", "Sakura Grove", "Autumn Harvest", "Starlit Mountain"};
 #endif
 static const char* const kArtNames[] = {"2D Stickers", "3D Models"};
+#if PORT_3DS
 static const char* const kEffectNames[] = {"None", "Low", "Medium", "Full"};
+#else
+static const char* const kEffectNames[] = {"None", "Low", "Simple", "Full"};
+#endif
 static const char* const kOffOn[] = {"Off", "On"};
 static const char* const kOnOff[] = {"On", "Off"};  // for a setting stored as "turned off"
 static const char* const kUpdateNames[] = {"Ask", "On", "Off"};  // by gSave.updConsent
@@ -1283,7 +1400,11 @@ static Row kVisualMoreRows[] = {
 	{ROW_CHOICE, "Bloom", &gSave.bloom, 0, 2, kBloomNames, 0, 0, ACT_NONE, "Glow around golden fruit", "and the last big fruit."},
 	{ROW_CHOICE, "Render Scale", &gSave.renderScale, 0, 2, kScaleNames, 0, 0, ACT_NONE, "Pixels drawn, against the screen's.", "125% smooths edges; 75% is faster."},
 #endif
+#if PORT_3DS
 	{ROW_CHOICE, "Effects", &gSave.effects, 0, 3, kEffectNames, 0, 0, ACT_NONE, "Juice, sparks and rings.", "Lower saves the most speed."},
+#else
+	{ROW_CHOICE, "Effects", &gSave.effects, 0, 3, kEffectNames, 0, 0, ACT_NONE, "Off, light, regular Simple, or", "Full GPU-accelerated glow & trails."},
+#endif
 #if PORT_TWO_SCREENS
 	{ROW_CHOICE, "Background", &gSave.bgDetail, 0, 1, kBgNames, 0, 0, ACT_NONE, "Simple draws fewer scenery layers", "and helps an Old 3DS."},
 #endif
@@ -1802,7 +1923,8 @@ static void leaveSection(bool clicked = false) {
 #if PORT_HAS_DISPLAY
 	port::displayDiscard();  // a mode or resolution picked but never applied
 #endif
-	audio::reapply();
+	if (sOptionsFromPause && sGame.orc.cutscene) audio::refreshVolumes();
+	else audio::reapply();
 	goTo(kSections[sSection].parent == kFromModes ? SCREEN_MODES : SCREEN_OPTIONS, -1);
 }
 
@@ -2364,6 +2486,11 @@ static void updateNameEntry(const Input& in, bool wasTouching) {
 	sSpTypingMsg = false;
 }
 
+static HoldRepeat sRowHold;
+static int sRowHoldDir = 0;
+static bool sRowDidRepeat = false;
+static int sRowArrowHover = 0;
+
 static void updateSection(const Input& in, bool wasTouching) {
 	if (sPassTyping >= 0 || sSpTypingMsg) {
 		updateNameEntry(in, wasTouching);
@@ -2414,6 +2541,7 @@ static void updateSection(const Input& in, bool wasTouching) {
 	if (focus < 0 && (in.repeat & (KEY_UP | KEY_DOWN))) sScroll = 0;
 #if PORT_MOUSE
 	sScroll -= in.wheel * kRowH;
+	sRowArrowHover = 0;
 	if (in.hovering) {
 		if (hit(kBack, in.tx, in.ty)) {
 			focus = -1;
@@ -2422,6 +2550,10 @@ static void updateSection(const Input& in, bool wasTouching) {
 			if (row >= 0 && row < sec.count) {
 				if (row != focus) sArmed = -1;
 				focus = row;
+				if (sec.rows[row].kind == ROW_CHOICE) {
+					if (in.tx >= 146 && in.tx < 186) sRowArrowHover = -1;
+					else if (in.tx >= 278 && in.tx < 312) sRowArrowHover = 1;
+				}
 			}
 		}
 	}
@@ -2476,6 +2608,9 @@ static void updateSection(const Input& in, bool wasTouching) {
 						sTouchStartY = in.ty;
 						sScrollStart = sScroll;
 						sTouchMoved = false;
+						sRowHold.reset();
+						sRowDidRepeat = false;
+						sRowHoldDir = (r.kind == ROW_CHOICE) ? (in.tx < 214 ? -1 : 1) : 0;
 					}
 				}
 			}
@@ -2493,17 +2628,37 @@ static void updateSection(const Input& in, bool wasTouching) {
 				sTouchMode = TOUCH_ROW;
 				sScrollStart = sScroll;
 				sTouchMoved = true;
+				sRowHold.reset();
+				sRowHoldDir = 0;
 				sScroll = sScrollStart - dy;
 			} else {
 				setSliderFromTouch(sec.rows[sTouchRow], in.tx);
 			}
 		} else if (sTouchMode == TOUCH_ROW) {
 			int dy = in.ty - sTouchStartY;
-			if (dy > 6 || dy < -6) sTouchMoved = true;
+			if (dy > 6 || dy < -6) {
+				sTouchMoved = true;
+				sRowHold.reset();
+			}
 			if (sTouchMoved) sScroll = sScrollStart - dy;
+			else if (sRowHoldDir != 0) {
+				const float ry = kListTop + sTouchRow * kRowH - sScroll;
+				const bool insideRow = in.ty >= ry && in.ty < ry + kRowH;
+				if (insideRow) {
+					sRowHoldDir = in.tx < 214 ? -1 : 1;
+					const int key = sTouchRow * 4 + (sRowHoldDir > 0 ? 1 : 2);
+					if (sRowHold.step(key, true, false)) {
+						sRowDidRepeat = true;
+						adjustRow(sec.rows[sTouchRow], sRowHoldDir);
+					}
+				} else {
+					sRowHold.reset();
+				}
+			}
 		}
 	} else if (wasTouching) {
 		sPressed = -1;
+		sRowHold.reset();
 		if (sTouchMode == TOUCH_BACK) {
 			sTouchMode = TOUCH_NONE;
 			cutBack(SCREEN_SECTION);
@@ -2520,9 +2675,15 @@ static void updateSection(const Input& in, bool wasTouching) {
 				return;
 			}
 			if (r.kind == ROW_ACTION) rowAction(sTouchRow, r);
-			else if (r.kind == ROW_CHOICE) adjustRow(r, sLastTouchX < 214 ? -1 : 1);
+			else if (r.kind == ROW_CHOICE && !sRowDidRepeat) adjustRow(r, sLastTouchX < 214 ? -1 : 1);
 		}
 		sTouchMode = TOUCH_NONE;
+		sRowHoldDir = 0;
+		sRowDidRepeat = false;
+	} else {
+		sRowHold.reset();
+		sRowHoldDir = 0;
+		sRowDidRepeat = false;
 	}
 	sScroll = clampf(sScroll, 0, maxScroll());
 }
@@ -3323,7 +3484,7 @@ static void drawStats() {
 	if (sStatsTab == 1) {
 		const int cnt = streetpass::count();
 		if (cnt == 0) {
-			gfx::sign(sprites_plank_idx, 8, 68, 304, 166, COL_PLANK);
+			gfx::sign(sprites_plank_idx, 8, 96, 304, 102, COL_PLANK);
 			gfx::text("No StreetPass tags yet.", 160, 128, 0.44f, COL_CREAM, ALIGN_CENTER);
 			fitText(gSave.streetPassOn ? "Keep 3DS in Sleep Mode or use NetPass." : "Turn StreetPass On in Options to exchange.", 160, 154, 0.32f, 280, COL_DIM);
 			return;
@@ -3572,13 +3733,16 @@ static void beatPick(int dir) {
 	beatSelect(t);
 }
 
+static int sBeatHover = -1, sBeatArrowPress = -1;
+static HoldRepeat sBeatArrowHold;
+
 #if PORT_CUSTOM_MUSIC
-// A small plank that acts the moment it is tapped: its label fills it, as there is no fruit to fit around.
-static void drawTap(const Button& b, const char* label) {
-	drawPlank(b.x, b.y, b.w, b.h, false, false);
+static void drawTap(const Button& b, const char* label, bool focused = false, bool pressed = false) {
+	drawPlank(b.x, b.y, b.w, b.h, focused, pressed);
+	const float hi = highlightFade(b.x, b.y, b.w, b.h, focused);
 	float s = 0.36f, w = gfx::textWidth(label, s);
 	if (w > b.w - 10) s *= (b.w - 10) / w;
-	gfx::text(label, b.x + b.w * 0.5f, b.y + b.h * 0.5f - 20 * s - 1, s, COL_CREAM, ALIGN_CENTER);
+	gfx::text(label, b.x + b.w * 0.5f, b.y + b.h * 0.5f - 20 * s - 1 + (pressed ? 2 : 0), s, lerpColor(COL_CREAM, COL_ACCENT, hi), ALIGN_CENTER);
 }
 #endif
 
@@ -3619,8 +3783,10 @@ static void drawBeatScreen() {
 		for (int side = 0; side < 2; side++) {
 			const Button& b = side ? kBeatDown : kBeatUp;
 			const bool can = side ? sBeatScroll + kBeatRows < n : sBeatScroll > 0;
-			drawPlank(b.x, b.y, b.w, b.h, false, false);
-			gfx::sprite(SHEET_SPRITES, sprites_arrow_idx, b.x + b.w * 0.5f, b.y + b.h * 0.5f, 0.45f, 0.45f, side ? -1.5707963f : 1.5707963f, can ? COL_ACCENT : withAlpha(COL_CREAM, 0.3f));
+			const bool foc = can && (sBeatHover == side || sBeatArrowPress == side);
+			const bool prs = can && sBeatArrowPress == side;
+			drawPlank(b.x, b.y, b.w, b.h, foc, prs);
+			gfx::sprite(SHEET_SPRITES, sprites_arrow_idx, b.x + b.w * 0.5f, b.y + b.h * 0.5f + (prs ? 2 : 0), 0.45f, 0.45f, side ? -1.5707963f : 1.5707963f, can ? COL_ACCENT : withAlpha(COL_CREAM, 0.3f));
 		}
 	}
 	const char* play = "Play";
@@ -3631,8 +3797,8 @@ static void drawBeatScreen() {
 	drawSign(kBeatButtons[1], play, f == 1, sPressed == 1, 0.5f, -1, fruitFor("Play"));
 	const char* hint = n - (audio::trackCount() - kTrackCount) < kTrackCount ? "Tracks from the Shop play here too." : "Every track is yours.";
 #if PORT_CUSTOM_MUSIC
-	if (t >= kTrackCount) drawTap(kBeatTool, kBeatTool.label);
-	drawTap(kBeatFolder, kBeatFolder.label);
+	if (t >= kTrackCount) drawTap(kBeatTool, kBeatTool.label, sBeatHover == 2, sBeatArrowPress == 2);
+	drawTap(kBeatFolder, kBeatFolder.label, sBeatHover == 3, sBeatArrowPress == 3);
 	if (custom::count() == 0) hint = "Add Songs takes .mp3, .ogg, .flac and .wav files.";
 	if (custom::importOpen()) hint = "Pick your songs in the window that opened.";
 	if (sAddNoteT > 0) hint = sAddNote;
@@ -3746,6 +3912,9 @@ static void toolTick() {
 	sTool.lastBeat = beat;
 }
 
+static int sToolHover = -1, sToolPress = -1;
+static HoldRepeat sToolHold;
+
 static void drawBeatTool() {
 	char buf[48];
 	const int f = sFocus[SCREEN_BEATTOOL];
@@ -3783,7 +3952,7 @@ static void drawBeatTool() {
 	for (int i = 0; i < kToolTapCount; i++) {
 		const Button& b = kToolTaps[i];
 		const char* label = i == 6 ? (sTool.click ? "Click On" : "Click Off") : b.label;
-		drawTap(b, label);
+		drawTap(b, label, sToolHover == i || sToolPress == i, sToolPress == i);
 	}
 	drawSign(kToolButtons[1], "Play", f == 1, sPressed == 1, 0.56f, -1, fruitFor("Play"));
 }
@@ -3924,9 +4093,9 @@ static void drawUpdateSign() {
 		default: break;
 	}
 	drawHeader(head);
-	gfx::sign(sprites_plank_idx, 20, 52, 280, 78, COL_PLANK);
-	gfx::text(l1, 160, 66, 0.36f, COL_CREAM, ALIGN_CENTER);
-	gfx::text(l2, 160, 88, 0.36f, COL_DIM, ALIGN_CENTER);
+	gfx::sign(sprites_plank_idx, 20, 52, 280, update::state() == update::DOWNLOADING ? 78.0f : 68.0f, COL_PLANK);
+	fitText(l1, 160, 64, 0.36f, 246, COL_CREAM);
+	fitText(l2, 160, 86, 0.36f, 246, COL_DIM);
 	if (update::state() == update::DOWNLOADING) {
 		gfx::rect(58, 108, 204, 12, gfx::themeBar());
 		gfx::rect(60, 110, 200 * clampf(update::progress(), 0, 1), 8, COL_ACCENT);
@@ -3941,16 +4110,20 @@ static void drawUpdateSign() {
 
 // The top screen: the changelog of the new version, scrolled with Up and Down.
 static void drawUpdateTop() {
+	const update::State st = update::state();
+	if (st != update::OFFER && st != update::NOTE) {
+		gfx::setDepth(1.0f);
+		gfx::sprite(SHEET_LOGO, logo_logo_idx, 200, 50, 0.62f, 0.62f);
+		topPanel(30, 96, 340, 74);
+		gfx::setDepth(0.7f);
+		gfx::text(st == update::ASK ? "Nothing about you is sent:" : "Fruit Slicer", 200, 112, 0.4f, COL_ACCENT, ALIGN_CENTER);
+		gfx::text(st == update::ASK ? "only a request for the newest release." : "Version " VERSION_STRING, 200, 134, 0.36f, COL_CREAM, ALIGN_CENTER);
+		return;
+	}
 	gfx::setDepth(1.0f);
 	gfx::sprite(SHEET_LOGO, logo_logo_idx, 200, 40, 0.5f, 0.5f);
 	topPanel(30, 70, 340, 162);
 	gfx::setDepth(0.7f);
-	const update::State st = update::state();
-	if (st != update::OFFER && st != update::NOTE) {
-		gfx::text(st == update::ASK ? "Nothing about you is sent:" : "Fruit Slicer", 200, 120, 0.4f, COL_ACCENT, ALIGN_CENTER);
-		gfx::text(st == update::ASK ? "only a request for the newest release." : "Version " VERSION_STRING, 200, 144, 0.36f, COL_CREAM, ALIGN_CENTER);
-		return;
-	}
 	char buf[64];
 	snprintf(buf, sizeof buf, "WHAT'S NEW IN %s", update::newVersion());
 	gfx::text(buf, 200, 76, 0.38f, COL_ACCENT, ALIGN_CENTER);
@@ -4151,34 +4324,60 @@ static void turnGuide(int dir) {
 	audio::click(0.6f);
 }
 
+static int sGuideHover = -1, sGuidePress = -1;
+static HoldRepeat sGuideHold;
+
 static void updateGuides(const Input& in, bool wasTouching) {
 	if (in.down & KEY_B) {
+		sGuidePress = -1;
+		sGuideHold.reset();
 		audio::click();
 		goTo(SCREEN_HOWTO, -1);
 		return;
 	}
 	bool leave;
 	if (backCut(SCREEN_GUIDES, in, wasTouching, &leave)) {
-		if (leave) goTo(SCREEN_HOWTO, -1);
+		if (leave) {
+			sGuidePress = -1;
+			sGuideHold.reset();
+			goTo(SCREEN_HOWTO, -1);
+		}
 		return;
 	}
+#if PORT_MOUSE
+	if (in.hovering) {
+		sGuideHover = -1;
+		for (int side = 0; side < 2; side++)
+			if (hit(kGuideArrows[side], in.tx, in.ty)) sGuideHover = side;
+	}
+#endif
 	if ((in.repeat & (KEY_LEFT | KEY_UP)) || (in.down & KEY_L) || in.wheel > 0) turnGuide(-1);
 	if ((in.repeat & (KEY_RIGHT | KEY_DOWN)) || (in.down & KEY_R) || in.wheel < 0) turnGuide(1);
 	if (in.down & KEY_A) {
 		cutBack(SCREEN_GUIDES);
 		return;
 	}
-	if (in.touching && !wasTouching) {
-		if (hit(kBack, in.tx, in.ty)) {
-			cutBack(SCREEN_GUIDES);
-			return;
-		}
-		for (int side = 0; side < 2; side++) {
-			if (hit(kGuideArrows[side], in.tx, in.ty)) {
-				turnGuide(side ? 1 : -1);
+	if (in.touching) {
+		if (!wasTouching) {
+			if (hit(kBack, in.tx, in.ty)) {
+				cutBack(SCREEN_GUIDES);
 				return;
 			}
+			sGuidePress = -1;
+			for (int side = 0; side < 2; side++) {
+				if (hit(kGuideArrows[side], in.tx, in.ty)) {
+					sGuidePress = side;
+					break;
+				}
+			}
 		}
+		if (sGuidePress >= 0) {
+			const bool over = hit(kGuideArrows[sGuidePress], in.tx, in.ty);
+			if (sGuideHold.step(over ? sGuidePress : -1, over)) turnGuide(sGuidePress ? 1 : -1);
+		}
+	} else {
+		sGuidePress = -1;
+		sGuideHold.reset();
 	}
 }
 
@@ -4449,20 +4648,31 @@ static void drawGuidesBottom() {
 
 	for (int side = 0; side < 2; side++) {
 		const Button& b = kGuideArrows[side];
-		drawPlank(b.x, b.y, b.w, b.h, false, false);
-		gfx::sprite(SHEET_SPRITES, sprites_arrow_idx, b.x + b.w * 0.5f, b.y + b.h * 0.5f, 0.52f, 0.52f, side ? 3.14159265f : 0, COL_ACCENT);
+		const bool foc = sGuideHover == side || sGuidePress == side;
+		const bool prs = sGuidePress == side;
+		drawPlank(b.x, b.y, b.w, b.h, foc, prs);
+		gfx::sprite(SHEET_SPRITES, sprites_arrow_idx, b.x + b.w * 0.5f, b.y + b.h * 0.5f + (prs ? 2 : 0), 0.52f, 0.52f, side ? 3.14159265f : 0, COL_ACCENT);
 	}
 	drawPlank(46, 44, 228, 32, true, false);
 	const char* title = guideTitle(sGuidePage);
 	const float iconScale = g.icon == sprites_coin_idx ? 0.38f : 0.62f;
-	const float tw = gfx::textWidth(title, 0.44f);
-	const float cx = 160 + 10;
-	gfx::sprite(SHEET_SPRITES, g.icon, cx - tw * 0.5f - 14, 60, iconScale, iconScale, g.icon == sprites_arrow_idx ? 3.14159265f : 0);
-	gfx::text(title, cx, 50, 0.44f, COL_ACCENT, ALIGN_CENTER);
+	float ts = 0.44f;
+	float tw = gfx::textWidth(title, ts);
+	const float maxTitleW = 180.0f;
+	if (tw > maxTitleW && tw > 0) {
+		ts *= maxTitleW / tw;
+		tw = maxTitleW;
+	}
+	const float groupGap = 22.0f;  // icon + gap to the left of title text
+	const float cx = 160.0f + groupGap * 0.5f;
+	gfx::sprite(SHEET_SPRITES, g.icon, cx - tw * 0.5f - 14.0f, 60.0f, iconScale, iconScale, g.icon == sprites_arrow_idx ? 3.14159265f : 0);
+	gfx::text(title, cx, 60.0f - 20.0f * ts - 1.0f, ts, COL_ACCENT, ALIGN_CENTER);
 
-	gfx::sign(sprites_plank_idx, 8, 80, 304, 152, COL_PLANK);
-	fitText(g.goal, 160, 87, 0.36f, 276, COL_ACCENT);
 	const char* const lines[4] = {g.line1, g.line2, g.line3, g.line4};
+	struct WrapLine { char text[160]; float y; };
+	WrapLine out[8];
+	int outN = 0;
+	const float sc = 0.31f, maxW = 264.0f, step = 10.8f;
 	float ly = 104.0f;
 	for (int i = 0; i < 4; i++) {
 		if (!lines[i] || !lines[i][0]) continue;
@@ -4470,12 +4680,12 @@ static void drawGuidesBottom() {
 		snprintf(wbuf, sizeof wbuf, "%s", lines[i]);
 		char* p = wbuf;
 		int wrapped = 0;
-		const float sc = 0.31f, maxW = 278.0f, step = 10.8f;
-		while (*p && wrapped < 2 && ly <= 212.0f) {
+		while (*p && wrapped < 2 && ly <= 212.0f && outN < 8) {
 			while (*p == ' ') p++;
 			if (!*p) break;
 			if (gfx::textWidth(p, sc) <= maxW || wrapped == 1) {
-				fitText(p, 160, ly, sc, maxW, COL_CREAM);
+				snprintf(out[outN].text, sizeof out[outN].text, "%s", p);
+				out[outN++].y = ly;
 				ly += step;
 				break;
 			}
@@ -4490,22 +4700,28 @@ static void drawGuidesBottom() {
 				}
 			}
 			if (split < 0) {
-				fitText(p, 160, ly, sc, maxW, COL_CREAM);
+				snprintf(out[outN].text, sizeof out[outN].text, "%s", p);
+				out[outN++].y = ly;
 				ly += step;
 				break;
 			}
 			p[split] = 0;
-			gfx::text(p, 160, ly, sc, COL_CREAM, ALIGN_CENTER);
+			snprintf(out[outN].text, sizeof out[outN].text, "%s", p);
+			out[outN++].y = ly;
 			ly += step;
 			p += split + 1;
 			wrapped++;
 		}
 		ly += 2.0f;
 	}
+	const float boxH = clampf((outN > 0 ? out[outN - 1].y + step : 104.0f) - 80.0f + 22.0f, 88.0f, 152.0f);
+	gfx::sign(sprites_plank_idx, 8, 80, 304, boxH, COL_PLANK);
+	fitText(g.goal, 160, 87, 0.36f, 260, COL_ACCENT);
+	for (int i = 0; i < outN; i++) fitText(out[i].text, 160, out[i].y, sc, maxW, COL_CREAM);
 	// Page pips along the bottom of the plank.
 	const float dotStep = 12.0f, dotX0 = 160 - (kGuideCount - 1) * dotStep * 0.5f;
 	for (int i = 0; i < kGuideCount; i++)
-		gfx::rect(dotX0 + i * dotStep - 3, 218, 6, 4, i == sGuidePage ? COL_ACCENT : COL_DIM);
+		gfx::rect(dotX0 + i * dotStep - 3, 80.0f + boxH - 13.0f, 6, 4, i == sGuidePage ? COL_ACCENT : COL_DIM);
 }
 
 // ---------------------------------------------------------------- Latency Test
@@ -4653,7 +4869,7 @@ static int latencyMs(float sec) { return (int)(sec * 1000 + (sec < 0 ? -0.5f : 0
 
 static void drawLatencyTop() {
 	char buf[48];
-	topPanel(30, 96, 340, 134);
+	topPanel(30, 96, 340, sLatDone ? 116.0f : 134.0f);
 	gfx::setDepth(1.0f);
 	gfx::sprite(SHEET_LOGO, logo_logo_idx, 200, 50, 0.62f, 0.62f);
 	gfx::setDepth(0.7f);
@@ -4683,7 +4899,7 @@ static void drawLatencyBottom() {
 	drawBackArrow(f == 0 && sLatDone, sPressed == 0);
 	if (sLatDone) {
 		const int ms = latencyMs(sLatResult);
-		gfx::sign(sprites_plank_idx, 20, 52, 280, 100, COL_PLANK);
+		gfx::sign(sprites_plank_idx, 20, 52, 280, 94, COL_PLANK);
 		gfx::text("Your slices land", 160, 62, 0.4f, COL_CREAM, ALIGN_CENTER);
 		snprintf(buf, sizeof buf, ms > 0 ? "+%d ms" : "%d ms", ms);
 		gfx::text(buf, 160, 84, 0.8f, COL_ACCENT, ALIGN_CENTER);
@@ -4807,10 +5023,15 @@ static void drawTopContent(Screen screen) {
 			const int mode = f >= 1 ? modeAt(sModePage, f) : -1;
 			// Where the Mixer fruit sits under it, the sign is shorter and its lines closer together.
 			const float yName = kMixerFruit ? 96 : 104, yLine = kMixerFruit ? 124 : 134, yBest = kMixerFruit ? 166 : 184;
-			if (kMixerFruit) {
+			if (mode < 0) {
+				topPanel(44, 116, 312, 66);
+			} else if (kMixerFruit) {
 				if (mode == MODE_DAILY) topPanel(30, 46, 340, 138);
+				else if (mode == SIGN_PASS) topPanel(30, 90, 340, 88);
 				else topPanel(30, 90, 340, 108);
-			} else topPanel(30, 96, 340, 134);
+			} else {
+				topPanel(30, 96, 340, mode == SIGN_PASS ? 92.0f : 122.0f);
+			}
 			gfx::setDepth(1.0f);
 			if (mode != MODE_DAILY) gfx::sprite(SHEET_LOGO, logo_logo_idx, 200, 50, 0.62f, 0.62f);
 			gfx::setDepth(0.7f);
@@ -4851,11 +5072,19 @@ static void drawTopContent(Screen screen) {
 			const Section* sec = f >= 1 && f < n ? &kSections[sOptionSection[f]] : nullptr;
 			gfx::setDepth(1.0f);
 			gfx::sprite(SHEET_LOGO, logo_logo_idx, 200, 50, 0.62f, 0.62f);
-			topPanel(40, 112, 320, 84);
-			gfx::setDepth(0.7f);
-			gfx::text(sec ? sec->title : "Options", 200, 118, 0.5f, COL_ACCENT, ALIGN_CENTER);
-			gfx::text(sec ? sec->hint1 : "", 200, 146, 0.38f, COL_CREAM, ALIGN_CENTER);
-			gfx::text(sec ? sec->hint2 : (sOptionsFromPause ? "Back to the game" : "Back to the title"), 200, 164, 0.38f, COL_CREAM, ALIGN_CENTER);
+			if (!sec) {
+				topPanel(48, 112, 304, 62);
+				gfx::setDepth(0.7f);
+				gfx::text("Options", 200, 120, 0.5f, COL_ACCENT, ALIGN_CENTER);
+				gfx::text(sOptionsFromPause ? "Back to the game" : "Back to the title", 200, 146, 0.38f, COL_CREAM, ALIGN_CENTER);
+			} else {
+				const bool twoLines = sec->hint2[0] != 0;
+				topPanel(40, 112, 320, twoLines ? 80.0f : 64.0f);
+				gfx::setDepth(0.7f);
+				gfx::text(sec->title, 200, 118, 0.5f, COL_ACCENT, ALIGN_CENTER);
+				gfx::text(sec->hint1, 200, 146, 0.38f, COL_CREAM, ALIGN_CENTER);
+				if (twoLines) gfx::text(sec->hint2, 200, 164, 0.38f, COL_CREAM, ALIGN_CENTER);
+			}
 			break;
 		}
 		case SCREEN_SECTION: {
@@ -4889,13 +5118,21 @@ static void drawTopContent(Screen screen) {
 				gfx::setDepth(1.0f);
 				gfx::sprite(SHEET_LOGO, logo_logo_idx, 200, 50, 0.62f, 0.62f);
 			}
-			topPanel(30, 100, 340, 130);
-			gfx::setDepth(0.7f);
-			gfx::text(r ? r->label : sec.title, 200, 106, 0.56f, COL_ACCENT, ALIGN_CENTER);
-			if (r && rowDisabled(*r)) {
+			if (!r) {
+				topPanel(48, 118, 304, 62);
+				gfx::setDepth(0.7f);
+				gfx::text(sec.title, 200, 125, 0.52f, COL_ACCENT, ALIGN_CENTER);
+				gfx::text("Back to Options", 200, 151, 0.40f, COL_CREAM, ALIGN_CENTER);
+			} else if (rowDisabled(*r)) {
+				topPanel(30, 100, 340, 94);
+				gfx::setDepth(0.7f);
+				gfx::text(r->label, 200, 106, 0.56f, COL_ACCENT, ALIGN_CENTER);
 				gfx::text("This console has no 3D screen,", 200, 142, 0.38f, COL_CREAM, ALIGN_CENTER);
 				gfx::text("so depth has no effect here.", 200, 160, 0.38f, COL_CREAM, ALIGN_CENTER);
-			} else if (r && (r->value == &gSave.menuTrack || r->value == &gSave.gameTrack)) {
+			} else if (r->value == &gSave.menuTrack || r->value == &gSave.gameTrack) {
+				topPanel(30, 100, 340, 122);
+				gfx::setDepth(0.7f);
+				gfx::text(r->label, 200, 106, 0.56f, COL_ACCENT, ALIGN_CENTER);
 				if (*r->value == 0) {
 					gfx::text("Auto: Loopable tracks loop 3 times,", 200, 138, 0.38f, COL_CREAM, ALIGN_CENTER);
 					gfx::text("full songs play once before next.", 200, 156, 0.38f, COL_CREAM, ALIGN_CENTER);
@@ -4906,22 +5143,28 @@ static void drawTopContent(Screen screen) {
 					gfx::text(isSong ? "Plays once before next in Auto." : "Loops 3 times before next in Auto.", 200, 156, 0.38f, COL_CREAM, ALIGN_CENTER);
 				}
 				rowValueText(*r, buf, sizeof buf);
-				gfx::text(buf, 200, 194, 0.5f, COL_CREAM, ALIGN_CENTER);
-			} else if (r) {
-				gfx::text(r->line1, 200, 138, 0.38f, COL_CREAM, ALIGN_CENTER);
-				gfx::text(r->line2, 200, 156, 0.38f, COL_CREAM, ALIGN_CENTER);
-				#if PORT_3DS
-				if (r->value == &gSave.stylus) gfx::text("Also calibrate in System Settings.", 200, 174, 0.34f, COL_DIM, ALIGN_CENTER);
-#endif
-				rowValueText(*r, buf, sizeof buf);
-				gfx::text(buf, 200, 194, 0.5f, COL_CREAM, ALIGN_CENTER);
+				gfx::text(buf, 200, 190, 0.5f, COL_CREAM, ALIGN_CENTER);
 			} else {
-				gfx::text("Back to Options", 200, 150, 0.42f, COL_CREAM, ALIGN_CENTER);
+				rowValueText(*r, buf, sizeof buf);
+				const bool hasL2 = r->line2[0] != 0;
+				const bool extraStylus = PORT_3DS && r->value == &gSave.stylus;
+				const bool hasVal = buf[0] != 0;
+				const float valY = extraStylus ? 196.0f : (hasL2 ? 188.0f : 168.0f);
+				const float bottomY = hasVal ? (valY + 30.0f) : (extraStylus ? 198.0f : (hasL2 ? 182.0f : 164.0f));
+				topPanel(30, 100, 340, bottomY - 100.0f);
+				gfx::setDepth(0.7f);
+				gfx::text(r->label, 200, 106, 0.56f, COL_ACCENT, ALIGN_CENTER);
+				gfx::text(r->line1, 200, 138, 0.38f, COL_CREAM, ALIGN_CENTER);
+				if (hasL2) gfx::text(r->line2, 200, 156, 0.38f, COL_CREAM, ALIGN_CENTER);
+#if PORT_3DS
+				if (extraStylus) gfx::text("Also calibrate in System Settings.", 200, 174, 0.34f, COL_DIM, ALIGN_CENTER);
+#endif
+				if (hasVal) gfx::text(buf, 200, valY, 0.5f, COL_CREAM, ALIGN_CENTER);
 			}
 			break;
 		}
 		case SCREEN_SHOP:
-			topPanel(30, 8, 340, 224);
+			topPanel(30, 8, 340, sShopNoteT > 0 ? 222.0f : 204.0f);
 			drawShopPreview();
 			break;
 		case SCREEN_JOURNAL:
@@ -4932,7 +5175,7 @@ static void drawTopContent(Screen screen) {
 			break;
 #if PORT_CUSTOM_MUSIC
 		case SCREEN_BEATTOOL:
-			topPanel(30, 96, 340, 134);
+			topPanel(30, 96, 340, PORT_ANDROID ? 96.0f : 132.0f);
 			gfx::setDepth(1.0f);
 			gfx::sprite(SHEET_LOGO, logo_logo_idx, 200, 50, 0.62f, 0.62f);
 			gfx::setDepth(0.7f);
@@ -4950,7 +5193,7 @@ static void drawTopContent(Screen screen) {
 			drawUpdateTop();
 			break;
 		case SCREEN_BEAT: {
-			topPanel(30, 96, 340, 134);
+			topPanel(30, 96, 340, 122);
 			gfx::setDepth(1.0f);
 			gfx::sprite(SHEET_LOGO, logo_logo_idx, 200, 50, 0.62f, 0.62f);
 			gfx::setDepth(0.7f);
@@ -5019,7 +5262,7 @@ static void drawTopContent(Screen screen) {
 #endif
 			break;
 		case SCREEN_PASS_TURN:
-			topPanel(30, 96, 340, 134);
+			topPanel(30, 96, 340, 122);
 			gfx::setDepth(1.0f);
 			gfx::sprite(SHEET_LOGO, logo_logo_idx, 200, 50, 0.62f, 0.62f);
 			gfx::setDepth(0.7f);
@@ -5034,7 +5277,7 @@ static void drawTopContent(Screen screen) {
 			break;
 		case SCREEN_PASS_BOARD: {
 			const int winner = passWinner();
-			topPanel(30, 96, 340, 134);
+			topPanel(30, 96, 340, winner >= 0 ? 114.0f : 82.0f);
 			gfx::setDepth(1.0f);
 			gfx::sprite(SHEET_LOGO, logo_logo_idx, 200, 50, 0.62f, 0.62f);
 			gfx::setDepth(0.7f);
@@ -5044,14 +5287,33 @@ static void drawTopContent(Screen screen) {
 			gfx::text(buf, 200, 136, 0.8f, winner >= 0 ? passColor(winner) : COL_ACCENT, ALIGN_CENTER);
 			if (winner >= 0) {
 				snprintf(buf, sizeof buf, "%lu", (unsigned long)sPassScores[winner]);
-				gfx::text(buf, 200, 178, 0.7f, COL_CREAM, ALIGN_CENTER);
+				gfx::text(buf, 200, 174, 0.7f, COL_CREAM, ALIGN_CENTER);
 			}
 			break;
 		}
 		case SCREEN_RESULT: {
 			float in = clampf(sGame.phaseT * 4, 0, 1);
+			const int resTracks = (sGame.mode == MODE_BOSSRUSH || sGame.mode == MODE_ORCHARD) ? sGame.orc.newTracks : 0;
+			const float resCoinY = (sGame.mode == MODE_BOSSRUSH || sGame.mode == MODE_ORCHARD) ? (resTracks > 0 ? 168.0f : 152.0f) : 148.0f;
+			const float resExtraY = (sGame.mode == MODE_BOSSRUSH || sGame.mode == MODE_ORCHARD) ? (resTracks > 0 ? 190.0f : 178.0f) : 174.0f;
+			const bool resHasExtra = !sCardFrame && sGame.scoreCommitted && sPassTurn < 0 && (sGame.dailyCoins || sGame.journalCoins);
+			float resY = 8.0f, resH = 224.0f;
+			if (sResultBoard && !sCardFrame && lbEligible()) {
+				resH = 224.0f;
+			} else if (sGame.mode == MODE_PRACTICE) {
+				resY = 20.0f;
+				resH = 196.0f;
+			} else if (sCardFrame) {
+				resH = 208.0f;
+			} else if (resHasExtra) {
+				resH = resExtraY + 18.0f;
+			} else if (sGame.scoreCommitted && sPassTurn < 0) {
+				resH = resCoinY + 26.0f;
+			} else {
+				resH = 136.0f;
+			}
 			gfx::setDepth(0.5f);
-			gfx::sign(sprites_plank_idx, 28, 8, 344, 224, withAlpha(COL_PLANK, in));
+			gfx::sign(sprites_plank_idx, 28, resY, 344, clampf(resH, 136.0f, 224.0f), withAlpha(COL_PLANK, in));
 			gfx::setDepth(1.0f);
 			if (sResultBoard && !sCardFrame && lbEligible()) {
 				gfx::text("ONLINE TOP 10", 200, 14, 0.48f, COL_ACCENT, ALIGN_CENTER);
@@ -5338,11 +5600,12 @@ static void drawQuitBomb(bool focused, float alpha) {
 	if (alpha <= 0) return;
 	const Button b = quitButton();
 	const float lit = clampf(sQuitHold / kQuitHold, 0, 1);  // 0 until held, 1 just before it goes off
+	const float hi = highlightFade(b.x, b.y, b.w, b.h, focused || lit > 0);
 	const float shake = gSave.calmFx ? lit * 0.6f : lit * 2.5f;
 	const float cx = b.x + b.w * 0.5f + sinf(sTime * 53) * shake, cy = b.y + 22 + cosf(sTime * 47) * shake;
 	const float wob = gSave.calmFx ? 0 : sinf(sTime * 2.2f) * 0.12f;
 	if (sQuitT < 0) {
-		if (focused || lit > 0) gfx::sprite(SHEET_SPRITES, sprites_ring_idx, cx, cy, 0.62f + 0.12f * lit, 0.62f + 0.12f * lit, 0, withAlpha(lit > 0 ? rgba(255, (u8)(200 - 150 * lit), 40, 255) : COL_ACCENT, 0.9f * alpha));
+		if (hi > 0.01f) gfx::sprite(SHEET_SPRITES, sprites_ring_idx, cx, cy, 0.62f + 0.12f * lit, 0.62f + 0.12f * lit, 0, withAlpha(lit > 0 ? rgba(255, (u8)(200 - 150 * lit), 40, 255) : COL_ACCENT, 0.9f * alpha * hi));
 		if (fruit3D()) {
 			// A model can't fade, so during a slide the 3D bomb shrinks away instead of turning into the sticker.
 			const float grow = alpha * alpha * (3 - 2 * alpha);
@@ -5362,7 +5625,7 @@ static void drawQuitBomb(bool focused, float alpha) {
 		char label[24];
 		if (lit > 0) snprintf(label, sizeof label, "Quitting in %d", (int)ceilf(kQuitHold - sQuitHold));
 		else snprintf(label, sizeof label, "%s", focused ? "Hold to Quit" : b.label);
-		const u32 lc = withAlpha(focused || lit > 0 ? COL_ACCENT : COL_CREAM, alpha);
+		const u32 lc = withAlpha(lerpColor(COL_CREAM, COL_ACCENT, hi), alpha);
 		// Centred under the bomb, but a long label is moved right so it never runs off the window's edge.
 		const float lx = fmaxf(b.x + b.w * 0.5f, b.x + gfx::textWidth(label, 0.3f) * 0.5f);
 		gfx::text(label, lx, b.y + 44, 0.3f, lc, ALIGN_CENTER);
@@ -5450,12 +5713,17 @@ static void drawRows() {
 			gfx::text(buf, 306, ty, 0.35f, COL_CREAM, ALIGN_RIGHT);
 		} else {
 			float cy = y + kRowH * 0.5f - 1;
-			gfx::sprite(SHEET_SPRITES, sprites_arrow_idx, 164, cy, 0.5f, 0.5f, 0, COL_ACCENT);
-			gfx::sprite(SHEET_SPRITES, sprites_arrow_idx, 298, cy, 0.5f, 0.5f, 3.14159265f, COL_ACCENT);
+			const bool dis = rowDisabled(r);
+			const int pressDir = (focus == i && sTouchMode == TOUCH_ROW && !sTouchMoved && sTouchRow == i) ? sRowHoldDir : (focus == i ? sRowArrowHover : 0);
+			const float lsLeft = pressDir < 0 ? 0.58f : 0.50f, lsRight = pressDir > 0 ? 0.58f : 0.50f;
+			const u32 colLeft = dis ? COL_DIM : (pressDir < 0 ? WHITE : COL_ACCENT);
+			const u32 colRight = dis ? COL_DIM : (pressDir > 0 ? WHITE : COL_ACCENT);
+			gfx::sprite(SHEET_SPRITES, sprites_arrow_idx, 164, cy, lsLeft, lsLeft, 0, colLeft);
+			gfx::sprite(SHEET_SPRITES, sprites_arrow_idx, 298, cy, lsRight, lsRight, 3.14159265f, colRight);
 			float vs = 0.36f;
 			float w = gfx::textWidth(buf, vs);
 			if (w > 108) vs *= 108 / w;
-			gfx::text(buf, 231, ty + (0.36f - vs) * 10, vs, COL_CREAM, ALIGN_CENTER);
+			gfx::text(buf, 231, ty + (0.36f - vs) * 10, vs, dis ? COL_DIM : COL_CREAM, ALIGN_CENTER);
 		}
 	}
 	drawScrollMark(kListTop, 240 - kListTop, sScroll, maxScroll());
@@ -5545,11 +5813,10 @@ static void drawBottomContent(Screen screen) {
 			if ((sPassTyping >= 0 || sSpTypingMsg) && screen == sScreen) {
 				char typed[48];
 				port::textPoll(typed, sizeof typed - 1);
-				strcat(typed, "_");
 				gfx::rect(0, 0, 320, 240, rgba(30, 18, 10, 170));
 				gfx::sign(sprites_plank_idx, 20, 60, 280, 146, COL_PLANK);
 				gfx::text(sSpTypingMsg ? "StreetPass greeting" : "Type a name", 160, 72, 0.48f, COL_ACCENT, ALIGN_CENTER);
-				fitText(typed, 160, 108, sSpTypingMsg ? 0.44f : 0.6f, 256, sSpTypingMsg ? COL_CREAM : passColor(sPassTyping));
+				drawTypingWithCursor(typed, 160, 108, sSpTypingMsg ? 0.44f : 0.6f, 256, sSpTypingMsg ? COL_CREAM : passColor(sPassTyping));
 				for (int i = 0; i < 2; i++) drawSign(kNameButtons[i], kNameButtons[i].label, sNameFocus == i, sPressed == i, 0.5f);
 			}
 #if PORT_HAS_DISPLAY
@@ -5703,12 +5970,11 @@ static void drawBottomContent(Screen screen) {
 				if (sLbTypingName && screen == sScreen) {
 					char typed[32];
 					port::textPoll(typed, sizeof typed - 1);
-					strcat(typed, "_");
 					gfx::rect(0, 0, 320, 240, rgba(30, 18, 10, 175));
 					gfx::sign(sprites_plank_idx, 20, 56, 280, 152, COL_PLANK);
 					gfx::text("Leaderboard Name", 160, 68, 0.48f, COL_ACCENT, ALIGN_CENTER);
 					gfx::text("Max 6 characters", 160, 88, 0.34f, COL_DIM, ALIGN_CENTER);
-					fitText(typed, 160, 110, 0.56f, 248, COL_CREAM);
+					drawTypingWithCursor(typed, 160, 110, 0.56f, 248, COL_CREAM);
 					for (int i = 0; i < 2; i++) drawSign(kNameButtons[i], kNameButtons[i].label, sLbNameFocus == i, sPressed == i, 0.5f);
 				}
 			}
@@ -6040,18 +6306,40 @@ static void updateFrame(const Input& in, bool wasTouching) {
 					if (sBeatScroll + pressedRow < n && ids[sBeatScroll + pressedRow] != beatSong()) beatSelect(ids[sBeatScroll + pressedRow]);
 					pressedRow = -1;
 				}
+#if PORT_MOUSE
+				sBeatHover = -1;
+				if (in.hovering) {
+					if (n > kBeatRows && hit(kBeatUp, in.tx, in.ty)) sBeatHover = 0;
+					else if (n > kBeatRows && hit(kBeatDown, in.tx, in.ty)) sBeatHover = 1;
+#if PORT_CUSTOM_MUSIC
+					else if (beatSong() >= kTrackCount && hit(kBeatTool, in.tx, in.ty)) sBeatHover = 2;
+					else if (hit(kBeatFolder, in.tx, in.ty)) sBeatHover = 3;
+#endif
+				}
+#endif
 				if (in.touching && !wasTouching) {
 					pressedRow = -1;
+					sBeatArrowPress = -1;
 					for (int r = 0; r < kBeatRows && sBeatScroll + r < n; r++)
 						if (hit(beatRow(r), in.tx, in.ty)) pressedRow = r;
-					if (n > kBeatRows && hit(kBeatUp, in.tx, in.ty) && sBeatScroll > 0) {
+					if (n > kBeatRows && hit(kBeatUp, in.tx, in.ty) && sBeatScroll > 0) sBeatArrowPress = 0;
+					else if (n > kBeatRows && hit(kBeatDown, in.tx, in.ty) && sBeatScroll + kBeatRows < n) sBeatArrowPress = 1;
+#if PORT_CUSTOM_MUSIC
+					else if (beatSong() >= kTrackCount && hit(kBeatTool, in.tx, in.ty)) sBeatArrowPress = 2;
+					else if (hit(kBeatFolder, in.tx, in.ty)) sBeatArrowPress = 3;
+#endif
+				}
+				if (in.touching && (sBeatArrowPress == 0 || sBeatArrowPress == 1)) {
+					const Button& ab = sBeatArrowPress == 0 ? kBeatUp : kBeatDown;
+					const bool can = sBeatArrowPress == 0 ? (sBeatScroll > 0) : (sBeatScroll + kBeatRows < n);
+					const bool over = can && hit(ab, in.tx, in.ty);
+					if (sBeatArrowHold.step(over ? sBeatArrowPress : -1, over)) {
 						audio::click();
-						sBeatScroll--;
+						sBeatScroll += sBeatArrowPress == 0 ? -1 : 1;
 					}
-					if (n > kBeatRows && hit(kBeatDown, in.tx, in.ty) && sBeatScroll + kBeatRows < n) {
-						audio::click();
-						sBeatScroll++;
-					}
+				} else if (!in.touching) {
+					sBeatArrowPress = -1;
+					sBeatArrowHold.reset();
 				}
 			}
 #if PORT_CUSTOM_MUSIC
@@ -6112,9 +6400,31 @@ static void updateFrame(const Input& in, bool wasTouching) {
 			else if (in.repeat & KEY_RIGHT) toolChange(5);
 			if (in.down & KEY_X) toolChange(6);
 			if (in.down & KEY_Y) toolChange(7);
-			if (in.touching && !wasTouching)
+#if PORT_MOUSE
+			sToolHover = -1;
+			if (in.hovering)
 				for (int i = 0; i < kToolTapCount; i++)
-					if (hit(kToolTaps[i], in.tx, in.ty)) toolChange(i);
+					if (hit(kToolTaps[i], in.tx, in.ty)) sToolHover = i;
+#endif
+			if (in.touching) {
+				if (!wasTouching) {
+					sToolPress = -1;
+					for (int i = 0; i < kToolTapCount; i++) {
+						if (hit(kToolTaps[i], in.tx, in.ty)) {
+							sToolPress = i;
+							if (i != 0 && i != 1 && i != 4 && i != 5) toolChange(i);
+							break;
+						}
+					}
+				}
+				if (sToolPress == 0 || sToolPress == 1 || sToolPress == 4 || sToolPress == 5) {
+					const bool over = hit(kToolTaps[sToolPress], in.tx, in.ty);
+					if (sToolHold.step(over ? sToolPress : -1, over)) toolChange(sToolPress);
+				}
+			} else {
+				sToolPress = -1;
+				sToolHold.reset();
+			}
 			int t = menuInput(kToolButtons, 2, SCREEN_BEATTOOL, keys, wasTouching);
 			if (in.down & KEY_B) {
 				audio::click();
@@ -6276,7 +6586,7 @@ static void updateFrame(const Input& in, bool wasTouching) {
 				pauseGame();
 				break;
 			}
-			if (in.touching && !wasTouching && sGame.mode == MODE_ORCHARD && hit(kInvSign, in.tx, in.ty)) {
+			if (in.touching && !wasTouching && sGame.mode == MODE_ORCHARD && !sGame.orchardHeld() && hit(kInvSign, in.tx, in.ty)) {
 				audio::click();
 				if (sOrcInv) {
 					sOrcInv = false;
@@ -6303,7 +6613,7 @@ static void updateFrame(const Input& in, bool wasTouching) {
 				}
 				Input bin = in;
 #if PORT_PAUSE_BUTTON
-				if (hit(kPauseSign, in.tx, in.ty) || (sGame.mode == MODE_ORCHARD && hit(kInvSign, in.tx, in.ty))) bin.touching = false;
+				if (hit(kPauseSign, in.tx, in.ty) || (sGame.mode == MODE_ORCHARD && !sGame.orchardHeld() && hit(kInvSign, in.tx, in.ty))) bin.touching = false;
 #endif
 				if (orcTook || sOrcSlotTouch) bin.touching = false;
 				sBlade.update(sGame.bladeInput(bin));
@@ -6473,6 +6783,7 @@ static void drawStickPoint();
 static void drawFrame() {
 	float e = sSlideT * sSlideT * (3 - 2 * sSlideT);  // eases in and out
 	gHudPaused = sScreen == SCREEN_PAUSE;  // no lesson callout over the PAUSED sign
+	beginHighlightFrame();
 	gfx::beginFrame();
 	for (int eye = 0; eye < 2; eye++) {
 		if (!gfx::beginTop(eye)) continue;
@@ -6519,6 +6830,7 @@ static bool showsField(Screen s) { return s == SCREEN_GAME || s == SCREEN_PAUSE 
 static void drawFrame() {
 	float e = sSlideT * sSlideT * (3 - 2 * sSlideT);
 	bool field = showsField(sScreen) || (sSliding && showsField(sSlideFrom));
+	beginHighlightFrame();
 	gfx::beginFrame();
 	gfx::drawBackdrop(field ? WHITE : rgba(205, 205, 205));
 	const float mixerIn = sScreen == SCREEN_MODES ? (sSliding ? e : 1) : (sSliding && sSlideFrom == SCREEN_MODES ? 1 - e : 0);
@@ -6536,7 +6848,7 @@ static void drawFrame() {
 			gfx::sign(sprites_plank_idx, kPauseSign.x + 3, kPauseSign.y + 3, 30, 30, withAlpha(COL_PLANK, 0.55f));
 			gfx::rect(kPauseSign.x + 12, kPauseSign.y + 10, 4, 16, withAlpha(COL_CREAM, 0.55f));
 			gfx::rect(kPauseSign.x + 20, kPauseSign.y + 10, 4, 16, withAlpha(COL_CREAM, 0.55f));
-			if (sGame.mode == MODE_ORCHARD) {
+			if (sGame.mode == MODE_ORCHARD && (!sGame.orchardHeld() || sOrcInv)) {
 				gfx::sign(sprites_plank_idx, kInvSign.x + 3, kInvSign.y + 3, 30, 30, withAlpha(sOrcInv ? COL_ACCENT : COL_PLANK, 0.65f));
 				gfx::sprite(SHEET_SPRITES, sprites_cd_seedpouch_idx, kInvSign.x + 18, kInvSign.y + 18, 0.48f, 0.48f);
 			}

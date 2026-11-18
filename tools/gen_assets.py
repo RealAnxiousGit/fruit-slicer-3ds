@@ -1521,8 +1521,22 @@ def boss_face(d, cx, cy, r, pose, kind, outline=False):
     ink = FACE_INK
     w = max(1.0, r * 0.06)
     white = (255, 252, 240, 255)
+    soft_ink = (40, 22, 30, 220)
     for side in (-1, 1):
         ex, ey = cx + side * r * 0.34, cy - r * 0.12
+        if pose == "dead":
+            # Shocked X eyes with crisp cream rim for readability across any fruit rind.
+            xr = r * 0.145
+            if outline:
+                halo = (255, 246, 222, 220)
+                d.line([(ex - xr) * SS, (ey - xr) * SS, (ex + xr) * SS, (ey + xr) * SS], fill=halo, width=int(w * 2.1 * SS))
+                d.line([(ex - xr) * SS, (ey + xr) * SS, (ex + xr) * SS, (ey - xr) * SS], fill=halo, width=int(w * 2.1 * SS))
+            d.line([(ex - xr) * SS, (ey - xr) * SS, (ex + xr) * SS, (ey + xr) * SS], fill=ink, width=int(w * 1.25 * SS))
+            d.line([(ex - xr) * SS, (ey + xr) * SS, (ex + xr) * SS, (ey - xr) * SS], fill=ink, width=int(w * 1.25 * SS))
+            brow_col = (255, 200, 64, 255) if (kind == "chili" and not outline) else ink
+            d.line([(ex - side * r * 0.14) * SS, (ey - r * 0.25) * SS, (ex + side * r * 0.14) * SS, (ey - r * 0.29) * SS],
+                   fill=brow_col, width=int(w * 1.3 * SS))
+            continue
         if pose == "daze":
             # Swirly eyes: a spiral of short strokes.
             pts = []
@@ -1535,7 +1549,7 @@ def boss_face(d, cx, cy, r, pose, kind, outline=False):
             continue
         eh = {"guard": 0.16, "open": 0.07, "wind": 0.1}[pose]
         if outline:
-            el(d, ex, ey, r * 0.15 + w, r * eh + w, ink)
+            el(d, ex, ey, r * 0.15 + w * 0.85, r * eh + w * 0.85, soft_ink)
         el(d, ex, ey, r * 0.15, r * eh, white)
         px = ex - side * r * 0.03 if pose != "open" else ex
         el(d, px, ey + r * 0.02, r * 0.065, min(r * 0.065, r * eh * 0.9), ink)
@@ -1547,9 +1561,16 @@ def boss_face(d, cx, cy, r, pose, kind, outline=False):
             bx0, by0 = ex + side * r * 0.2, ey - r * (0.2 + tilt)
             bx1, by1 = ex - side * r * 0.14, ey - r * 0.14
         brow_col = (255, 200, 64, 255) if (kind == "chili" and not outline) else ink
-        d.line([bx0 * SS, by0 * SS, bx1 * SS, by1 * SS], fill=brow_col, width=int(w * 1.6 * SS))
+        d.line([bx0 * SS, by0 * SS, bx1 * SS, by1 * SS], fill=brow_col, width=int(w * 1.55 * SS))
     my = cy + r * (0.42 if kind == "king" else 0.32)
-    if pose == "open":
+    if pose == "dead":
+        # Surprised open 'O' mouth + panic sweat drop.
+        if outline:
+            el(d, cx, my + r * 0.04, r * 0.17 + w * 0.7, r * 0.21 + w * 0.7, (255, 246, 222, 200))
+        el(d, cx, my + r * 0.04, r * 0.16, r * 0.20, ink)
+        el(d, cx, my + r * 0.11, r * 0.09, r * 0.08, (224, 86, 102, 255))
+        el(d, cx + r * 0.68, cy - r * 0.04, r * 0.065, r * 0.095, (150, 215, 255, 255))
+    elif pose == "open":
         # A wide laugh, tongue and all.
         el(d, cx, my, r * 0.26, r * 0.17, ink)
         el(d, cx, my + r * 0.07, r * 0.15, r * 0.08, (232, 96, 110, 255))
@@ -1581,24 +1602,26 @@ def boss_face(d, cx, cy, r, pose, kind, outline=False):
             d.line(pts, fill=ink, width=int(r * 0.1 * SS), joint="curve")
             d.line(pts, fill=mc, width=int(r * 0.06 * SS), joint="curve")
     elif kind == "pineapple":
-        # An armored golden chin-guard /goatee tuft for The Pineapple Guard.
-        poly(d, [(cx - r * 0.16, my + r * 0.20), (cx + r * 0.16, my + r * 0.20), (cx, my + r * 0.38)], (92, 166, 70, 255))
+        # Armored golden chin-guard goatee sitting cleanly beneath any expression.
+        poly(d, [(cx - r * 0.14, my + r * 0.29), (cx + r * 0.14, my + r * 0.29), (cx, my + r * 0.44)], (92, 166, 70, 255))
     elif kind == "chili":
         # Flame-whisker cheek marks for The Inferno Pepper.
         for side in (-1, 1):
-            poly(d, [(cx + side * r * 0.42, cy + r * 0.08), (cx + side * r * 0.62, cy + r * 0.02), (cx + side * r * 0.54, cy + r * 0.18)], (255, 206, 76, 255))
+            poly(d, [(cx + side * r * 0.44, cy + r * 0.08), (cx + side * r * 0.63, cy + r * 0.02), (cx + side * r * 0.55, cy + r * 0.18)], (255, 206, 76, 255))
     elif kind == "durian":
-        # Heavy rocky brow-plate and twin fangs for Dusty Durian.
-        for side in (-1, 1):
-            poly(d, [(cx + side * r * 0.14, my + r * 0.02), (cx + side * r * 0.25, my + r * 0.02), (cx + side * r * 0.20, my + r * 0.20)], white)
+        # Twin fangs tuck cleanly above the scowl/grin in guard/wind poses without overlapping daze/dead mouths.
+        if pose in ("guard", "wind"):
+            for side in (-1, 1):
+                poly(d, [(cx + side * r * 0.15, my - r * 0.01), (cx + side * r * 0.25, my - r * 0.01), (cx + side * r * 0.20, my + r * 0.14)], white)
     elif kind == "lemon":
-        # Sour diamond monocle-crest and curled beard for Lord Lemon.
-        poly(d, [(cx, cy - r * 0.52), (cx + r * 0.14, cy - r * 0.34), (cx, cy - r * 0.22), (cx - r * 0.14, cy - r * 0.34)], (166, 74, 212, 255))
-        poly(d, [(cx - r * 0.16, my + r * 0.18), (cx + r * 0.16, my + r * 0.18), (cx, my + r * 0.36)], (188, 224, 62, 255))
+        # Sour diamond monocle-crest above the brows and citrus goatee tucked cleanly below the mouth.
+        poly(d, [(cx, cy - r * 0.58), (cx + r * 0.12, cy - r * 0.42), (cx, cy - r * 0.28), (cx - r * 0.12, cy - r * 0.42)], (166, 74, 212, 255))
+        poly(d, [(cx - r * 0.14, my + r * 0.29), (cx + r * 0.14, my + r * 0.29), (cx, my + r * 0.44)], (188, 224, 62, 255))
     elif kind == "apple":
-        # Scarred battle brows and fanged sneer for Aggro Apple.
-        for side in (-1, 1):
-            poly(d, [(cx + side * r * 0.12, my + r * 0.02), (cx + side * r * 0.22, my + r * 0.02), (cx + side * r * 0.17, my + r * 0.18)], white)
+        # Upper sneer fangs for Aggro Apple during active battle poses.
+        if pose in ("guard", "wind"):
+            for side in (-1, 1):
+                poly(d, [(cx + side * r * 0.13, my - r * 0.01), (cx + side * r * 0.22, my - r * 0.01), (cx + side * r * 0.18, my + r * 0.13)], white)
 
 
 def boss_body(kind, pose):
@@ -1649,8 +1672,8 @@ def boss_body(kind, pose):
         grid.putalpha(ImageChops.multiply(mask_of(grid), disc))
         img.alpha_composite(grid)
         patch = Image.new("RGBA", img.size, (0, 0, 0, 0))
-        el(ImageDraw.Draw(patch), cx, cy + r * 0.06, r * 0.56, r * 0.44, (255, 234, 146, 160))
-        img.alpha_composite(patch.filter(ImageFilter.GaussianBlur(SS * 2.5)))
+        el(ImageDraw.Draw(patch), cx, cy + r * 0.06, r * 0.62, r * 0.48, (255, 232, 142, 175))
+        img.alpha_composite(patch.filter(ImageFilter.GaussianBlur(SS * 3.0)))
         d = ImageDraw.Draw(img)
         boss_face(d, cx, cy + r * 0.06, r * 0.88, pose, "pineapple")
     elif kind == "chili":
@@ -1665,28 +1688,28 @@ def boss_body(kind, pose):
         leaf(d, cx - r * 0.04, cy - r * 0.84, -150, r * 0.34, (74, 162, 62, 255))
         leaf(d, cx + r * 0.04, cy - r * 0.84, -30, r * 0.34, (74, 162, 62, 255))
         patch = Image.new("RGBA", img.size, (0, 0, 0, 0))
-        el(ImageDraw.Draw(patch), cx, cy + r * 0.05, r * 0.54, r * 0.44, (255, 152, 92, 150))
-        img.alpha_composite(patch.filter(ImageFilter.GaussianBlur(SS * 2.5)))
+        el(ImageDraw.Draw(patch), cx, cy + r * 0.05, r * 0.58, r * 0.46, (255, 142, 88, 155))
+        img.alpha_composite(patch.filter(ImageFilter.GaussianBlur(SS * 2.8)))
         d = ImageDraw.Draw(img)
         boss_face(d, cx, cy + r * 0.04, r * 0.86, pose, "chili")
     elif kind == "durian":
-        # Dusty Durian: rugged spiked olive-tan armor ring with dusty ochre sheen.
+        # Dusty Durian: sculpted faceted armored spikes with ochre-gold highlight bevels & clean face zone.
         for i in range(12):
             a = i * math.pi / 6.0
             ca, sa = math.cos(a), math.sin(a)
-            pts = [
-                (cx + ca * r * 0.72 - sa * r * 0.14, cy + sa * r * 0.72 + ca * r * 0.14),
-                (cx + ca * r * 0.72 + sa * r * 0.14, cy + sa * r * 0.72 - ca * r * 0.14),
-                (cx + ca * r * 1.08, cy + sa * r * 1.08),
-            ]
-            poly(d, pts, (132, 114, 58, 255))
+            bx0, by0 = cx + ca * r * 0.72 - sa * r * 0.14, cy + sa * r * 0.72 + ca * r * 0.14
+            bx1, by1 = cx + ca * r * 0.72 + sa * r * 0.14, cy + sa * r * 0.72 - ca * r * 0.14
+            bmid = (cx + ca * r * 0.74, cy + sa * r * 0.74)
+            tip = (cx + ca * r * 1.09, cy + sa * r * 1.09)
+            poly(d, [(bx0, by0), bmid, tip], (152, 132, 66, 255))
+            poly(d, [bmid, (bx1, by1), tip], (116, 98, 48, 255))
         body = (166, 148, 76, 255) if pose != "wind" else (196, 166, 82, 255)
         el(d, cx, cy, r * 0.86, r * 0.86, body)
         img = shade(img, light=(245, 232, 168, 95), dark=(64, 52, 24, 90))
         d = ImageDraw.Draw(img)
         patch = Image.new("RGBA", img.size, (0, 0, 0, 0))
-        el(ImageDraw.Draw(patch), cx, cy + r * 0.05, r * 0.56, r * 0.46, (218, 200, 128, 150))
-        img.alpha_composite(patch.filter(ImageFilter.GaussianBlur(SS * 2.5)))
+        el(ImageDraw.Draw(patch), cx, cy + r * 0.04, r * 0.64, r * 0.52, (218, 200, 128, 175))
+        img.alpha_composite(patch.filter(ImageFilter.GaussianBlur(SS * 3.2)))
         d = ImageDraw.Draw(img)
         boss_face(d, cx, cy + r * 0.02, r * 0.88, pose, "durian")
     elif kind == "lemon":
@@ -1754,14 +1777,28 @@ def boss_body(kind, pose):
 
 
 def boss_face_overlay(kind, pose):
-    """The face alone, for laying on the 3D boss."""
+    """The face alone, for laying on the 3D boss with a soft body-toned cushion so faces blend cleanly over spikes."""
     c = BOSS_CELL
     img = canvas(c)
-    d = ImageDraw.Draw(img)
     cx, cy, r = c / 2, c / 2 + 2, c * 0.42
     scale = 0.88 if kind in ("king", "durian", "apple") else (0.90 if kind in ("pineapple", "chili") else (0.86 if kind == "lemon" else 1.0))
     off = -0.08 if kind == "king" else (0.06 if kind in ("pineapple", "chili") else (0.03 if kind in ("durian", "lemon", "apple") else 0.0))
-    boss_face(d, cx, cy + r * off, r * scale, pose, kind, outline=True)
+    fcy = cy + r * off
+    fr = r * scale
+    cushions = {
+        "durian": (182, 164, 88, 175),
+        "pineapple": (236, 176, 56, 150),
+        "king": (52, 48, 76, 120),
+        "melon": (68, 152, 82, 130),
+        "chili": (228, 48, 44, 130),
+        "lemon": (246, 218, 62, 135),
+        "apple": (210, 44, 56, 135),
+    }
+    patch = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    el(ImageDraw.Draw(patch), cx, fcy + fr * 0.05, fr * 0.64, fr * 0.54, cushions.get(kind, (120, 120, 120, 120)))
+    img.alpha_composite(patch.filter(ImageFilter.GaussianBlur(SS * 4.2)))
+    d = ImageDraw.Draw(img)
+    boss_face(d, cx, fcy, fr, pose, kind, outline=True)
     return shrink(img)
 
 
@@ -1807,6 +1844,10 @@ def orchard_sprites():
         out += [(f"boss_{who}_{p}", boss_body(who, p)) for p in BOSS_POSES]
         out += [(f"bface_{who}_{p}", boss_face_overlay(who, p)) for p in BOSS_POSES]
     out.append(("boss_worm", spr_worm()))
+    # 2.0 Milestone boss death poses (X eyes & surprised mouth) appended at tail so earlier indices stay fixed.
+    for who in ("durian", "lemon", "apple"):
+        out.append((f"boss_{who}_dead", boss_body(who, "dead")))
+        out.append((f"bface_{who}_dead", boss_face_overlay(who, "dead")))
     return out
 
 

@@ -183,7 +183,8 @@ const char* Game::practicePrompt(int line) const {
 void Game::drawPractice() const {
 	if (phase != PHASE_PLAY && phase != PHASE_READY) return;
 	const float s = fminf(uiScale(), (kFieldW - 24) / 300.0f);
-	const float w = 300 * s, h = 64 * s;
+	const bool twoLines = practicePrompt(1)[0] != 0;
+	const float w = 300 * s, h = (twoLines ? 56.0f : 40.0f) * s;
 #if PORT_TWO_SCREENS
 	const float y = kFieldTop + 6;
 #else
@@ -194,12 +195,12 @@ void Game::drawPractice() const {
 	char head[24];
 	snprintf(head, sizeof head, "LESSON %d OF 7", (practiceStep > PS_DONE ? PS_DONE : practiceStep) + 1);
 	gfx::text(head, kFieldW * 0.5f, y + 5 * s, 0.3f * s, COL_ACCENT, ALIGN_CENTER);
-	for (int i = 0; i < 2; i++) {
+	for (int i = 0; i < (twoLines ? 2 : 1); i++) {
 		const char* line = practicePrompt(i);
 		float ts = 0.4f * s;
 		float tw = gfx::textWidth(line, ts);
-		if (tw > w - 24) ts *= (w - 24) / tw;
-		gfx::text(line, kFieldW * 0.5f, y + (19 + i * 18) * s, ts, COL_CREAM, ALIGN_CENTER);
+		if (tw > w - 36 * s) ts *= (w - 36 * s) / tw;
+		gfx::text(line, kFieldW * 0.5f, y + (18 + i * 16) * s, ts, COL_CREAM, ALIGN_CENTER);
 	}
 	gfx::text(PORT_PRACTICE_SKIP, kFieldW * 0.5f, y + h + 2, 0.28f * s, withAlpha(COL_CREAM, 0.7f), ALIGN_CENTER);
 }
