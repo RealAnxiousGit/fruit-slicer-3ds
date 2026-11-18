@@ -529,7 +529,7 @@ static const Button kResultButtons[] = {kBack, {20, 170, 134, 52, "Again"}, {166
 static constexpr int kResultCount = 4;
 static constexpr int kResultTopIdx = 3;
 #else
-static const Button kResultButtons[] = {kBack, {20, 170, 134, 52, "Again"}, {166, 170, 134, 52, "Modes"}, {166, 108, 120, 46, "Share"}, {34, 108, 120, 46, "Top 10"}};
+static const Button kResultButtons[] = {kBack, {20, 168, 134, 52, "Again"}, {166, 168, 134, 52, "Modes"}, {166, 104, 134, 48, "Share"}, {20, 104, 134, 48, "Top 10"}};
 static constexpr int kResultCount = 5;
 static constexpr int kResultTopIdx = 4;
 #endif
@@ -5246,17 +5246,17 @@ static void drawTopContent(Screen screen) {
 			}
 #else
 			gfx::setDepth(1.8f);
-			gfx::text("PAUSED", 200, 120, 1.1f, COL_CREAM, ALIGN_CENTER);
+			gfx::text("PAUSED", 200, 78, 1.1f, COL_CREAM, ALIGN_CENTER);
 			{
 				// Coins saved, with what this run has made so far waiting to be added.
 				char cb[40];
 				snprintf(cb, sizeof cb, "%lu", (unsigned long)gSave.coins);
 				float w = gfx::textWidth(cb, 0.5f);
-				gfx::sprite(SHEET_SPRITES, sprites_coin_idx, 200 - w / 2 - 6, 175, 0.56f, 0.56f);
-				gfx::text(cb, 200 + 8, 166, 0.5f, COL_CREAM, ALIGN_CENTER);
+				gfx::sprite(SHEET_SPRITES, sprites_coin_idx, 200 - w / 2 - 6, 151, 0.56f, 0.56f);
+				gfx::text(cb, 200 + 8, 142, 0.5f, COL_CREAM, ALIGN_CENTER);
 				if (sGame.runCoins()) {
 					snprintf(cb, sizeof cb, "+%lu FROM THIS RUN", (unsigned long)sGame.runCoins());
-					gfx::text(cb, 200, 192, 0.34f, COL_ACCENT, ALIGN_CENTER);
+					gfx::text(cb, 200, 168, 0.34f, COL_ACCENT, ALIGN_CENTER);
 				}
 			}
 #endif
@@ -5297,11 +5297,10 @@ static void drawTopContent(Screen screen) {
 			const float resCoinY = (sGame.mode == MODE_BOSSRUSH || sGame.mode == MODE_ORCHARD) ? (resTracks > 0 ? 168.0f : 152.0f) : 148.0f;
 			const float resExtraY = (sGame.mode == MODE_BOSSRUSH || sGame.mode == MODE_ORCHARD) ? (resTracks > 0 ? 190.0f : 178.0f) : 174.0f;
 			const bool resHasExtra = !sCardFrame && sGame.scoreCommitted && sPassTurn < 0 && (sGame.dailyCoins || sGame.journalCoins);
-			float resY = 8.0f, resH = 224.0f;
+			float resH = 224.0f;
 			if (sResultBoard && !sCardFrame && lbEligible()) {
 				resH = 224.0f;
 			} else if (sGame.mode == MODE_PRACTICE) {
-				resY = 20.0f;
 				resH = 196.0f;
 			} else if (sCardFrame) {
 				resH = 208.0f;
@@ -5312,8 +5311,11 @@ static void drawTopContent(Screen screen) {
 			} else {
 				resH = 136.0f;
 			}
+			resH = clampf(resH, 136.0f, 224.0f);
+			const float resY = sCardFrame ? 8.0f : (240.0f - resH) * 0.5f;
+			const float dy = resY - 8.0f;
 			gfx::setDepth(0.5f);
-			gfx::sign(sprites_plank_idx, 28, resY, 344, clampf(resH, 136.0f, 224.0f), withAlpha(COL_PLANK, in));
+			gfx::sign(sprites_plank_idx, 28, resY, 344, resH, withAlpha(COL_PLANK, in));
 			gfx::setDepth(1.0f);
 			if (sResultBoard && !sCardFrame && lbEligible()) {
 				gfx::text("ONLINE TOP 10", 200, 14, 0.48f, COL_ACCENT, ALIGN_CENTER);
@@ -5360,29 +5362,29 @@ static void drawTopContent(Screen screen) {
 			}
 			if (sGame.mode == MODE_PRACTICE) {
 				gfx::setDepth(1.2f);
-				gfx::text("PRACTICE DONE", 200, 36, 0.80f, COL_ACCENT, ALIGN_CENTER);
+				gfx::text("PRACTICE DONE", 200, 14 + resY, 0.80f, COL_ACCENT, ALIGN_CENTER);
 				gfx::setDepth(1.0f);
-				gfx::text("You know the basics.", 200, 92, 0.44f, COL_CREAM, ALIGN_CENTER);
-				gfx::text("Last lesson: slice the fruit", 200, 126, 0.40f, COL_CREAM, ALIGN_CENTER);
-				gfx::text("below to pick a game.", 200, 146, 0.40f, COL_CREAM, ALIGN_CENTER);
-				gfx::text("Practice again from How to Play.", 200, 184, 0.34f, COL_DIM, ALIGN_CENTER);
+				gfx::text("You know the basics.", 200, 70 + resY, 0.44f, COL_CREAM, ALIGN_CENTER);
+				gfx::text("Last lesson: slice the fruit", 200, 104 + resY, 0.40f, COL_CREAM, ALIGN_CENTER);
+				gfx::text("below to pick a game.", 200, 124 + resY, 0.40f, COL_CREAM, ALIGN_CENTER);
+				gfx::text("Practice again from How to Play.", 200, 162 + resY, 0.34f, COL_DIM, ALIGN_CENTER);
 				break;
 			}
-			gfx::text(modeName(sGame.mode), 200, 16, 0.44f, COL_CREAM, ALIGN_CENTER);
+			gfx::text(modeName(sGame.mode), 200, 16 + dy, 0.44f, COL_CREAM, ALIGN_CENTER);
 			gfx::setDepth(1.7f);
 			snprintf(buf, sizeof buf, "%lu", (unsigned long)sGame.score);
-			gfx::text(buf, 200, 34, 0.92f, COL_ACCENT, ALIGN_CENTER);
+			gfx::text(buf, 200, 34 + dy, 0.92f, COL_ACCENT, ALIGN_CENTER);
 			gfx::setDepth(1.0f);
 			if (sPassTurn >= 0) {
-				gfx::text(sPassNames[sPassTurn], 200, 78, 0.42f, passColor(sPassTurn), ALIGN_CENTER);
+				gfx::text(sPassNames[sPassTurn], 200, 78 + dy, 0.42f, passColor(sPassTurn), ALIGN_CENTER);
 			} else if (sGame.spChallenge) {
 				snprintf(buf, sizeof buf, sGame.spWon ? "BEAT %s! +50 COINS" : "VS %s (TARGET %lu)", sGame.spRival, (unsigned long)sGame.spTarget);
-				gfx::text(buf, 200, 78, 0.38f, sGame.spWon ? rgba(160, 240, 170) : COL_CREAM, ALIGN_CENTER);
+				gfx::text(buf, 200, 78 + dy, 0.38f, sGame.spWon ? rgba(160, 240, 170) : COL_CREAM, ALIGN_CENTER);
 			} else if (sGame.newBest) {
-				gfx::text("NEW BEST!", 200, 78, 0.40f + sinf(sTime * 6) * 0.02f, COL_CREAM, ALIGN_CENTER);
+				gfx::text("NEW BEST!", 200, 78 + dy, 0.40f + sinf(sTime * 6) * 0.02f, COL_CREAM, ALIGN_CENTER);
 			} else {
 				snprintf(buf, sizeof buf, sGame.mixed ? "MIXER BEST %lu" : (sGame.assisted ? "ASSISTED BEST %lu" : "BEST %lu"), (unsigned long)sGame.best);
-				gfx::text(buf, 200, 78, 0.38f, COL_DIM, ALIGN_CENTER);
+				gfx::text(buf, 200, 78 + dy, 0.38f, COL_DIM, ALIGN_CENTER);
 			}
 			int tracks = 0;
 			float coinY = 152, extraY = 178;
@@ -5392,24 +5394,24 @@ static void drawTopContent(Screen screen) {
 				tracks = o.newTracks;
 				if (o.won) snprintf(buf, sizeof buf, "RUSH CLEARED IN %d:%02d", (int)sGame.elapsed / 60, (int)sGame.elapsed % 60);
 				else snprintf(buf, sizeof buf, "BEAT %d OF %d BOSSES", m.rushStage, kRushStages);
-				gfx::text(buf, 200, 104, 0.39f, o.won ? rgba(255, 230, 140) : COL_CREAM, ALIGN_CENTER);
+				gfx::text(buf, 200, 104 + dy, 0.39f, o.won ? rgba(255, 230, 140) : COL_CREAM, ALIGN_CENTER);
 				snprintf(buf, sizeof buf, "BUILD: %s", m.rushBuild < BUILD_COUNT ? kRushBuilds[m.rushBuild].name : "NONE");
-				gfx::text(buf, 200, 124, 0.35f, COL_DIM, ALIGN_CENTER);
+				gfx::text(buf, 200, 124 + dy, 0.35f, COL_DIM, ALIGN_CENTER);
 				if (tracks > 0) {
 					snprintf(buf, sizeof buf, "NEW IN THE SHOP: %d BOSS TRACK%s", tracks, tracks == 1 ? "" : "S");
-					gfx::text(buf, 200, 144, 0.35f, COL_ACCENT, ALIGN_CENTER);
+					gfx::text(buf, 200, 144 + dy, 0.35f, COL_ACCENT, ALIGN_CENTER);
 					coinY = 168; extraY = 190;
 				}
 			} else if (sGame.mode == MODE_ORCHARD) {
 				const Orchard& o = sGame.orc;
 				tracks = o.newTracks;
 				snprintf(buf, sizeof buf, "REACHED ROOM %d", o.room);
-				gfx::text(buf, 200, 104, 0.39f, rgba(170, 230, 255), ALIGN_CENTER);
+				gfx::text(buf, 200, 104 + dy, 0.39f, rgba(170, 230, 255), ALIGN_CENTER);
 				snprintf(buf, sizeof buf, "LEVEL %d   BOSSES %d   SEED %08X", o.level, o.bossesBeaten, (unsigned)o.runSeed);
-				gfx::text(buf, 200, 124, 0.33f, COL_DIM, ALIGN_CENTER);
+				gfx::text(buf, 200, 124 + dy, 0.33f, COL_DIM, ALIGN_CENTER);
 				if (tracks > 0) {
 					snprintf(buf, sizeof buf, "NEW IN THE SHOP: %d BOSS TRACK%s", tracks, tracks == 1 ? "" : "S");
-					gfx::text(buf, 200, 144, 0.35f, COL_ACCENT, ALIGN_CENTER);
+					gfx::text(buf, 200, 144 + dy, 0.35f, COL_ACCENT, ALIGN_CENTER);
 					coinY = 168; extraY = 190;
 				}
 			} else {
@@ -5418,24 +5420,24 @@ static void drawTopContent(Screen screen) {
 				else if (sGame.mode == MODE_SHARP) snprintf(buf, sizeof buf, "ON CALL %d   WRONG %d", sGame.m12.calledHits, sGame.m12.wrongHits);
 				else if (sGame.mode == MODE_JUGGLE) snprintf(buf, sizeof buf, "KNOCKS %d   MOST IN THE AIR %d", sGame.m12.knocks, sGame.m12.bestAir);
 				else snprintf(buf, sizeof buf, "SLICED %d   BEST COMBO %d", sGame.sliced, sGame.bestCombo);
-				gfx::text(buf, 200, 112, 0.39f, COL_CREAM, ALIGN_CENTER);
+				gfx::text(buf, 200, 112 + dy, 0.39f, COL_CREAM, ALIGN_CENTER);
 				coinY = 148; extraY = 174;
 			}
 			if (sCardFrame) {
 				// The score card: the game's name where the coins go, which are nobody else's business.
 				gfx::setDepth(1.2f);
-				gfx::sprite(SHEET_LOGO, logo_logo_idx, 200, 182, 0.28f, 0.28f);
+				gfx::sprite(SHEET_LOGO, logo_logo_idx, 200, 182 + dy, 0.28f, 0.28f);
 			} else if (sGame.scoreCommitted && sPassTurn < 0) {
 				snprintf(buf, sizeof buf, "+%lu COINS", (unsigned long)sGame.coinsEarned);
 				float cw = gfx::textWidth(buf, 0.40f);
-				gfx::sprite(SHEET_SPRITES, sprites_coin_idx, 200 - cw / 2 - 10, coinY + 4, 0.40f, 0.40f);
-				gfx::text(buf, 200 + 5, coinY, 0.40f, COL_ACCENT, ALIGN_CENTER);
+				gfx::sprite(SHEET_SPRITES, sprites_coin_idx, 200 - cw / 2 - 10, coinY + dy + 4, 0.40f, 0.40f);
+				gfx::text(buf, 200 + 5, coinY + dy, 0.40f, COL_ACCENT, ALIGN_CENTER);
 				// Where the extra coins came from.
 				buf[0] = 0;
 				if (sGame.dailyCoins && sGame.journalCoins) snprintf(buf, sizeof buf, "DAILY +%lu  JOURNAL +%lu", (unsigned long)sGame.dailyCoins, (unsigned long)sGame.journalCoins);
 				else if (sGame.dailyCoins) snprintf(buf, sizeof buf, "DAILY BONUS +%lu", (unsigned long)sGame.dailyCoins);
 				else if (sGame.journalCoins) snprintf(buf, sizeof buf, "JOURNAL MILESTONE +%lu", (unsigned long)sGame.journalCoins);
-				if (buf[0]) fitText(buf, 200, extraY, 0.35f, 326, COL_DIM);
+				if (buf[0]) fitText(buf, 200, extraY + dy, 0.35f, 326, COL_DIM);
 			}
 			break;
 		}
@@ -5464,8 +5466,11 @@ static void drawTopContent(Screen screen) {
 			break;
 	}
 	// Every main menu shows the coins saved, top left: the logo leaves it free, and on one screen
-	// it stays well away from the menu's back arrow.
-	if (screen == SCREEN_TITLE || screen == SCREEN_MODES || screen == SCREEN_OPTIONS || screen == SCREEN_JOURNAL || screen == SCREEN_STATS || screen == SCREEN_HOWTO || screen == SCREEN_BEAT) {
+	// it stays well away from the menu's back arrow. On Title with Quit Bomb, keep top-right symmetrical.
+	if (screen == SCREEN_TITLE && PORT_QUIT_BOMB) {
+		gfx::setDepth(0.8f);
+		drawPurse(388, 10, 0.5f, true);
+	} else if (screen == SCREEN_TITLE || screen == SCREEN_MODES || screen == SCREEN_OPTIONS || screen == SCREEN_JOURNAL || screen == SCREEN_STATS || screen == SCREEN_HOWTO || screen == SCREEN_BEAT) {
 		gfx::setDepth(0.8f);
 		drawPurse(12, 10, 0.5f, false);
 	}
@@ -5902,9 +5907,9 @@ static void drawBottomContent(Screen screen) {
 #if PORT_TWO_SCREENS
 			sGame.drawField(sBlade);
 			gfx::rect(0, 0, 320, 240, rgba(30, 18, 10, 150));
+			drawBackArrow(sFocus[SCREEN_PAUSE] == 0, sPressed == 0);
 #endif
 			int f = sFocus[SCREEN_PAUSE];
-			drawBackArrow(f == 0, sPressed == 0);
 			for (int i = 1; i < 4; i++) {
 				const char* label = i == 3 && sGame.mode == MODE_PRACTICE ? "Skip Lessons" : (i == 3 && sGame.mode == MODE_ZEN ? "Finish Run" : kPauseButtons[i].label);
 				drawSign(kPauseButtons[i], label, f == i, sPressed == i, 0.56f, -1, fruitFor(kPauseButtons[i].label));
@@ -5953,12 +5958,24 @@ static void drawBottomContent(Screen screen) {
 			sGame.drawField(sBlade);
 #endif
 			int f = sFocus[SCREEN_RESULT];
-			drawBackArrow(f == 0, sPressed == 0);
+			const bool lbPrompt = sLbTypingName && screen == sScreen && sPassTurn < 0 && sGame.mode != MODE_PRACTICE;
+			if (!lbPrompt && (PORT_TWO_SCREENS || sPassTurn >= 0 || sGame.mode == MODE_PRACTICE)) drawBackArrow(f == 0, sPressed == 0);
 			if (sPassTurn >= 0) {
 				kPassResultButtons[1].label = sPassTurn + 1 < passCount() ? "Next Player" : "See Results";
 				drawSign(kPassResultButtons[1], kPassResultButtons[1].label, f == 1, sPressed == 1, 0.56f, -1, fruitFor(kPassResultButtons[1].label));
 			} else if (sGame.mode == MODE_PRACTICE) drawSign(kPracticeEndButtons[1], kPracticeEndButtons[1].label, f == 1, sPressed == 1, 0.56f, -1, fruitFor(kPracticeEndButtons[1].label));
-			else {
+			else if (lbPrompt) {
+				char typed[32];
+				port::textPoll(typed, sizeof typed - 1);
+#if PORT_TWO_SCREENS
+				gfx::rect(0, 0, 320, 240, rgba(30, 18, 10, 175));
+#endif
+				gfx::sign(sprites_plank_idx, 20, 56, 280, 152, COL_PLANK);
+				gfx::text("Leaderboard Name", 160, 68, 0.48f, COL_ACCENT, ALIGN_CENTER);
+				gfx::text("Max 6 characters", 160, 88, 0.34f, COL_DIM, ALIGN_CENTER);
+				drawTypingWithCursor(typed, 160, 110, 0.56f, 248, COL_CREAM);
+				for (int i = 0; i < 2; i++) drawSign(kNameButtons[i], kNameButtons[i].label, sLbNameFocus == i, sPressed == i, 0.5f);
+			} else {
 				const bool elig = lbEligible();
 				const int shown = elig ? kResultCount : kResultCount - 1;
 				for (int i = 1; i < shown; i++) {
@@ -5967,16 +5984,6 @@ static void drawBottomContent(Screen screen) {
 					drawSign(kResultButtons[i], lbl, f == i, sPressed == i, sc, -1, fruitFor(lbl));
 				}
 				if (sCardNoteT > 0 && sCardNote) gfx::text(sCardNote, 160, 159, 0.34f, withAlpha(COL_CREAM, clampf(sCardNoteT, 0, 1)), ALIGN_CENTER);
-				if (sLbTypingName && screen == sScreen) {
-					char typed[32];
-					port::textPoll(typed, sizeof typed - 1);
-					gfx::rect(0, 0, 320, 240, rgba(30, 18, 10, 175));
-					gfx::sign(sprites_plank_idx, 20, 56, 280, 152, COL_PLANK);
-					gfx::text("Leaderboard Name", 160, 68, 0.48f, COL_ACCENT, ALIGN_CENTER);
-					gfx::text("Max 6 characters", 160, 88, 0.34f, COL_DIM, ALIGN_CENTER);
-					drawTypingWithCursor(typed, 160, 110, 0.56f, 248, COL_CREAM);
-					for (int i = 0; i < 2; i++) drawSign(kNameButtons[i], kNameButtons[i].label, sLbNameFocus == i, sPressed == i, 0.5f);
-				}
 			}
 			break;
 		}
@@ -6088,6 +6095,10 @@ static void pauseGame() {
 
 static float sMenuPointX = 160, sMenuPointY = 140, sMenuPointShow;  // the menu blade point (stickBlade, below)
 static void stickBlade(Input& in);
+
+static bool hudShouldHide() {
+	return sScreen == SCREEN_PAUSE || sScreen == SCREEN_RESULT || (sScreen == SCREEN_GAME && sOrcInv);
+}
 
 #ifdef AUTOTEST
 #include "autotest.inc"
@@ -6634,7 +6645,10 @@ static void updateFrame(const Input& in, bool wasTouching) {
 			break;
 		case SCREEN_PAUSE: {
 			if (blocked) break;
-			int t = menuInput(kPauseButtons, 4, SCREEN_PAUSE, in, wasTouching);
+			Button pauseBtns[4];
+			for (int i = 0; i < 4; i++) pauseBtns[i] = kPauseButtons[i];
+			if (!PORT_TWO_SCREENS) pauseBtns[0] = {};
+			int t = menuInput(pauseBtns, 4, SCREEN_PAUSE, in, wasTouching);
 			if (t < 0 && (in.down & (KEY_START | KEY_B))) {
 				t = 1;
 				audio::click();
@@ -6734,7 +6748,10 @@ static void updateFrame(const Input& in, bool wasTouching) {
 			const bool elig = lbEligible();
 			const int btnCount = elig ? kResultCount : kResultCount - 1;
 			if (sFocus[SCREEN_RESULT] >= btnCount) sFocus[SCREEN_RESULT] = btnCount - 1;
-			int t = menuInput(kResultButtons, btnCount, SCREEN_RESULT, in, wasTouching);
+			Button resultBtns[kResultCount];
+			for (int i = 0; i < kResultCount; i++) resultBtns[i] = kResultButtons[i];
+			if (!PORT_TWO_SCREENS) resultBtns[0] = {};
+			int t = menuInput(resultBtns, btnCount, SCREEN_RESULT, in, wasTouching);
 			if (elig && (in.down & KEY_Y)) {
 				audio::click();
 				t = kResultTopIdx;
@@ -6782,7 +6799,7 @@ static void drawStickPoint();
 #if PORT_TWO_SCREENS
 static void drawFrame() {
 	float e = sSlideT * sSlideT * (3 - 2 * sSlideT);  // eases in and out
-	gHudPaused = sScreen == SCREEN_PAUSE;  // no lesson callout over the PAUSED sign
+	gHudPaused = hudShouldHide();  // hide HUD/slots behind Pause, Result, or Inventory
 	beginHighlightFrame();
 	gfx::beginFrame();
 	for (int eye = 0; eye < 2; eye++) {
@@ -6837,9 +6854,9 @@ static void drawFrame() {
 	const bool mixerShown = mixerIn > 0;
 	if (field) {
 		gfx::beginField();
+		gHudPaused = hudShouldHide();
 		sGame.drawField(sBlade);
-		gHudPaused = sScreen != SCREEN_GAME;
-		sGame.drawHud();
+		if (sScreen == SCREEN_GAME) sGame.drawHud();
 		drawStickPoint();
 		if (sScreen == SCREEN_GAME) drawOrchardMenus();
 #if PORT_PAUSE_BUTTON
@@ -6854,7 +6871,7 @@ static void drawFrame() {
 			}
 		}
 #endif
-		if (sScreen == SCREEN_PAUSE) gfx::rect(kFillX, kFillX, kFillW, kFillW, rgba(30, 18, 10, 150));
+		if (sScreen == SCREEN_PAUSE || sScreen == SCREEN_RESULT) gfx::rect(kFillX, kFillX, kFillW, kFillW, rgba(24, 14, 8, sScreen == SCREEN_RESULT ? 165 : 150));
 	}
 	for (int pass = 0; pass < 2; pass++) {
 		if (pass == 0) gfx::beginTop(0);

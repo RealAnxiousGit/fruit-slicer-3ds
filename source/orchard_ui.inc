@@ -80,20 +80,75 @@ static int orcCountWrapLines(const char* s, float maxW, float scale, int maxLine
 	return lines;
 }
 
-static void orcCardRect(int i, int n, float* x, float* y, float* w, float* h) {
-	const float gap = n >= 5 ? 5.0f : 8.0f, margin = n >= 5 ? 12.0f : 24.0f, top = kFieldTop + 28;
-	float cw = (kFieldW - margin - gap * (n - 1)) / n;
-	if (cw > 132) cw = 132;
-	float ch = kFieldH - top - 42;
-	if (ch > 170) ch = 170;
-	const float total = cw * n + gap * (n - 1);
-	*x = (kFieldW - total) * 0.5f + i * (cw + gap);
-	*y = top;
-	*w = cw;
-	*h = ch;
+struct OrcCardLayout {
+	float headerY, cardTop, cardGap, cardW, cardH, rowGap, warnY;
+	bool twoRows;
+	Button reroll;
+};
+
+static OrcCardLayout orcCardLayout(int n, bool withReroll = true) {
+	OrcCardLayout L = {};
+	L.twoRows = !PORT_TWO_SCREENS && kFieldW < 310.0f && kFieldH >= 310.0f && n >= 4;
+	const float topClear = PORT_TWO_SCREENS ? (float)kFieldTop + 2.0f
+	                                        : (kFieldH >= 285.0f ? fmaxf((float)kFieldTop + 14.0f, 32.0f * uiScale() + 26.0f) : (float)kFieldTop + 7.0f);
+	const float headerH = 21.0f;
+	const float rerollReserve = withReroll ? 42.0f : 26.0f;
+	const float availH = (kFieldH - 6.0f) - topClear - headerH - rerollReserve;
+	L.rowGap = L.twoRows ? 8.0f : 0.0f;
+	if (L.twoRows) {
+		L.cardH = clampf((availH - L.rowGap) * 0.5f, 108.0f, 150.0f);
+	} else {
+		L.cardH = clampf(availH, 104.0f, 170.0f);
+	}
+	const float cardsTotalH = L.twoRows ? (L.cardH * 2.0f + L.rowGap) : L.cardH;
+	const float rerollGap = kFieldH >= 285.0f ? 10.0f : 6.0f;
+	const float totalH = headerH + cardsTotalH + rerollGap + (withReroll ? 38.0f : 18.0f);
+	const float blockTop = (kFieldH >= 285.0f && (kFieldH - 6.0f - topClear) > totalH)
+	                           ? topClear + ((kFieldH - 6.0f - topClear) - totalH) * 0.5f
+	                           : topClear;
+	L.headerY = blockTop;
+	L.cardTop = blockTop + headerH;
+	const int perRow = L.twoRows ? 3 : (n > 0 ? n : 1);
+	L.cardGap = kFieldW < 280.0f ? (perRow >= 4 ? 4.0f : 6.0f) : (perRow >= 5 ? 5.0f : 8.0f);
+	const float margin = kFieldW < 280.0f ? 12.0f : (perRow >= 5 ? 12.0f : 24.0f);
+	L.cardW = fminf(132.0f, (kFieldW - margin - L.cardGap * (perRow - 1)) / perRow);
+	const float rerollY = fminf(kFieldH - 40.0f, L.cardTop + cardsTotalH + rerollGap);
+	const float rw = fminf(120.0f, kFieldW - 24.0f);
+	L.reroll = {kFieldW * 0.5f - rw * 0.5f, rerollY, rw, 25.0f, "Reroll"};
+	L.warnY = L.reroll.y + L.reroll.h + 2.0f;
+	return L;
 }
-static Button orcRerollButton() { return {kFieldW * 0.5f - 60, kFieldH - 34.0f, 120, 28, "Reroll"}; }
-static Button orcKeepButton() { return {kFieldW * 0.5f - 70, kFieldH - 42.0f, 140, 32, "Keep Mine"}; }
+
+static void orcCardRect(int i, int n, float* x, float* y, float* w, float* h) {
+	const OrcCardLayout L = orcCardLayout(n);
+	int row = 0, col = i, rowCount = n;
+	if (L.twoRows) {
+		if (i < 3) {
+			row = 0;
+			col = i;
+			rowCount = 3;
+		} else {
+			row = 1;
+			col = i - 3;
+			rowCount = n - 3;
+		}
+	}
+	const float total = L.cardW * rowCount + L.cardGap * (rowCount - 1);
+	*x = (kFieldW - total) * 0.5f + col * (L.cardW + L.cardGap);
+	*y = L.cardTop + row * (L.cardH + L.rowGap);
+	*w = L.cardW;
+	*h = L.cardH;
+}
+static Button orcRerollButton() { return orcCardLayout(sGame.orc.offerCount > 0 ? sGame.orc.offerCount : 3).reroll; }
+static float orcPlaceTopY() {
+	const float avail = kFieldH - kFieldTop - 12.0f;
+	const float totalH = 166.0f;
+	return kFieldTop + (avail > totalH ? (avail - totalH) * 0.5f : 10.0f);
+}
+static Button orcKeepButton() {
+	const float y = kFieldH >= 285.0f ? fminf(kFieldH - 42.0f, orcPlaceTopY() + 132.0f) : kFieldH - 42.0f;
+	return {kFieldW * 0.5f - 70.0f, y, 140.0f, 32.0f, "Keep Mine"};
+}
 
 static void drawOrcCard(int card, float x, float y, float w, float h, bool focused) {
 	const Orchard& o = sGame.orc;
@@ -192,10 +247,12 @@ static void drawOrcSlotBox(int s, float x, float y, float w, float h, bool focus
 }
 
 static void orcPlaceRect(int s, float* x, float* y, float* w, float* h) {
-	*w = 130;
-	*h = 70;
-	*x = kFieldW * 0.5f + (s == 0 ? -*w - 8 : 8);
-	*y = kFieldTop + 80;
+	*w = fminf(130.0f, (kFieldW - 28.0f) * 0.5f);
+	*h = 70.0f;
+	const float gap = fminf(16.0f, kFieldW - (*w * 2.0f) - 12.0f);
+	const float total = *w * 2.0f + gap;
+	*x = (kFieldW - total) * 0.5f + s * (*w + gap);
+	*y = kFieldH >= 285.0f ? (orcPlaceTopY() + 50.0f) : (kFieldTop + 80.0f);
 }
 
 // ---------------------------------------------------------------- the Inventory
@@ -685,9 +742,10 @@ static void drawOrchardMenus() {
 		gfx::rect(kFillX, kFillX, kFillW, kFillW, rgba(20, 12, 8, (u8)(170 * ease)));
 		if (o.placing) {
 			const float slide = (1.0f - ease) * 28.0f;
+			const float py = kFieldH >= 285.0f ? orcPlaceTopY() : (kFieldTop + 30.0f);
 			snprintf(buf, sizeof buf, "Pick a slot for %s", kCards[o.placingCard].name);
-			orcFit(buf, kFieldW * 0.5f, kFieldTop + 30 - slide * 0.5f, 0.5f, kFieldW - 20, COL_CREAM);
-			orcFit("It replaces the charm in that slot.", kFieldW * 0.5f, kFieldTop + 56 - slide * 0.5f, 0.3f, kFieldW - 20, COL_DIM);
+			orcFit(buf, kFieldW * 0.5f, py - slide * 0.5f, 0.5f, kFieldW - 20, COL_CREAM);
+			orcFit("It replaces the charm in that slot.", kFieldW * 0.5f, py + 26.0f - slide * 0.5f, 0.3f, kFieldW - 20, COL_DIM);
 			for (int s = 0; s < kSlots; s++) {
 				float x, y, w, h;
 				orcPlaceRect(s, &x, &y, &w, &h);
@@ -698,8 +756,9 @@ static void drawOrchardMenus() {
 			drawSign(k, k.label, o.focus == 2, false, 0.5f);
 			return;
 		}
+		const OrcCardLayout CL = orcCardLayout(o.offerCount);
 		snprintf(buf, sizeof buf, "LEVEL %d! PICK A CARD", o.level - o.levelsWaiting + 1);
-		orcFit(buf, kFieldW * 0.5f, kFieldTop + 4 - (1.0f - ease) * 6.0f, 0.50f, kFieldW - 20, rgba(255, 230, 140));
+		orcFit(buf, kFieldW * 0.5f, CL.headerY - (1.0f - ease) * 6.0f, 0.48f, kFieldW - 24, rgba(255, 230, 140));
 		for (int i = 0; i < o.offerCount; i++) {
 			float x, y, w, h;
 			orcCardRect(i, o.offerCount, &x, &y, &w, &h);
@@ -708,15 +767,16 @@ static void drawOrchardMenus() {
 			drawOrcCard(o.offer[i], x, y + (1.0f - ce) * 14.0f, w, h, o.focus == i);
 		}
 		if (o.rerolls > 0 || sGame.mode == MODE_ORCHARD) {
-			Button r = orcRerollButton();
-			r.y += (1.0f - ease) * 14.0f;
+			Button r = CL.reroll;
+			const float rSlide = (1.0f - ease) * 4.0f;
+			r.y += rSlide;
 			const int cost = sGame.orcRerollPrice();
 			const bool canAfford = sGame.orcCanReroll();
 			if (o.rerolls > 0) snprintf(buf, sizeof buf, "Reroll (%d)", o.rerolls);
 			else snprintf(buf, sizeof buf, "Reroll (%dc)", cost);
-			drawSign(r, buf, o.focus == o.offerCount, false, 0.42f);
+			drawSign(r, buf, o.focus == o.offerCount, false, 0.40f);
 			if (!canAfford) {
-				orcFit("Need more run coins", r.x + r.w * 0.5f, r.y + r.h + 1.0f, 0.24f, 160.0f, rgba(255, 130, 120));
+				orcFit("Need more run coins", r.x + r.w * 0.5f, r.y + r.h + 2.0f, 0.24f, kFieldW - 16.0f, rgba(255, 130, 120));
 			}
 		}
 		return;
@@ -736,7 +796,8 @@ static void drawRushPick() {
 	const float openK = gSave.transitions && !gSave.calmFx ? clampf(sOrcOpenT / 0.24f, 0.0f, 1.0f) : 1.0f;
 	const float ease = openK * openK * (3.0f - 2.0f * openK);
 	gfx::rect(kFillX, kFillX, kFillW, kFillW, rgba(20, 12, 8, (u8)(170 * ease)));
-	orcFit("PICK A BUILD", kFieldW * 0.5f, kFieldTop + 4 - (1.0f - ease) * 16.0f, 0.52f, kFieldW - 20, rgba(255, 230, 140));
+	const OrcCardLayout CL = orcCardLayout(BUILD_COUNT, false);
+	orcFit("PICK A BUILD", kFieldW * 0.5f, CL.headerY - (1.0f - ease) * 10.0f, 0.50f, kFieldW - 20, rgba(255, 230, 140));
 	static const int kIcon[BUILD_COUNT] = {CARD_ARMOR, CARD_GLASS, CARD_JUICE};
 	char desc[128];
 	for (int i = 0; i < BUILD_COUNT; i++) {
@@ -744,7 +805,7 @@ static void drawRushPick() {
 		rushBuildRect(i, &x, &y, &w, &h);
 		const float ct = gSave.transitions && !gSave.calmFx ? clampf((sOrcOpenT - i * 0.035f) / 0.22f, 0.0f, 1.0f) : 1.0f;
 		const float ce = ct * ct * (3.0f - 2.0f * ct);
-		y += (1.0f - ce) * 34.0f;
+		y += (1.0f - ce) * 24.0f;
 		const RushBuildInfo& b = kRushBuilds[i];
 		drawPlank(x, y, w, h, sGame.m12.rushFocus == i, false);
 		const float is = PORT_3DS ? 0.65f : 0.68f;
@@ -753,7 +814,7 @@ static void drawRushPick() {
 		snprintf(desc, sizeof desc, "%s %s", b.line1, b.line2);
 		orcWrap(desc, x + w * 0.5f, y + 70, 0.31f, w - 10, 13.0f, COL_CREAM, 5);
 	}
-	orcFit("No level ups in a Boss Rush.", kFieldW * 0.5f, kFieldH - 30, 0.3f, kFieldW - 20, COL_DIM);
+	orcFit("No level ups in a Boss Rush.", kFieldW * 0.5f, CL.cardTop + CL.cardH + 10.0f, 0.3f, kFieldW - 20, COL_DIM);
 }
 
 static bool updateRushPick(const Input& in, bool wasTouching) {
@@ -780,15 +841,20 @@ static bool updateRushPick(const Input& in, bool wasTouching) {
 }
 
 static void resumeButtons(Button out[2], float* px, float* py, float* pw, float* ph) {
-	const float w = fminf(kFieldW - 24.0f, 296.0f), h = fminf(kFieldH - kFieldTop - 26.0f, 152.0f);
+	const float w = fminf(kFieldW - 20.0f, 296.0f);
+	char msg[160];
+	snprintf(msg, sizeof msg, "Hey! Looks like you have a saved game up to room %u! Would you like to continue this run?", (unsigned)sGame.orc.savedRoom);
+	const float msgScale = (PORT_3DS || w < 250.0f) ? 0.30f : 0.33f;
+	const int lines = orcCountWrapLines(msg, w - 24.0f, msgScale, 8);
+	const float h = clampf(96.0f + lines * 13.0f, 148.0f, kFieldH - kFieldTop - 18.0f);
 	const float x = (kFieldW - w) * 0.5f, y = kFieldTop + (kFieldH - kFieldTop - h) * 0.5f;
 	if (px) *px = x;
 	if (py) *py = y;
 	if (pw) *pw = w;
 	if (ph) *ph = h;
-	const float bw = (w - 36.0f) * 0.5f;
-	out[0] = {x + 12.0f, y + h - 46.0f, bw, 34.0f, "Continue"};
-	out[1] = {x + w - 12.0f - bw, y + h - 46.0f, bw, 34.0f, "Start Over"};
+	const float bw = (w - 30.0f) * 0.5f;
+	out[0] = {x + 10.0f, y + h - 44.0f, bw, 32.0f, "Continue"};
+	out[1] = {x + w - 10.0f - bw, y + h - 44.0f, bw, 32.0f, "Start Over"};
 }
 
 static void drawResumePrompt() {
@@ -804,7 +870,8 @@ static void drawResumePrompt() {
 	orcFit("ORCHARD BLAST", x + w * 0.5f, y + 14.0f + slide, 0.46f, w - 20.0f, COL_ACCENT);
 	char msg[160];
 	snprintf(msg, sizeof msg, "Hey! Looks like you have a saved game up to room %u! Would you like to continue this run?", (unsigned)o.savedRoom);
-	orcWrap(msg, x + w * 0.5f, y + 40.0f + slide, PORT_3DS ? 0.30f : 0.33f, w - 24.0f, 13.0f, COL_CREAM, 5);
+	const float msgScale = (PORT_3DS || w < 250.0f) ? 0.30f : 0.33f;
+	orcWrap(msg, x + w * 0.5f, y + 40.0f + slide, msgScale, w - 24.0f, 13.0f, COL_CREAM, 8);
 	for (int i = 0; i < 2; i++) {
 		Button b = btns[i];
 		b.y += slide;
@@ -870,9 +937,9 @@ static Room50CutsceneBox room50CutsceneBox(const char* line = nullptr) {
 	B.textScale = PORT_3DS ? 0.30f : (narrow ? 0.30f : 0.34f);
 	B.step = PORT_3DS ? 11.5f : (narrow ? 11.5f : 13.5f);
 	B.maxW = B.w - 36.0f;
-	B.maxLines = 6;
+	B.maxLines = narrow ? 8 : 6;
 	if (line) {
-		while (B.textScale > 0.24f && orcCountWrapLines(line, B.maxW, B.textScale, 8) > 5) {
+		while (B.textScale > 0.24f && orcCountWrapLines(line, B.maxW, B.textScale, 8) > (narrow ? 7 : 5)) {
 			B.textScale -= 0.02f;
 			B.step -= 0.8f;
 		}
@@ -992,21 +1059,24 @@ static int sDevHoldBtn = -1;
 static HoldRepeat sDevHold;
 
 static void devSkipLayout(float* px, float* py, float* pw, float* ph, Button* outBtns) {
-	const float w = PORT_3DS ? 290.0f : clampf(kFieldW - 32.0f, 280.0f, 340.0f);
+	const float w = PORT_3DS ? 290.0f : clampf(kFieldW - 24.0f, 212.0f, 340.0f);
 	const float h = 160.0f;
 	const float x = (kFieldW - w) * 0.5f, y = kFieldTop + (kFieldH - kFieldTop - h) * 0.5f;
 	if (px) *px = x;
 	if (py) *py = y;
 	if (pw) *pw = w;
 	if (ph) *ph = h;
+	const float pad = 12.0f, bw = w < 260.0f ? 32.0f : 38.0f, gap = 6.0f;
+	const float midX = x + pad + bw + gap, midW = w - (pad + bw + gap) * 2.0f;
 	const float r1y = y + 40.0f, r2y = y + 74.0f, r3y = y + 114.0f;
-	outBtns[0] = {x + 12.0f, r1y, 38.0f, 26.0f, "-"};
-	outBtns[1] = {x + 56.0f, r1y, w - 112.0f, 26.0f, nullptr};
-	outBtns[2] = {x + w - 50.0f, r1y, 38.0f, 26.0f, "+"};
-	outBtns[3] = {x + 12.0f, r2y, 38.0f, 26.0f, "-"};
-	outBtns[4] = {x + 56.0f, r2y, w - 112.0f, 26.0f, nullptr};
-	outBtns[5] = {x + w - 50.0f, r2y, 38.0f, 26.0f, "+"};
-	outBtns[6] = {x + 40.0f, r3y, w - 80.0f, 30.0f, "Start Run"};
+	outBtns[0] = {x + pad, r1y, bw, 26.0f, "-"};
+	outBtns[1] = {midX, r1y, midW, 26.0f, nullptr};
+	outBtns[2] = {x + w - pad - bw, r1y, bw, 26.0f, "+"};
+	outBtns[3] = {x + pad, r2y, bw, 26.0f, "-"};
+	outBtns[4] = {midX, r2y, midW, 26.0f, nullptr};
+	outBtns[5] = {x + w - pad - bw, r2y, bw, 26.0f, "+"};
+	const float sPad = w < 260.0f ? 28.0f : 40.0f;
+	outBtns[6] = {x + sPad, r3y, w - sPad * 2.0f, 30.0f, "Start Run"};
 }
 
 static void devStepField(int btnIdx) {

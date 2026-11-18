@@ -1702,6 +1702,57 @@ static void labFinish(Input& in) {
 			gSave.highContrast = wasHc;
 		}
 		{
+			// Reroll warning and card bounds stay on-screen on 3DS (240px) and across all Universal aspect ratios.
+#if !PORT_TWO_SCREENS
+			const float wasW = gFieldW, wasH = gFieldH;
+			static const float kAspects[] = {9.0f / 16.0f, 3.0f / 4.0f, 1.0f, 4.0f / 3.0f, 9.0f / 6.0f, 16.0f / 9.0f, 21.0f / 9.0f};
+			const int aspCount = (int)(sizeof kAspects / sizeof kAspects[0]);
+#else
+			const int aspCount = 1;
+#endif
+			bool rerollOk = true, modalsOk = true;
+			for (int ai = 0; ai < aspCount; ai++) {
+#if !PORT_TWO_SCREENS
+				gfx::fieldFor(kAspects[ai], &gFieldW, &gFieldH);
+#endif
+				static const int kCardCounts[] = {3, 5};
+				for (int n : kCardCounts) {
+					const OrcCardLayout cl = orcCardLayout(n);
+					if (cl.reroll.x < 0 || cl.reroll.x + cl.reroll.w > kFieldW + 0.5f || cl.reroll.y + cl.reroll.h > kFieldH - 12.0f || cl.warnY + 8.0f > kFieldH) {
+						rerollOk = false;
+					}
+					for (int i = 0; i < n; i++) {
+						float cx, cy, cw, ch;
+						orcCardRect(i, n, &cx, &cy, &cw, &ch);
+						if (cx < 0 || cx + cw > kFieldW + 0.5f || cy < kFieldTop || cy + ch > cl.reroll.y - 2.0f) modalsOk = false;
+					}
+					if (!PORT_TWO_SCREENS && kFieldH < 285.0f && cl.headerY < kFieldTop + 6.5f) modalsOk = false;
+				}
+				for (int s = 0; s < kSlots; s++) {
+					float sx, sy, sw, sh;
+					orcPlaceRect(s, &sx, &sy, &sw, &sh);
+					if (sx < 0 || sx + sw > kFieldW + 0.5f || sy + sh > kFieldH) modalsOk = false;
+				}
+				const Button kb = orcKeepButton();
+				if (kb.x < 0 || kb.x + kb.w > kFieldW + 0.5f || kb.y + kb.h > kFieldH) modalsOk = false;
+				sGame.orc.savedRoom = 25;
+				Button rBtns[2];
+				float rx, ry, rw, rh;
+				resumeButtons(rBtns, &rx, &ry, &rw, &rh);
+				if (rx < 0 || rx + rw > kFieldW + 0.5f || rBtns[1].y + rBtns[1].h > ry + rh) modalsOk = false;
+#ifdef DEV_TOOLS
+				float dx, dy, dw, dh;
+				Button db[7];
+				devSkipLayout(&dx, &dy, &dw, &dh, db);
+				if (dx < 0 || dx + dw > kFieldW + 0.5f || dy + dh > kFieldH) modalsOk = false;
+#endif
+			}
+#if !PORT_TWO_SCREENS
+			gFieldW = wasW;
+			gFieldH = wasH;
+#endif
+			labCheck(rerollOk, "Reroll button and Need more run coins warning stay on-screen across aspect ratios");
+			labCheck(modalsOk, "Level-Up cards, charm placement, Resume prompt, and Dev Skip stay inside screen bounds");
 #if PORT_TWO_SCREENS
 			sGame.start(MODE_PRACTICE);
 			float ph = 0, pmy = 0, plx = 0, prx = 0;
@@ -1740,7 +1791,56 @@ static void labFinish(Input& in) {
 #endif
 			labCheck(PORT_QUIT_BOMB == (!PORT_WEB), "Quit Game bomb stays disabled only on Web/WASM");
 			labCheck(PORT_PAUSE_BUTTON == (PORT_ANDROID || PORT_WEB), "Mobile Pause and Inventory overlay stays enabled on Android and Web");
+			{
+				const float wasW2 = gFieldW, wasH2 = gFieldH;
+				sGame.start(MODE_ORCHARD);
+				sGame.phase = PHASE_PLAY;
+				sGame.orc.resumePrompt = false;
+				sGame.orc.bossRoom = true;
+				sBlade.reset();
+				gfx::fieldFor(16.0f / 9.0f, &gFieldW, &gFieldH);
+				sGame.orc.boss = {};
+				sGame.orc.boss.on = true;
+				sGame.orc.boss.id = BOSS_MELON;
+				sGame.orc.boss.radius = 48.0f;
+				sGame.orc.boss.x = kFieldW - 10.0f;
+				sGame.orc.boss.y = 120.0f;
+				sGame.orc.boss.baseY = 120.0f;
+				sGame.orc.boss.nextAttack = 5.0f;
+				gfx::fieldFor(9.0f / 16.0f, &gFieldW, &gFieldH);
+				sGame.update(sBlade);
+				labCheck(sGame.orc.boss.x - sGame.orc.boss.radius >= -0.5f && sGame.orc.boss.x + sGame.orc.boss.radius <= kFieldW + 0.5f,
+				         "Shrinking window mid-boss-fight immediately clamps active boss inside field bounds");
+				sGame.orc.boss = {};
+				gFieldW = wasW2;
+				gFieldH = wasH2;
+			}
+			{
+				Button pauseBtns[4];
+				for (int i = 0; i < 4; i++) pauseBtns[i] = kPauseButtons[i];
+				pauseBtns[0] = {};
+				int f = 1;
+				dpadNav(pauseBtns, 4, KEY_UP, f);
+				labCheck(f == 3, "Single-screen Pause D-pad wraps around Resume..Main Menu without hitting hidden Back button");
+			}
 #endif
+			{
+				const Screen wasScr = sScreen;
+				const bool wasInv = sOrcInv;
+				sOrcInv = false;
+				sScreen = SCREEN_GAME;
+				const bool openOk = !hudShouldHide();
+				sOrcInv = true;
+				const bool invOk = hudShouldHide();
+				sOrcInv = false;
+				sScreen = SCREEN_PAUSE;
+				const bool pauseOk = hudShouldHide();
+				sScreen = SCREEN_RESULT;
+				const bool resOk = hudShouldHide();
+				sOrcInv = wasInv;
+				sScreen = wasScr;
+				labCheck(openOk && invOk && pauseOk && resOk, "hudShouldHide hides corner charm overlay and mode HUD behind Pause, Result, and Inventory");
+			}
 		}
 		step = 1;
 #if PORT_3DS

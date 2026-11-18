@@ -364,9 +364,11 @@ void Game::drawModes12Field() const {
 	char buf[48];
 	const float top = kFieldTop + 6;
 	if (mode == MODE_RECIPE) {
-		if (phase != PHASE_PLAY || finaleOn) return;
+		if (phase != PHASE_PLAY || finaleOn || gHudPaused) return;
 		// The recipe: a cup, then each fruit with how many are in and how many it needs.
-		const float s = gSave.largeText ? 1.25f : 1.0f;
+		const float baseS = gSave.largeText ? 1.25f : 1.0f;
+		const float rawW = (30.0f + m12.recipeKinds * 52.0f) * baseS;
+		const float s = baseS * (rawW > kFieldW - 18.0f ? (kFieldW - 18.0f) / rawW : 1.0f);
 		const float step = 52 * s, w = 30 * s + m12.recipeKinds * step;
 		float x = kFieldW * 0.5f - w * 0.5f;
 		const float pulse = 1 + clampf(m12.cupPulse, 0, 1) * 0.3f;
@@ -393,23 +395,31 @@ void Game::drawModes12Field() const {
 			gfx::sprite(SHEET_SPRITES, sprites_ring_idx, o.x, o.y, r, r, 0, sharpColour(c, strong));
 			sharpShape(c, o.x + o.radius * 0.8f, o.y - o.radius * 0.8f, 5.5f, sharpColour(c, strong));
 		}
-		if (phase != PHASE_PLAY || finaleOn) return;
+		if (phase != PHASE_PLAY || finaleOn || gHudPaused) return;
 		// The call, along the top: its shape, colour and name. It grows for a moment when it changes.
-		const float k = 1 + clampf(m12.callFlash, 0, 1) * 0.35f;
+		float k = 1 + clampf(m12.callFlash, 0, 1) * 0.35f;
 		snprintf(buf, sizeof buf, "SLICE: %s", sharpName(m12.call));
 		for (char* p = buf; *p; p++)
 			if (*p >= 'a' && *p <= 'z') *p = (char)(*p - 32);
-		const float tw = gfx::textWidth(buf, 0.36f * k);
+		float tw = gfx::textWidth(buf, 0.36f * k);
+		if (tw + 38.0f > kFieldW - 12.0f && tw > 0) {
+			k *= (kFieldW - 50.0f) / tw;
+			tw = gfx::textWidth(buf, 0.36f * k);
+		}
 		gfx::rect(kFieldW * 0.5f - tw * 0.5f - 24, top - 2, tw + 34, 22 * k, rgba(20, 12, 8, 130));
 		sharpShape(m12.call, kFieldW * 0.5f - tw * 0.5f - 10, top + 9 * k, 6 * k, sharpColour(m12.call, strong));
 		gfx::text(buf, kFieldW * 0.5f - tw * 0.5f + 2, top + 2, 0.36f * k, sharpColour(m12.call, true));
 		return;
 	}
 	if (mode == MODE_JUGGLE) {
+		if (phase != PHASE_PLAY || finaleOn || gHudPaused) return;
 		int air = 0;
 		for (const auto& o : objs) air += o.on && (o.kind == OBJ_FRUIT || o.kind == OBJ_GOLD) && o.y < kFieldH;
 		snprintf(buf, sizeof buf, "IN THE AIR: %d   KNOCKS: %d", air, m12.knocks);
-		gfx::text(buf, kFieldW * 0.5f, top, 0.32f, COL_CREAM, ALIGN_CENTER);
+		float s = 0.32f;
+		const float tw = gfx::textWidth(buf, s);
+		if (tw > kFieldW - 16.0f && tw > 0) s *= (kFieldW - 16.0f) / tw;
+		gfx::text(buf, kFieldW * 0.5f, top, s, COL_CREAM, ALIGN_CENTER);
 	}
 }
 

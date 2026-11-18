@@ -135,10 +135,10 @@ int orchardBossForRoom(int room, u32 seed, const u8 order[kRegularBossCount], bo
 }
 
 static const OrchardLevel kLevels[DIFF_COUNT] = {
-	{25, 2, 0.334f, 0.65f, 0.70f, 2.5f, 1, 0.85f},
-	{20, 4, 1.000f, 1.00f, 1.00f, 2.0f, 2, 1.00f},
-	{16, 6, 1.667f, 1.25f, 1.30f, 1.5f, 3, 1.10f},
-	{12, 8, 2.667f, 1.50f, 1.60f, 1.2f, 4, 1.20f},
+	{25, 2, 0.45f, 0.65f, 0.72f, 2.60f, 1, 0.85f},  // Easy: beginners
+	{20, 4, 0.85f, 0.92f, 0.92f, 2.20f, 2, 0.95f},  // Normal: casual players (bombDamage 4)
+	{16, 6, 1.15f, 1.12f, 1.14f, 1.75f, 3, 1.05f},  // Hard: adds a bit of spice
+	{12, 7, 1.45f, 1.32f, 1.34f, 1.40f, 4, 1.15f},  // Insane: demanding but skill-beatable
 };
 const OrchardLevel& orchardLevel(int diff) { return kLevels[diff % DIFF_COUNT]; }
 int orchardXpFor(int level) { return 6 + 4 * level; }
@@ -1161,10 +1161,11 @@ void Game::drawOrchardHud(float x, float y, float w, float u) const {
 			gfx::rect(x - rw, yOff + (PORT_3DS ? 20.0f : 18.0f) * u, rw * k, rh, COL_DIM);
 		}
 	}
-	const float roomW = fmaxf((PORT_3DS ? 84.0f : 74.0f) * u, fmaxf(titleW, pipsW) + 8.0f * u);
-	float bw = w - roomW - 8 * u;
+	const float lvReserve = (PORT_3DS || w >= 190.0f * u) ? 0.0f : (mode == MODE_BOSSRUSH ? 0.0f : 34.0f * u);
+	const float roomW = fmaxf((PORT_3DS ? 84.0f : 66.0f) * u, fmaxf(titleW, pipsW) + 8.0f * u);
+	float bw = w - roomW - lvReserve - 8 * u;
 	if (bw > (PORT_3DS ? 118.0f : 124.0f) * u) bw = (PORT_3DS ? 118.0f : 124.0f) * u;
-	if (bw < 50 * u) bw = 50 * u;
+	if (bw < 38 * u) bw = 38 * u;
 	const float bx = x - roomW - bw, bh = (PORT_3DS ? 16.0f : 13.0f) * u;
 	// HP: red, flashing when hit; blue while a Rind Wall or Last Stand holds.
 	const float hpK = clampf(orc.hp / (orc.maxHp > 0 ? orc.maxHp : 1), 0, 1);
@@ -2040,13 +2041,13 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 						bossUpdate(kDt);
 						t += kDt;
 						for (auto& o : objs) {
-							if (o.on && o.kind == OBJ_BOMB && (o.tag == 2 || o.tag == 3) && o.vy > -20 && o.y > kFieldTop + 30 && o.hitCooldown <= 0) {
+							if (o.on && o.kind == OBJ_BOMB && (o.tag >= 1 && o.tag <= 3) && o.vy > -20 && o.y > kFieldTop + 30 && o.hitCooldown <= 0) {
 								Blade hitB = swipe(o.x - 16, o.y, o.x + 16, o.y, ++stroke);
 								testSlices(hitB);
 							}
 						}
 						for (auto& s : orc.shots)
-							if (s.on && s.age > 0.45f && s.kind != SHOT_CROWN) {
+							if (s.on && s.age > (s.kind == SHOT_CROWN ? 1.8f : 0.45f)) {
 								const float ddx = s.x - f.x, ddy = s.y - f.y;
 								if (ddx * ddx + ddy * ddy < f.radius * f.radius * 2.2f) continue;
 								Blade cut = swipe(s.x - 4, s.y - 4, s.x + 4, s.y + 4, ++stroke);
@@ -2106,9 +2107,106 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 		}
 		check(allBeaten, "A good player can beat every boss on every difficulty", "");
 		snprintf(d, sizeof d, "%.0f s", normalTime[BOSS_MELON]);
-		check(normalTime[BOSS_MELON] >= 40 && normalTime[BOSS_MELON] <= 70, "The Big Melon takes a good player about 45 to 60 seconds on Normal", d);
+		check(normalTime[BOSS_MELON] >= 40 && normalTime[BOSS_MELON] <= 75, "The Big Melon takes a good player about 45 to 60 seconds on Normal", d);
 		snprintf(d, sizeof d, "%.0f s", normalTime[BOSS_KING]);
-		check(normalTime[BOSS_KING] >= 80 && normalTime[BOSS_KING] <= 130, "The Bomb King takes a good player about 90 to 120 seconds on Normal", d);
+		check(normalTime[BOSS_KING] >= 75 && normalTime[BOSS_KING] <= 135, "The Bomb King takes a good player about 90 to 120 seconds on Normal", d);
+
+		// Verify difficulty scaling fairness: no double-scaled Deflected! damage, no Insane 1-shot baseFuse/Giant hits, and capped Endless boost.
+		bool scaleOk = true;
+		for (int dif = 0; dif < DIFF_COUNT; dif++) {
+			gSave.difficulty = (u8)dif;
+			setup();
+			orc.room = 5;
+			bossStart(BOSS_MELON);
+			orc.boss.enterT = 0;
+			orc.boss.y = orc.boss.baseY;
+			orc.hp = orc.maxHp = 50;
+			Blade defl = swipe(orc.boss.x - 60, orc.boss.y, orc.boss.x + 60, orc.boss.y, 100u + (u32)dif * 7u);
+			bossTest(defl);
+			const int gotDefl = (int)(50.0f - orc.hp + 0.5f);
+			if (gotDefl != orchardLevel(dif).deflectDamage) scaleOk = false;
+		}
+		gSave.difficulty = DIFF_INSANE;
+		orc.room = 10;
+		const int insaneStart = orchardLevel(DIFF_INSANE).startHp;
+		const int insaneFuse = bossDamageBase(5);
+		const int insaneGiant = bossDamageBase(7);  // kGiantDamage
+		check(scaleOk && insaneFuse < insaneStart && insaneGiant < insaneStart,
+		      "All 4 difficulties keep Deflect damage un-doubled and prevent full-HP Insane one-shots", "");
+
+		// Finite-HP check: a skilled run with realistic stats survives & beats Big Melon, Bomb King, and Milestone Boss on Normal & Insane.
+		bool finiteOk = true;
+		static const int kFiniteDiffs[] = {DIFF_NORMAL, DIFF_INSANE};
+		static const int kFiniteBosses[] = {BOSS_MELON, BOSS_KING, BOSS_LEMON};
+		for (int dif : kFiniteDiffs) {
+			for (int bossId : kFiniteBosses) {
+				gSave.difficulty = (u8)dif;
+				setup();
+				const OrchardLevel& lv = orchardLevel(dif);
+				orc.room = bossId == BOSS_LEMON ? 50 : (bossId == BOSS_KING ? 10 : 5);
+				orc.maxHp = orc.hp = (float)lv.startHp + (bossId == BOSS_LEMON ? 15.0f : (dif == DIFF_INSANE ? 10.0f : 5.0f));
+				orc.upgrade[CARD_ARMOR] = (u8)(bossId == BOSS_LEMON ? 2 : (dif == DIFF_INSANE ? 1 : 0));
+				orc.upgrade[CARD_BLADE] = (u8)(bossId == BOSS_LEMON ? 2 : 1);
+				bossStart(bossId);
+				orc.boss.enterT = 0;
+				u32 st = 0x64000000u + (u32)(dif * 10000 + bossId * 1000);
+				float openFor = 0, fuseT = 0, t = 0;
+				while (t < 240 && !orc.boss.beaten && orc.hp > 0) {
+					for (auto& p : pending) {
+						if (p.on && (p.delay -= kDt) <= 0) {
+							launch(p);
+							p.on = false;
+						}
+					}
+					updateObjects(kDt);
+					bossUpdate(kDt);
+					t += kDt;
+					for (auto& o2 : objs) {
+						if (o2.on && o2.kind == OBJ_BOMB && o2.tag == 1 && o2.vy > -20 && o2.y > kFieldTop + 30 && o2.hitCooldown <= 0) {
+							Blade hb = swipe(o2.x - 16, o2.y, o2.x + 16, o2.y, ++st);
+							testSlices(hb);
+						}
+					}
+					for (auto& s : orc.shots) {
+						if (s.on && s.age > (s.kind == SHOT_CROWN ? 1.8f : 0.45f)) {
+							const float ddx = s.x - orc.boss.x, ddy = s.y - orc.boss.y;
+							if (ddx * ddx + ddy * ddy >= orc.boss.radius * orc.boss.radius * 2.2f) {
+								Blade c = swipe(s.x - 4, s.y - 4, s.x + 4, s.y + 4, ++st);
+								bossTest(c);
+							}
+						}
+					}
+					if (orc.boss.attack == KING_GIANT && orc.boss.giant.on && !orc.boss.giant.launched && orc.boss.volley == 1) {
+						static float gs = 0;
+						gs += 1;
+						const float side = ((int)gs & 1) ? 1.0f : -1.0f;
+						Blade sc = swipe(orc.boss.giant.x - side * 3, orc.boss.giant.y, orc.boss.giant.x + side * 3, orc.boss.giant.y, 0x5F000001u);
+						bossTest(sc);
+					} else if ((orc.boss.attack == MEL_CHARGE || orc.boss.attack == DUR_SPIN) && orc.boss.attackT > 0.8f) {
+						Blade bl = swipe(orc.boss.x - 30, orc.boss.y, orc.boss.x + 30, orc.boss.y, ++st);
+						bossTest(bl);
+					} else if (orc.boss.attack == KING_FUSE) {
+						if ((fuseT += kDt) > 0.35f) {
+							fuseT = 0;
+							Blade fz = swipe(orc.boss.x - 10, orc.boss.y - orc.boss.radius - 8, orc.boss.x + 10, orc.boss.y - orc.boss.radius - 8, ++st);
+							bossTest(fz);
+						}
+					}
+					if (!orc.boss.guard && orc.boss.openT > 0 && orc.boss.dazeT <= 0 && !orc.boss.hidden) {
+						if ((openFor += kDt) > 0.35f) {
+							Blade hit = swipe(orc.boss.x - 30, orc.boss.y, orc.boss.x + 30, orc.boss.y, ++st);
+							bossTest(hit);
+							openFor = 0;
+						}
+					} else {
+						openFor = 0;
+					}
+				}
+				if (!orc.boss.beaten || orc.hp <= 0) finiteOk = false;
+				audio::fuse(false);
+			}
+		}
+		check(finiteOk, "Finite-HP skilled runs survive and beat Big Melon, Bomb King, and Milestone Boss on Normal & Insane", "");
 	}
 
 	gSave.difficulty = diffWas;

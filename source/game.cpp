@@ -1836,7 +1836,7 @@ void Game::updateObjects(float dt) {
 				boom::start(o.x, kFieldH - 10);
 				emitSparks(o.x, kFieldH - 10, rgba(255, 170, 60), juiceCount(12), 200);
 				audio::play(SFX_BOOM, 0.85f, fieldPan(o.x));
-				orcHurt(bossDamageBase(orchardLevel(gSave.difficulty).bombDamage), o.x, kFieldH - 20.0f, "BOMB");
+				orcHurt(bossDamageBase(2), o.x, kFieldH - 20.0f, "BOMB");
 				continue;
 			}
 			// A dropped spiky fruit, pinata or loose piece is never a miss.
@@ -2405,7 +2405,7 @@ void Game::drawField(const Blade& blade) const {
 		if (!p.on) continue;
 		gfx::text(p.text, p.x, p.y - 12, p.scale * uiScale(), withAlpha(p.color, clampf(p.life * 2.5f, 0, 1)), ALIGN_CENTER);
 	}
-	if (orchardLike()) drawOrchardOverlay();
+	if (orchardLike() && !gHudPaused && !orchardHeld()) drawOrchardOverlay();
 	drawSwipeReplay();
 #if PORT_TWO_SCREENS
 	if (mode == MODE_PRACTICE) drawPractice();  // one screen: drawn over the score sign instead, in drawHud
@@ -2601,48 +2601,55 @@ void Game::drawFieldTop() const {}
 void Game::drawHud() const {
 	char buf[32];
 	const float u = uiScale();
-	const float right = kFieldW - (PORT_PAUSE_BUTTON ? 38 : 22);  // clear of the sign's screws
-	gfx::sign(sprites_plank_idx, 2, 1, kFieldW - 4, 34 * u, COL_PLANK);
+	const float narrow = clampf((kFieldW - 12.0f) / 390.0f, 0.62f, 1.0f);
+	const float hu = u * narrow;
+	const float right = kFieldW - (PORT_PAUSE_BUTTON ? 38.0f : (narrow < 0.85f ? 14.0f : 22.0f));  // clear of the sign's screws
+	gfx::sign(sprites_plank_idx, 2, 1, kFieldW - 4, 34 * hu, COL_PLANK);
 
 	float pulse = 1.0f + clampf(scorePulse, 0, 1) * 0.16f;
 	snprintf(buf, sizeof buf, "%lu", (unsigned long)score);
-	gfx::text(buf, 20, 5 * u - (pulse - 1) * 10, 0.58f * u * pulse, feverT > 0 ? cycleColor(elapsed * 0.6f) : COL_ACCENT);
-	const float px = 20 + gfx::textWidth(buf, 0.58f * u) + 10;
+	const float sx = narrow < 0.85f ? 14.0f : 20.0f;
+	gfx::text(buf, sx, 5 * hu - (pulse - 1) * 10, 0.58f * hu * pulse, feverT > 0 ? cycleColor(elapsed * 0.6f) : COL_ACCENT);
+	const float px = sx + gfx::textWidth(buf, 0.58f * hu) + 8 * hu;
 
 	float rx = right;
 	if (timed()) {
 		int secs = (int)ceilf(timeLeft);
 		snprintf(buf, sizeof buf, "%d:%02d", secs / 60, secs % 60);
 		bool urgent = secs <= 10 && phase == PHASE_PLAY;
-		gfx::text(buf, rx, 7 * u, 0.46f * u, urgent ? (gSave.colorBlind == 1 || gSave.colorBlind == 2 ? rgba(255, 200, 40) : rgba(255, 110, 100)) : COL_CREAM, ALIGN_RIGHT);
-		rx -= 62 * u;
+		gfx::text(buf, rx, 7 * hu, 0.46f * hu, urgent ? (gSave.colorBlind == 1 || gSave.colorBlind == 2 ? rgba(255, 200, 40) : rgba(255, 110, 100)) : COL_CREAM, ALIGN_RIGHT);
+		rx -= 58 * hu;
 	}
 	if (maxStrikes > 0) {
 		for (int i = 0; i < maxStrikes; i++) {
 			bool used = i < strikes;
-			float s = (0.5f + (used && i == strikes - 1 ? clampf(strikePulse, 0, 1) * 0.4f : 0)) * u;
-			gfx::sprite(SHEET_SPRITES, used ? sprites_pip_on_idx : sprites_pip_off_idx, rx - 8 * u - (maxStrikes - 1 - i) * 17 * u, 17 * u, s, s);
+			float s = (0.5f + (used && i == strikes - 1 ? clampf(strikePulse, 0, 1) * 0.4f : 0)) * hu;
+			gfx::sprite(SHEET_SPRITES, used ? sprites_pip_on_idx : sprites_pip_off_idx, rx - 8 * hu - (maxStrikes - 1 - i) * 17 * hu, 17 * hu, s, s);
 		}
-		rx -= (maxStrikes * 17 + 6) * u;
+		rx -= (maxStrikes * 17 + 6) * hu;
 	}
 	if (mode == MODE_BEAT) {
-		drawBeat(rx - 50 * u, 16 * u, u);
-		rx -= 60 * u;
+		drawBeat(rx - 50 * hu, 16 * hu, hu);
+		rx -= 58 * hu;
 	}
 	float rightHudLeft = rx;
 	if (orchardLike()) {
-		const float hudMaxW = fmaxf(140.0f * u, rx - px - 8 * u);
-		drawOrchardHud(rx, 2.5f * u, hudMaxW, u);
+		const float hudMaxW = fmaxf(100.0f * hu, rx - px - 6 * hu);
+		drawOrchardHud(rx, 2.5f * hu, hudMaxW, hu);
 		// Reserve full Orchard HUD span (room/boss + HP/XP bar + LV label) so combos never cover LV/HP/Room.
-		rightHudLeft = rx - fminf(hudMaxW, 245.0f * u);
+		rightHudLeft = rx - fminf(hudMaxW, 245.0f * hu);
 	} else {
 		if (passName) snprintf(buf, sizeof buf, "%s", passName);
 		else snprintf(buf, sizeof buf, mixed ? "MIXER BEST %lu" : (assisted ? "ASSISTED BEST %lu" : "BEST %lu"), (unsigned long)(score > best ? score : best));
-		gfx::text(buf, rx, 10 * u, 0.32f * u, COL_DIM, ALIGN_RIGHT);
-		rightHudLeft = rx - gfx::textWidth(buf, 0.32f * u) - 8 * u;
+		float bs = 0.32f * hu;
+		const float bestRoom = fmaxf(40.0f, rx - px - 6 * hu);
+		const float bw = gfx::textWidth(buf, bs);
+		if (bw > bestRoom && bw > 0) bs *= bestRoom / bw;
+		gfx::text(buf, rx, 10 * hu, bs, COL_DIM, ALIGN_RIGHT);
+		rightHudLeft = rx - fminf(bw, bestRoom) - 8 * hu;
 	}
 
-	const float bx = 12, by = 32 * u, bw = kFieldW - 24;
+	const float bx = 12, by = 32 * hu, bw = kFieldW - 24;
 	if (meterLive()) gfx::rect(bx - 1, by - 1, bw + 2, 6, gfx::themeBar());
 	if (!meterLive()) {
 		// No meter yet: the lessons before the Frenzy one leave it out.
@@ -2661,14 +2668,14 @@ void Game::drawHud() const {
 		char chainBuf[20] = "", swipeBuf[20] = "";
 		if (showChain) snprintf(chainBuf, sizeof chainBuf, "COMBO %d", chain >= 2 ? chain : fadingChain);
 		if (showSwipe) snprintf(swipeBuf, sizeof swipeBuf, "SWIPE X%d", comboCount);
-		const float cs = 0.32f * u;
+		const float cs = 0.32f * hu;
 		const float w1 = showChain ? gfx::textWidth(chainBuf, cs) : 0;
 		const float w2 = showSwipe ? gfx::textWidth(swipeBuf, cs) : 0;
-		const float gap = (showChain && showSwipe) ? 10.0f * u : 0;
+		const float gap = (showChain && showSwipe) ? 10.0f * hu : 0;
 		const float totalW = w1 + gap + w2;
-		const bool fitsBar = px + totalW <= rightHudLeft - 6 * u;
+		const bool fitsBar = px + totalW <= rightHudLeft - 6 * hu;
 		float cx = fitsBar ? ((px + rightHudLeft - totalW) * 0.5f) : (kFieldW * 0.5f - totalW * 0.5f);
-		const float cy = fitsBar ? (10.5f * u) : (by + (feverT > 0 ? 30.0f : 26.0f));
+		const float cy = fitsBar ? (10.5f * hu) : (by + (feverT > 0 ? 30.0f : 26.0f));
 		if (showChain) {
 			gfx::text(chainBuf, cx, cy, cs, chain >= 2 ? COL_CREAM : withAlpha(COL_CREAM, comboFadeT / kComboFade));
 			cx += w1 + gap;
