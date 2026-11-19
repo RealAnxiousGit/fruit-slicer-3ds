@@ -46,5 +46,7 @@ int trackBoss(int track);              // the boss a 0-based track belongs to, o
 bool shopLocked(int tab, int i);       // a boss track whose boss hasn't been beaten yet
 int bossTrackCount(int boss);          // how many tracks that boss has
 int bossTrackPick(int boss, u32 roll); // one of the boss's tracks at random, never the one heard last time; -1 if it has none
+int bossMusicResolve(int boss, u32 roll); // effective track for Boss Music setting (0 Off, 1 Auto, >=2 chosen), -1 for Game Music
+void bossUnlockAllTracks(int boss, u8* newCountOut = nullptr);  // defeating a boss unlocks all of its tracks in Shop
 bool shopHasNew();                     // a beaten boss's tracks haven't been looked at in the Shop yet
 void shopSeenNew();                    // the Music tab was opened: they have been now

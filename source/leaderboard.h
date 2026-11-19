@@ -16,7 +16,7 @@ struct BoardView {
 	Status status;
 	char mode[24];
 	int count;
-	Entry entries[10];
+	Entry entries[100];
 	int yourRank;  // 1-based, 0 if unranked
 	u32 yourScore;
 	int total;
@@ -39,7 +39,7 @@ void baseUrl(char* out, size_t size);
 bool buildSubmitJson(int mode, bool endless, u32 score, const char* name, u64 playerId, bool testFlag, char* out, size_t size);
 bool parseResponse(const char* json, BoardView* out);
 
-void fetch(int mode, bool endless, bool testFlag = false);
+void fetch(int mode, bool endless, bool testFlag = false, int limit = 10);
 void submit(int mode, bool endless, u32 score, bool testFlag = false);
 void tick();
 const BoardView& view();

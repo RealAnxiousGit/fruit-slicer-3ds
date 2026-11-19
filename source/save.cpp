@@ -234,6 +234,18 @@ void saveRetireOldBests() {
 void saveLoad() {
 	memset((void*)&gSave, 0, sizeof gSave);
 	saveDefaults(false, SEC_ALL);
+#ifdef BOSS_TEST_APP
+	gSave.artStyle = ART_3D;
+	gSave.bossMusic = 1;
+	gSave.seenRoom50Cutscene = 1;
+	gSave.practiceDone = 1;
+	gSave.streetPassPrompted = 1;
+	gSave.updConsent = 2;
+	gSave.leaderboardId = 0xB0557E57B0557E57ull;
+	PORT_CHECK_SETTINGS
+	shopCheckSave();
+	return;
+#endif
 	char file[256], temp[256];
 	port::dataPath(file, sizeof file, "save.bin");
 	port::dataPath(temp, sizeof temp, "save.tmp");
@@ -274,7 +286,11 @@ void saveLoad() {
 	if (gSave.gameSpeed > 2) gSave.gameSpeed = 0;
 	if (gSave.updConsent > 2) gSave.updConsent = 0;
 	gSave.practiceDone &= 1;
-	gSave.bossMusic &= 1;
+#if PORT_CUSTOM_MUSIC
+	if (gSave.bossMusic > 1 + kTrackCount + kCustomSongsMax) gSave.bossMusic = 1;
+#else
+	if (gSave.bossMusic > 1 + kTrackCount) gSave.bossMusic = 1;
+#endif
 	gSave.streetPassOn &= 1;
 	gSave.streetPassPrompted &= 1;
 	gSave.leaderboardName[sizeof gSave.leaderboardName - 1] = 0;
@@ -315,6 +331,9 @@ void saveLoad() {
 }
 
 void saveWrite() {
+#ifdef BOSS_TEST_APP
+	return;
+#endif
 	port::ensureDataDir();
 	char file[256], temp[256];
 	port::dataPath(file, sizeof file, "save.bin");

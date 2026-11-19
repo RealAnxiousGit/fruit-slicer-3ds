@@ -1150,6 +1150,17 @@ def spr_icon(kind):
             el(d, x - 3.0, 21.8 + dy, 1.6, 1.1, hi)
             d.line([(x + 1.2) * SS, (22.5 + dy) * SS, (x + 1.2) * SS, (7 + dy) * SS], fill=cream, width=int(2.8 * SS))
         poly(d, [(10.5, 6), (25, 4), (25, 8.8), (10.5, 10.8)], (255, 214, 102, 255))
+    elif kind == "skull":
+        # Boss-track skull icon: rounded cranium, jaw and crisp dark sockets.
+        dark = (40, 28, 52, 255)
+        el(d, 16, 13.0, 9.6, 8.6, cream)
+        d.rounded_rectangle([10.4 * SS, 17.4 * SS, 21.6 * SS, 26.2 * SS], radius=2.2 * SS, fill=cream)
+        el(d, 12.2, 13.8, 2.7, 2.9, dark)
+        el(d, 19.8, 13.8, 2.7, 2.9, dark)
+        poly(d, [(16, 16.4), (14.4, 19.6), (17.6, 19.6)], dark)
+        for tx in (13.0, 16.0, 19.0):
+            d.line([tx * SS, 22.0 * SS, tx * SS, 26.2 * SS], fill=dark, width=int(1.6 * SS))
+        el(d, 12.6, 7.6, 3.2, 1.4, hi)
     return shrink(sticker(img, 1.1, shadow=False))
 
 
@@ -1232,9 +1243,10 @@ CARD_ICONS = [
     "blender", "freezepop", "defuser", "smoothie", "cleaver", "fruitrain", "pull", "slowmo",
     "goldapple", "fruitbomb", "rindwall", "ripeseed", "skippeel", "bossbane", "luckypit", "coinjar",
     "laststand", "flood",
+    "cutboard", "lifesteal", "bossharvest",
 ]
 # Badge colours by kind: upgrades amber, passive charms green, reusable charms blue, single use pink.
-CARD_KIND = [0] * 9 + [1] * 15 + [2] * 8 + [3] * 10
+CARD_KIND = [0] * 9 + [1] * 15 + [2] * 8 + [3] * 10 + [1, 1, 1]
 KIND_COLOURS = [
     ((242, 174, 58, 255), (144, 88, 20, 255), (255, 224, 136, 255)),
     ((96, 184, 92, 255), (42, 102, 42, 255), (176, 238, 166, 255)),
@@ -1493,6 +1505,26 @@ def spr_card_icon(index):
         for i, y in enumerate((10.8, 16.5, 22.2)):
             pts = [(6 + k, y + math.sin(k * 0.6) * 2.1) for k in range(0, 21)]
             ln(pts, 2.4, w if i != 1 else ice)
+    elif key == "cutboard":
+        # Wooden cutting board with split fruit halves and a bright slash mark.
+        ed.rounded_rectangle([5.6 * SS, 9.2 * SS, 26.4 * SS, 24.4 * SS], radius=2.6 * SS, fill=(142, 92, 52, 255))
+        ed.rounded_rectangle([6.4 * SS, 8.2 * SS, 25.6 * SS, 22.8 * SS], radius=2.4 * SS, fill=wood)
+        el(ed, 23.0, 15.5, 1.5, 2.4, edge)
+        el(ed, 11.2, 16.2, 3.6, 3.6, red)
+        el(ed, 16.8, 16.2, 3.6, 3.6, gold)
+        ln([(9.2, 11.4), (20.8, 20.6)], 2.2, w)
+    elif key == "lifesteal":
+        # Crimson spell tome with cream pages and a glowing pink heart crest.
+        ed.rounded_rectangle([7.4 * SS, 6.2 * SS, 25.2 * SS, 25.8 * SS], radius=2.2 * SS, fill=cream)
+        ed.rounded_rectangle([6.6 * SS, 5.8 * SS, 24.0 * SS, 23.8 * SS], radius=2.2 * SS, fill=(168, 38, 66, 255))
+        ed.rectangle([6.6 * SS, 6.2 * SS, 9.6 * SS, 23.6 * SS], fill=gold)
+        heart(16.6, 15.2, 4.6, (255, 118, 146, 255), w)
+    elif key == "bossharvest":
+        # Royal boss crown paired with a gleaming XP diamond gem.
+        poly(ed, [(7.5, 15.2), (7.5, 8.2), (11.8, 12.0), (16, 6.2), (20.2, 12.0), (24.5, 8.2), (24.5, 15.2)], gold)
+        ed.rectangle([7.5 * SS, 14.4 * SS, 24.5 * SS, 16.8 * SS], fill=gold_deep)
+        poly(ed, [(16, 16.4), (21.6, 21.8), (16, 27.2), (10.4, 21.8)], ice)
+        poly(ed, [(16, 16.4), (19.0, 21.8), (16, 24.8), (13.0, 21.8)], w)
 
     # Composite emblem drop shadow and emblem onto the medallion, then add a specular gloss dot.
     em_mask = mask_of(em)
@@ -1820,6 +1852,48 @@ def spr_worm():
     return shrink(sticker(img, 1.6))
 
 
+def spr_lem_floatie():
+    """Bright coral-and-cream striped inflatable swim ring for Lord Lemon's Lemonade squeeze."""
+    w, h = 76, 46
+    ring = canvas(w, h)
+    d = ImageDraw.Draw(ring)
+    cx, cy = w / 2, h / 2 + 1
+    d.ellipse([(cx - 32) * SS, (cy - 16) * SS, (cx + 32) * SS, (cy + 16) * SS], fill=(246, 108, 44, 255))
+    # Bold cream swim-ring stripes radiating from the ring centre.
+    for ang_deg in (-55, 5, 65, 130, 195):
+        a = math.radians(ang_deg)
+        ca, sa = math.cos(a), math.sin(a)
+        poly(d, [
+            (cx + ca * 14 - sa * 3.8, cy + sa * 7 + ca * 2.2),
+            (cx + ca * 34 - sa * 5.2, cy + sa * 17 + ca * 2.8),
+            (cx + ca * 34 + sa * 5.2, cy + sa * 17 - ca * 2.8),
+            (cx + ca * 14 + sa * 3.8, cy + sa * 7 - ca * 2.2),
+        ], (255, 244, 216, 255))
+    ring = shade(ring, light=(255, 252, 224, 120), dark=(132, 34, 10, 95))
+    hole = Image.new("L", ring.size, 255)
+    ImageDraw.Draw(hole).ellipse([(cx - 17) * SS, (cy - 8) * SS, (cx + 17) * SS, (cy + 7.5) * SS], fill=0)
+    ring.putalpha(ImageChops.multiply(ring.getchannel("A"), hole))
+    return shrink(sticker(ring, 1.5))
+
+
+def spr_lem_drain():
+    """Sliceable metallic drain stopper with pull-ring and lemon-soda bubbles."""
+    img = canvas(40)
+    d = ImageDraw.Draw(img)
+    cx, cy = 20, 21
+    el(d, cx, cy + 1.5, 13.0, 12.2, (58, 66, 82, 255))
+    el(d, cx, cy, 10.6, 10.0, (194, 212, 228, 255))
+    img = shade(img, light=(255, 255, 255, 130), dark=(46, 56, 74, 95))
+    d = ImageDraw.Draw(img)
+    for ox, oy in ((-4, -3), (4, -3), (-4, 3), (4, 3)):
+        el(d, cx + ox, cy + oy, 1.7, 1.7, (58, 66, 82, 255))
+    d.ellipse([(cx - 4.2) * SS, (cy - 15.5) * SS, (cx + 4.2) * SS, (cy - 7.5) * SS], outline=(232, 242, 252, 255), width=int(2.2 * SS))
+    for bx, by, br in ((8.5, 8.0, 2.3), (30.5, 9.5, 2.0), (28.0, 5.2, 1.4)):
+        el(d, bx, by, br, br, (255, 248, 178, 235))
+        el(d, bx - 0.5, by - 0.5, br * 0.4, br * 0.4, (255, 255, 255, 255))
+    return shrink(sticker(img, 1.4))
+
+
 def boss_sprites():
     out = []
     for who in ("melon", "king"):
@@ -1832,7 +1906,7 @@ def orchard_sprites():
     """The 1.2+ sprites, after every older one so that no older sprite number moves."""
     out = [("ic_tree", spr_mode_icon("tree")), ("ic_crown", spr_mode_icon("crown")), ("ic_cup", spr_mode_icon("cup")),
            ("ic_target", spr_mode_icon("target")), ("ic_juggle", spr_mode_icon("juggle"))]
-    out += [("cd_" + key, spr_card_icon(i)) for i, key in enumerate(CARD_ICONS)]
+    out += [("cd_" + CARD_ICONS[i], spr_card_icon(i)) for i in range(42)]
     out += boss_sprites()
     # 2.0 Endless bosses & icon added strictly after 1.2 sprites so older sprite IDs never shift.
     for who in ("pineapple", "chili"):
@@ -1848,6 +1922,9 @@ def orchard_sprites():
     for who in ("durian", "lemon", "apple"):
         out.append((f"boss_{who}_dead", boss_body(who, "dead")))
         out.append((f"bface_{who}_dead", boss_face_overlay(who, "dead")))
+    # 2.0c Extra cards, boss-track skull icon & Lord Lemon floatie/drain appended strictly at the tail.
+    out += [("cd_" + CARD_ICONS[i], spr_card_icon(i)) for i in range(42, len(CARD_ICONS))]
+    out += [("ic_skull", spr_icon("skull")), ("lem_floatie", spr_lem_floatie()), ("lem_drain", spr_lem_drain())]
     return out
 
 

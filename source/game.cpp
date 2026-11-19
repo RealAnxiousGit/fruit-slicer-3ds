@@ -1041,9 +1041,47 @@ void Game::addHalves(const Obj& o, const FruitDef& def, const Blade& blade, floa
 	if (lx * nx + ly * ny < 0) { nx = -nx; ny = -ny; }
 	// The sense of the turn that rolls each cut face towards the player, not away.
 	const float roll = (dx * ny - dy * nx) >= 0 ? 1.0f : -1.0f;
+	const float kick = 42;  // how fast the halves drift apart along the cut's normal
+
+	// Cutting Board: turn sliced whole fruits (and halves) into re-sliceable piece objects.
+	if (orchardLike() && orc.upgrade[CARD_CUTBOARD] && o.cutGen < 2 && o.kind <= OBJ_GOLD && !(o.kind == OBJ_FRUIT && o.fruit == kSpiky)) {
+		int freeSlots = 0;
+		for (const auto& q : objs)
+			if (!q.on) freeSlots++;
+		if (freeSlots >= 2) {
+			for (int s = 0; s < 2; s++) {
+				const float side = s == 0 ? -1.0f : 1.0f;
+				for (auto& g : objs) {
+					if (g.on) continue;
+					g = {};
+					g.on = true;
+					g.kind = o.kind;
+					g.fruit = o.fruit;
+					g.x = o.x + nx * 6.0f * side;
+					g.y = o.y + ny * 6.0f * side;
+					g.vx = o.vx * 0.72f + nx * kick * side + dx * 26.0f;
+					g.vy = fminf(o.vy * 0.55f, -110.0f * kFieldK) - 35.0f * kFieldK + ny * kick * 0.45f * side;
+					g.rot = cutRot;
+					g.rotv = side * gRng.range(2.0f, 4.5f);
+					g.rx = o.rx;
+					g.ry = o.ry;
+					g.rxv = o.rxv;
+					g.ryv = o.ryv;
+					g.radius = fmaxf(12.0f, o.radius * 0.72f);
+					g.hits = 1;
+					g.hitCooldown = 0.14f;
+					g.loose = true;
+					g.cutGen = (u8)(o.cutGen + 1);
+					g.cutPart = o.cutGen == 0 ? (u8)s : o.cutPart;
+					break;
+				}
+			}
+			return;
+		}
+	}
 
 	// Cutting along the real swipe needs two free slots; otherwise this fruit uses ready-made halves.
-	bool exact = use3D() && gSave.sliceStyle == 1 && !sLightFrenzy;
+	bool exact = use3D() && gSave.sliceStyle == 1 && !sLightFrenzy && o.cutGen == 0;
 	int slots[2] = {-1, -1};
 	if (exact) {
 		slots[0] = m3d::cutAcquire();
@@ -1069,7 +1107,6 @@ void Game::addHalves(const Obj& o, const FruitDef& def, const Blade& blade, floa
 		offset = clampf((blade.x - o.x) * nx + (blade.y - o.y) * ny, -o.radius * 0.5f, o.radius * 0.5f);
 	}
 
-	const float kick = 42;  // how fast the halves drift apart along the cut's normal
 	for (int s = 0; s < 2; s++) {
 		Half& h = halves[halfCursor];
 		halfCursor = (halfCursor + 1) % (sLightFrenzy ? kLightMaxHalves : kMaxHalves);
@@ -1082,9 +1119,10 @@ void Game::addHalves(const Obj& o, const FruitDef& def, const Blade& blade, floa
 		h.vx = o.vx * 0.9f + nx * kick * side + dx * 30;
 		h.vy = o.vy * 0.8f + ny * kick * side + dy * 30;
 		h.rotv = side * gRng.range(1.5f, 4.0f);
-		h.sprite = (short)(s == 0 ? def.left : def.right);
+		h.sprite = (short)(o.cutGen >= 2 ? (o.cutPart ? def.right : def.left) : (s == 0 ? def.left : def.right));
 		h.mesh = (u8)def.mesh;
-		h.part = s == 0 ? m3d::PART_LEFT : m3d::PART_RIGHT;
+		h.part = (u8)(o.cutGen >= 2 ? (o.cutPart ? m3d::PART_RIGHT : m3d::PART_LEFT) : (s == 0 ? m3d::PART_LEFT : m3d::PART_RIGHT));
+		h.scale = o.cutGen >= 2 ? 0.58f : 1.0f;
 		h.axisX = dx;
 		h.axisY = dy;
 		h.tilt = 0;
@@ -1101,7 +1139,7 @@ void Game::addHalves(const Obj& o, const FruitDef& def, const Blade& blade, floa
 			m3d::cutRequest(slots[s], def.mesh, mx * side, my * side, mz * side, offset * side);
 		}
 	}
-	if (o.kind == OBJ_FRUIT && o.fruit == kDragon && !sLightFrenzy) {
+	if (o.cutGen == 0 && o.kind == OBJ_FRUIT && o.fruit == kDragon && !sLightFrenzy) {
 		// A dragon fruit falls in three: a third, ready-made piece flies on along the stroke.
 		Half& h = halves[halfCursor];
 		halfCursor = (halfCursor + 1) % kMaxHalves;
@@ -1178,12 +1216,12 @@ void Game::sliceFruit(Obj& o, const Blade& blade) {
 	}
 	audio::play(cut, 0.95f, pan, gRng.range(0.92f, 1.09f));
 
-	if (o.kind == OBJ_FRUIT) {
+	if (o.cutGen == 0 && o.kind == OBJ_FRUIT) {
 		u32& count = gSave.fruitSliced[progress::journalKind(o.fruit)];
 		if (count < 0xFFFFFFFFu) count++;
 		if (mode == MODE_PRACTICE) practiceSliced(o);
 	}
-	if (o.kind == OBJ_FRUIT && o.fruit >= kSpiky) {
+	if (o.cutGen == 0 && o.kind == OBJ_FRUIT && o.fruit >= kSpiky) {
 		trickEffect(o, dx, dy);
 		if (o.fruit == kSpiky) {  // no points and no combo: it only gets in the way
 			o.on = false;
@@ -2137,7 +2175,8 @@ void Game::drawObjects3D(bool top, float ox, float oy) const {
 	m3d::setSkin(shopWornSkin());
 	for (const auto& h : halves) {
 		if (!h.on || !onThisScreen(h.y, 30, top, oy)) continue;
-		m3d::Pose pose = {h.x + ox, h.y + oy, kFruitZ, h.rx, h.ry, h.rot, fruitSize(), h.axisX, h.axisY, h.tilt};
+		const float hs = fruitSize() * (h.scale > 0 ? h.scale : 1.0f);
+		m3d::Pose pose = {h.x + ox, h.y + oy, kFruitZ, h.rx, h.ry, h.rot, hs, h.axisX, h.axisY, h.tilt};
 		if (h.cut >= 0) m3d::drawCut(h.cut, pose);
 		else m3d::draw(h.mesh, (m3d::Part)h.part, pose);
 	}
@@ -2146,9 +2185,11 @@ void Game::drawObjects3D(bool top, float ox, float oy) const {
 		for (const auto& o : objs) {
 			if (!o.on || o.kind > OBJ_BOMB || (o.kind == OBJ_BOMB) != (pass == 1) || !onThisScreen(o.y, 34, top, oy)) continue;
 			int mesh = o.kind == OBJ_BOMB ? m3d::MESH_BOMB : (o.kind == OBJ_GOLD ? m3d::MESH_GOLD : kFruit[o.fruit].mesh);
-			m3d::Pose pose = {o.x + ox, o.y + oy, o.kind == OBJ_BOMB ? kBombZ : kFruitZ, o.rx, o.ry, o.rot, o.kind == OBJ_BOMB ? 1 : fruitSize(), 0, 0, 0};
+			const float os = o.kind == OBJ_BOMB ? 1.0f : fruitSize() * (o.cutGen == 1 ? 0.90f : (o.cutGen == 2 ? 0.58f : 1.0f));
+			const m3d::Part mp = (o.kind <= OBJ_GOLD && o.cutGen > 0) ? (o.cutPart ? m3d::PART_RIGHT : m3d::PART_LEFT) : m3d::PART_WHOLE;
+			m3d::Pose pose = {o.x + ox, o.y + oy, o.kind == OBJ_BOMB ? kBombZ : kFruitZ, o.rx, o.ry, o.rot, os, 0, 0, 0};
 			m3d::setSkin(o.kind == OBJ_BOMB ? nullptr : shopWornSkin());  // a bomb must always look like a bomb
-			m3d::draw(mesh, m3d::PART_WHOLE, pose);
+			m3d::draw(mesh, mp, pose);
 		}
 	}
 	m3d::setSkin(nullptr);
@@ -2174,12 +2215,16 @@ void Game::drawObjects3D(bool top, float ox, float oy) const {
 void Game::drawObjects2D(bool top, float ox, float oy) const {
 	if (top) gfx::setDepth(0.7f);
 	for (const auto& h : halves) {
-		if (h.on && onThisScreen(h.y, 30, top, oy)) gfx::sprite(SHEET_FRUIT, h.sprite, h.x + ox, h.y + oy, fruitSize(), fruitSize(), h.rot, shopWornSkinTint());
+		const float hs = fruitSize() * (h.scale > 0 ? h.scale : 1.0f);
+		if (h.on && onThisScreen(h.y, 30, top, oy)) gfx::sprite(SHEET_FRUIT, h.sprite, h.x + ox, h.y + oy, hs, hs, h.rot, shopWornSkinTint());
 	}
 	// Fruit first and bombs afterwards, so a bomb is never hidden behind a fruit.
 	for (const auto& o : objs) {
 		if (!o.on || o.kind > OBJ_GOLD || !onThisScreen(o.y, 34, top, oy)) continue;
-		gfx::sprite(SHEET_FRUIT, o.kind == OBJ_GOLD ? kGold.whole : kFruit[o.fruit].whole, o.x + ox, o.y + oy, fruitSize(), fruitSize(), o.rot, shopWornSkinTint());
+		const FruitDef& def = o.kind == OBJ_GOLD ? kGold : kFruit[o.fruit];
+		const int spr = o.cutGen == 0 ? def.whole : (o.cutPart ? def.right : def.left);
+		const float os = fruitSize() * (o.cutGen == 1 ? 0.92f : (o.cutGen == 2 ? 0.60f : 1.0f));
+		gfx::sprite(SHEET_FRUIT, spr, o.x + ox, o.y + oy, os, os, o.rot, shopWornSkinTint());
 	}
 	if (top) gfx::setDepth(1.1f);
 	for (const auto& o : objs) {
@@ -2202,8 +2247,10 @@ void Game::drawMarks(bool top, float ox, float oy) const {
 	for (const auto& o : objs) {
 		if (!o.on || o.kind > OBJ_GOLD || !onThisScreen(o.y, 40, top, oy)) continue;
 		if (gSave.highContrast) {
-			int spr = o.kind == OBJ_BOMB ? fruit_bomb_idx : (o.kind == OBJ_GOLD ? kGold.whole : kFruit[o.fruit].whole);
-			const float size = 1.14f * (o.kind == OBJ_BOMB ? 1 : fruitSize());
+			const FruitDef& def = o.kind == OBJ_GOLD ? kGold : kFruit[o.fruit];
+			int spr = o.kind == OBJ_BOMB ? fruit_bomb_idx : (o.cutGen == 0 ? def.whole : (o.cutPart ? def.right : def.left));
+			const float os = o.kind == OBJ_BOMB ? 1.0f : fruitSize() * (o.cutGen == 1 ? 0.92f : (o.cutGen == 2 ? 0.60f : 1.0f));
+			const float size = 1.14f * os;
 			gfx::sprite(SHEET_FRUIT, spr, o.x + ox, o.y + oy, size, size, o.rot, rgba(240, 240, 240, 235));  // light, on the dark board
 		}
 		if (o.kind == OBJ_BOMB) drawBombMark(o.x + ox, o.y + oy, o.radius, o.age);

@@ -21,6 +21,7 @@ struct PendingReq {
 	bool submit;
 	u32 score;
 	bool testFlag;
+	int limit;
 };
 static PendingReq sPending = {};
 
@@ -278,7 +279,7 @@ bool parseResponse(const char* json, BoardView* out) {
 			const char* arrEnd = skipValue(p, rootEnd);
 			if (!arrEnd) return false;
 			p++;
-			while (p < arrEnd && parsed.count < 10) {
+			while (p < arrEnd && parsed.count < 100) {
 				p = skipWs(p, arrEnd);
 				if (p >= arrEnd || *p == ']') break;
 				if (*p == ',') {
@@ -327,8 +328,9 @@ static bool dispatchNow(const PendingReq& req) {
 	} else {
 		char pid[24];
 		formatPlayerId(gSave.leaderboardId, pid, sizeof pid);
-		snprintf(url, sizeof url, "%s/v1/scores?mode=%s&player_id=%s&limit=10%s",
-		    base, slug, pid, req.testFlag ? "&test=1" : "");
+		const int lim = req.limit > 0 && req.limit <= 100 ? req.limit : 10;
+		snprintf(url, sizeof url, "%s/v1/scores?mode=%s&player_id=%s&limit=%d%s",
+		    base, slug, pid, lim, req.testFlag ? "&test=1" : "");
 	}
 	if (!port::lbRequest(url, bodyPtr)) {
 		sView.status = STATUS_OFFLINE;
@@ -350,12 +352,12 @@ static void enqueue(const PendingReq& req) {
 	dispatchNow(req);
 }
 
-void fetch(int mode, bool endless, bool testFlag) {
-	enqueue({true, mode, endless, false, 0, testFlag});
+void fetch(int mode, bool endless, bool testFlag, int limit) {
+	enqueue({true, mode, endless, false, 0, testFlag, limit});
 }
 
 void submit(int mode, bool endless, u32 score, bool testFlag) {
-	enqueue({true, mode, endless, true, score, testFlag});
+	enqueue({true, mode, endless, true, score, testFlag, 10});
 }
 
 void tick() {

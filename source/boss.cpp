@@ -21,7 +21,12 @@ namespace {
 
 // A chain of attacks: only its last one tires the boss out and drops the guard, so a fight is a real fight.
 // Tuned with the Lab's timed fights (labBossFight).
-int chainLength(const Boss& b) { return b.id >= BOSS_DURIAN ? 3 : 4; }
+int chainLength(const Boss& b) { return b.enraged ? 2 : (b.id >= BOSS_DURIAN ? 3 : 4); }
+
+float lemonadeSurfaceY(const Boss& b) {
+	const float halfY = kFieldTop + (kFieldH - kFieldTop) * 0.50f;
+	return lerpf((float)kFieldH, halfY, clampf(b.lemLevel, 0.0f, 1.0f));
+}
 
 float endlessRoomBoost(int room, bool endless) {
 	if (!endless || room <= 10) return 1.0f;
@@ -31,7 +36,7 @@ float endlessRoomBoost(int room, bool endless) {
 // The Giant Bomb: hits come from blade travel across it, like the Sunburst.
 constexpr int kGiantNeed[DIFF_COUNT] = {12, 15, 18, 20};
 constexpr float kGiantTime[DIFF_COUNT] = {8.5f, 7.5f, 6.5f, 6.0f};
-constexpr float kCrownLife = 3.2f;
+constexpr float kCrownLife = 3.6f;
 constexpr float kGiantTravelPerHit = 70.0f;
 constexpr int kGiantDamage = 7;  // heavy hit without instant one-shotting full health
 
@@ -44,6 +49,16 @@ float segDist2(float px, float py, const Blade& b) {
 }
 
 float fieldMidY() { return kFieldTop + (kFieldH - kFieldTop) * 0.36f; }
+
+const float kArtDiv[BOSS_COUNT] = {40.0f, 35.5f, 39.0f, 38.0f, 40.0f, 39.0f, 40.0f};
+const float kMeshDiv[BOSS_COUNT] = {23.0f, 19.0f, 20.5f, 18.0f, 21.0f, 21.0f, 22.0f};
+const int kBossMeshId[BOSS_COUNT] = {m3d::MESH_MELON, m3d::MESH_BOMB, m3d::MESH_PINEAPPLE, m3d::MESH_CHILI, m3d::MESH_SPIKY, m3d::MESH_LEMON, m3d::MESH_APPLE};
+const int kBossFaceIdx[BOSS_COUNT] = {
+    sprites_bface_melon_guard_idx, sprites_bface_king_guard_idx, sprites_bface_pineapple_guard_idx, sprites_bface_chili_guard_idx,
+    sprites_bface_durian_guard_idx, sprites_bface_lemon_guard_idx, sprites_bface_apple_guard_idx};
+const int kBossBodyIdx[BOSS_COUNT] = {
+    sprites_boss_melon_guard_idx, sprites_boss_king_guard_idx, sprites_boss_pineapple_guard_idx, sprites_boss_chili_guard_idx,
+    sprites_boss_durian_guard_idx, sprites_boss_lemon_guard_idx, sprites_boss_apple_guard_idx};
 }  // namespace
 
 void Game::bossHitSlice(float x, float y, float dx, float dy) {
@@ -72,6 +87,13 @@ void Game::bossHitSlice(float x, float y, float dx, float dy) {
 	PORT_VIBRATE(0.6f, 140);
 	orcGainXp(6);
 	if (orc.upgrade[CARD_JUICE]) orc.hp = fminf(orc.maxHp, orc.hp + 1.0f);
+	if (orc.upgrade[CARD_LIFESTEAL]) {
+		const float heal = 1.0f + 0.5f * orc.upgrade[CARD_BLADE];
+		orc.hp = fminf(orc.maxHp, orc.hp + heal);
+		char lbuf[16];
+		snprintf(lbuf, sizeof lbuf, "+%.2g HP", heal);
+		addPopup(lbuf, x, y - b.radius + 4, rgba(160, 255, 175), 0.65f);
+	}
 	sliced++;
 	const int done = b.total - b.left;
 	if (b.left == 0) {
@@ -82,10 +104,18 @@ void Game::bossHitSlice(float x, float y, float dx, float dy) {
 		b.attack = ATK_NONE;
 		b.hidden = false;
 		b.giant.on = false;
+		b.drainOn = false;
+		if (b.lemonadeOn) {
+			b.lemStage = 3;
+			audio::play(SFX_BUBBLES, 0.9f, fieldPan(b.x), 0.85f);
+		}
 		for (auto& w : b.worms) w.on = false;
 		for (auto& s : orc.shots) s.on = false;
 		orc.bossesBeaten++;
 		gSave.bossesBeaten |= 1u << b.id;
+		u8 newlyFound = 0;
+		bossUnlockAllTracks(b.id, &newlyFound);
+		orc.newTracks += newlyFound;
 		orc.bossCoins += progress::bossWin(b.id);
 		char buf[40];
 		static const char* const kBeatName[BOSS_COUNT] = {
@@ -108,12 +138,24 @@ void Game::bossHitSlice(float x, float y, float dx, float dy) {
 		return;
 	}
 	const int phase = 1 + done * kBosses[b.id].phases / b.total;
+	bool triggeredEnrage = false;
+	if (b.id >= kFirstMilestoneBoss && !b.enraged && b.left > 0 && b.left * 2 <= b.total) {
+		b.enraged = true;
+		b.roarT = 1.15f;
+		b.chain = (u8)chainLength(b);
+		triggeredEnrage = true;
+		setCallout("PHASE 2! ENRAGED!", rgba(255, 90, 70), 0.95f);
+		audio::play(SFX_TRAIN_WHISTLE, 1.0f, fieldPan(x));
+		showCaption("Phase 2! The boss is enraged and its guard drops quicker!");
+	}
 	if (phase > b.phase) {
 		b.phase = (u8)phase;
-		b.roarT = 1.2f;
-		setCallout(phase >= 3 ? "IT'S FURIOUS!" : "IT'S ANGRY!", rgba(255, 140, 110));
-		audio::play(SFX_ROAR, 1.0f, fieldPan(x));
-	} else {
+		if (!triggeredEnrage) {
+			b.roarT = 1.2f;
+			setCallout(phase >= 3 ? "IT'S FURIOUS!" : "IT'S ANGRY!", rgba(255, 140, 110));
+			audio::play(SFX_ROAR, 1.0f, fieldPan(x));
+		}
+	} else if (!triggeredEnrage) {
 		addPopup("SLICED!", x, y - b.radius - 14, rgba(255, 240, 160), 0.7f);
 	}
 }
@@ -130,6 +172,7 @@ void Game::bossStart(int id, bool royal) {
 	b = {};
 	b.id = (u8)id;
 	b.on = true;
+	orc.bossRoom = true;
 	b.guard = true;
 	b.phase = 1;
 	b.royal = royal;
@@ -159,23 +202,15 @@ void Game::bossStart(int id, bool royal) {
 	showCaption("A boss drops in.");
 	audio::play(SFX_BOSSIN, 1.0f);
 	audio::play(SFX_WHOOSH, 0.9f, 0, 0.8f);
-	int track = bossTrackPick(id >= BOSS_DURIAN ? 4 : id, gRng.next());
-	if (track < 0) track = bossTrackPick(id % 2, gRng.next());
-	b.track = (s8)track;
-	const int item = track - kBaseTracks;
-	if (item >= 0 && item < kTrackCount - kBaseTracks) {
-		const u32 bit = 1u << item;
-		if (!(gSave.bossTracksFound & bit)) {
-			gSave.bossTracksFound |= bit;
-			orc.newTracks++;
-		}
-	}
-	if (gSave.bossMusic && track >= 0) audio::bossMusic(track);
+	int track = bossMusicResolve(id, gRng.next());
+	b.track = (s8)(track >= 0 ? track : -1);
+	if (gSave.bossMusic && track >= 0 && track < audio::trackCount()) audio::bossMusic(track);
 }
 
 void Game::bossOpen(float seconds, bool laugh) {
 	Boss& b = orc.boss;
 	if (!b.on || b.beaten || b.dazeT > 0) return;
+	if (b.enraged && b.id >= kFirstMilestoneBoss) laugh = false;  // enraged milestone bosses don't laugh when exposed
 	float t = seconds + 0.25f * orc.upgrade[CARD_BLADE];
 	if (orc.upgrade[CARD_GLASS]) t *= 2;
 	if (b.royal) t *= 0.75f;  // a Royal opens up for less time
@@ -246,9 +281,15 @@ void Game::bossNextAttack() {
 		choices[n++] = DUR_SLAM;
 		choices[n++] = DUR_SPIN;
 	} else if (b.id == BOSS_LEMON) {
-		if (!b.finisher) choices[n++] = LEM_ACID;
-		if (!b.finisher) choices[n++] = LEM_ZEST;
-		choices[n++] = LEM_BLITZ;
+		b.attackCycle++;
+		if (!b.lemonadeOn && (b.attackCycle >= 2 || b.enraged) && b.lastAttack != LEM_LEMONADE) {
+			choices[n++] = LEM_LEMONADE;
+			if (b.enraged) choices[n++] = LEM_LEMONADE;  // strongly prioritize Lemonade flood in Phase 2
+		} else {
+			if (!b.finisher) choices[n++] = LEM_ACID;
+			if (!b.finisher) choices[n++] = LEM_ZEST;
+			choices[n++] = LEM_BLITZ;
+		}
 	} else if (b.id == BOSS_APPLE) {
 		choices[n++] = APP_WORMS;
 		if (!b.finisher) choices[n++] = APP_BARRAGE;
@@ -348,41 +389,48 @@ void Game::bossNextAttack() {
 			addPopup("BLAZING RUSH", b.x, b.y - b.radius - 14, rgba(255, 140, 80), 0.55f);
 			break;
 		case DUR_THORNS:
-			b.volley = 5 + b.phase;
-			addPopup("THORN VOLLEY", b.x, b.y - b.radius - 14, rgba(220, 200, 110), 0.55f);
+			b.volley = 5 + b.phase + (b.enraged ? 2 : 0);
+			addPopup(b.enraged ? "RAGING THORNS!" : "THORN VOLLEY", b.x, b.y - b.radius - 14, rgba(220, 200, 110), 0.55f);
 			break;
 		case DUR_SLAM:
-			b.volley = 2;
-			addPopup("DUST QUAKE", b.x, b.y - b.radius - 14, rgba(235, 195, 100), 0.55f);
+			b.volley = b.enraged ? 3 : 2;
+			addPopup(b.enraged ? "METEOR QUAKE!" : "DUST QUAKE", b.x, b.y - b.radius - 14, rgba(235, 195, 100), 0.55f);
 			break;
 		case DUR_SPIN:
-			b.volley = 3 + b.phase;
-			addPopup("SPIKE WHIRL", b.x, b.y - b.radius - 14, rgba(245, 215, 130), 0.55f);
+			b.volley = 3 + b.phase + (b.enraged ? 2 : 0);
+			addPopup(b.enraged ? "HYPER WHIRL!" : "SPIKE WHIRL", b.x, b.y - b.radius - 14, rgba(245, 215, 130), 0.55f);
 			break;
 		case LEM_ACID:
-			b.volley = 5 + b.phase;
-			addPopup("SOUR BARRAGE", b.x, b.y - b.radius - 14, rgba(245, 240, 100), 0.55f);
+			b.volley = 5 + b.phase + (b.enraged ? 2 : 0);
+			addPopup(b.enraged ? "DOUBLE SOUR!" : "SOUR BARRAGE", b.x, b.y - b.radius - 14, rgba(245, 240, 100), 0.55f);
 			break;
 		case LEM_ZEST:
-			b.volley = 3 + b.phase;
-			addPopup("ZEST CROSSFIRE", b.x, b.y - b.radius - 14, rgba(190, 245, 90), 0.55f);
+			b.volley = 3 + b.phase + (b.enraged ? 2 : 0);
+			addPopup(b.enraged ? "ZEST STORM!" : "ZEST CROSSFIRE", b.x, b.y - b.radius - 14, rgba(190, 245, 90), 0.55f);
 			break;
 		case LEM_BLITZ:
-			b.volley = 4;
-			addPopup("CITRUS BLITZ", b.x, b.y - b.radius - 14, rgba(255, 240, 130), 0.55f);
+			b.volley = 4 + (b.enraged ? 2 : 0);
+			addPopup(b.enraged ? "OVERDRIVE BLITZ!" : "CITRUS BLITZ", b.x, b.y - b.radius - 14, rgba(255, 240, 130), 0.55f);
+			break;
+		case LEM_LEMONADE:
+			b.volley = 1;
+			b.attackCycle = 0;
+			addPopup("LEMONADE FLOOD!", b.x, b.y - b.radius - 14, rgba(255, 240, 110), 0.62f);
+			audio::play(SFX_POP, 0.85f, fieldPan(b.x), 0.85f);
+			showCaption("Stay above the sour lemonade! Slice the drain to clear it.");
 			break;
 		case APP_WORMS:
 			b.volley = 1;
-			addPopup("SWAT THE WORMS!", b.x, b.y - b.radius - 14, rgba(255, 150, 175), 0.55f);
+			addPopup(b.enraged ? "WORM FRENZY!" : "SWAT THE WORMS!", b.x, b.y - b.radius - 14, rgba(255, 150, 175), 0.55f);
 			showCaption("Slice or tap peeking worms before they lunge!");
 			break;
 		case APP_BARRAGE:
-			b.volley = 6 + b.phase;
-			addPopup("CORE VOLLEY", b.x, b.y - b.radius - 14, rgba(255, 120, 130), 0.55f);
+			b.volley = 6 + b.phase + (b.enraged ? 2 : 0);
+			addPopup(b.enraged ? "CRIMSON HAIL!" : "CORE VOLLEY", b.x, b.y - b.radius - 14, rgba(255, 120, 130), 0.55f);
 			break;
 		case APP_CRUSH:
-			b.volley = 2;
-			addPopup("ORCHARD CRUSH", b.x, b.y - b.radius - 14, rgba(255, 110, 110), 0.55f);
+			b.volley = b.enraged ? 3 : 2;
+			addPopup(b.enraged ? "FURY CRUSH!" : "ORCHARD CRUSH", b.x, b.y - b.radius - 14, rgba(255, 110, 110), 0.55f);
 			break;
 		default: break;
 	}
@@ -392,12 +440,14 @@ void Game::bossAttack(float dt) {
 	Boss& b = orc.boss;
 	const OrchardLevel& lv = orchardLevel(gSave.difficulty);
 	const float rmBoost = endlessRoomBoost(orc.room, mode == MODE_ORCHARD);
-	const float spdScale = fminf(1.38f, lv.bossSpeed * (1.0f + (rmBoost - 1.0f) * 0.35f));
-	const float atkScale = fminf(1.42f, lv.attackSpeed * (1.0f + (rmBoost - 1.0f) * 0.35f));
+	const float phaseMul = b.enraged ? 1.22f : 1.0f;
+	const float spdScale = fminf(1.55f, lv.bossSpeed * (1.0f + (rmBoost - 1.0f) * 0.35f) * phaseMul);
+	const float atkScale = fminf(1.60f, lv.attackSpeed * (1.0f + (rmBoost - 1.0f) * 0.35f) * phaseMul);
 	const float step = dt * atkScale;
 	b.attackT += step;
 	b.volleyT -= step;
-	const float floorY = kFieldH - b.radius * 0.75f;
+	const float targetH = (b.lemonadeOn && b.lemLevel > 0.1f) ? lemonadeSurfaceY(b) : (float)kFieldH;
+	const float floorY = targetH - b.radius * 0.75f;
 	switch (b.attack) {
 		case MEL_SEEDS:
 			if (b.volley > 0 && b.volleyT <= 0) {
@@ -629,15 +679,16 @@ void Game::bossAttack(float dt) {
 		}
 		case DUR_THORNS:
 			if (b.volley > 0 && b.volleyT <= 0) {
-				for (int s = -1; s <= 1; s += 2) {
-					const float vx = (s * gRng.range(45, 90)) * acrossScale() * spdScale;
-					const float vy = (98 + 11 * b.phase) * kFieldK * spdScale;
-					bossFire(SHOT_THORN, b.x + s * b.radius * 0.6f, b.y + 8, vx, vy);
+				for (int s = -1; s <= 1; s++) {
+					if (s == 0 && !b.enraged) continue;
+					const float vx = (s == 0 ? 0.0f : s * gRng.range(45, 95)) * acrossScale() * spdScale;
+					const float vy = (98 + 11 * b.phase + (s == 0 ? 18 : 0)) * kFieldK * spdScale;
+					bossFire(SHOT_THORN, b.x + s * b.radius * 0.55f, b.y + 8, vx, vy);
 				}
-				audio::play(SFX_THROW, 0.65f, fieldPan(b.x), 0.78f);
+				audio::play(SFX_THROW, 0.65f, fieldPan(b.x), b.enraged ? 0.90f : 0.78f);
 				b.squash = 0.4f;
 				b.volley--;
-				b.volleyT = fmaxf(0.24f, 0.38f - 0.04f * b.phase);
+				b.volleyT = fmaxf(0.18f, (b.enraged ? 0.30f : 0.38f) - 0.04f * b.phase);
 			}
 			if (b.volley <= 0 && b.volleyT < -0.45f) b.attack = ATK_NONE;
 			break;
@@ -654,8 +705,8 @@ void Game::bossAttack(float dt) {
 				audio::play(SFX_BOOM, 0.8f, fieldPan(b.x), 0.65f);
 				PORT_VIBRATE(0.55f, 110);
 				for (int i = -2; i <= 2; i++) {
-					if (i == 0) continue;
-					bossFire(SHOT_THORN, b.x + i * 18, floorY - b.radius * 0.4f, i * 62.0f * acrossScale(), -gRng.range(240, 310) * kFieldK);
+					if (i == 0 && !b.enraged) continue;
+					bossFire(SHOT_THORN, b.x + i * 18, floorY - b.radius * 0.4f, i * 64.0f * acrossScale(), -gRng.range(240, 315) * kFieldK);
 				}
 				if (--b.volley > 0) b.attackT = 0;
 				else {
@@ -667,14 +718,14 @@ void Game::bossAttack(float dt) {
 			break;
 		}
 		case DUR_SPIN: {
-			const float sweep = kFieldW * 0.5f + sinf(b.attackT * 5.8f * spdScale) * kFieldW * 0.36f;
+			const float sweep = kFieldW * 0.5f + sinf(b.attackT * (b.enraged ? 8.2f : 5.8f) * spdScale) * kFieldW * 0.36f;
 			b.x = lerpf(b.x, sweep, 1 - powf(0.005f, dt));
-			b.rx += dt * 11;
+			b.rx += dt * (b.enraged ? 15 : 11);
 			if (b.volley > 0 && b.volleyT <= 0) {
 				bossFire(SHOT_THORN, b.x, b.y + b.radius * 0.6f, gRng.range(-55, 55) * acrossScale(), 112 * kFieldK * spdScale);
 				audio::play(SFX_SWISH1, 0.65f, fieldPan(b.x), 0.9f);
 				b.volley--;
-				b.volleyT = 0.36f;
+				b.volleyT = b.enraged ? 0.26f : 0.36f;
 			}
 			if (b.volley <= 0 && b.volleyT < -0.45f) {
 				if (b.finisher) bossOpen(lv.openTime);
@@ -684,14 +735,24 @@ void Game::bossAttack(float dt) {
 		}
 		case LEM_ACID:
 			if (b.volley > 0 && b.volleyT <= 0) {
-				const float tx = gRng.range(30, kFieldW - 30), ty = (float)kFieldH;
-				const float dx = tx - b.x, dy = ty - b.y, len = sqrtf(dx * dx + dy * dy) + 1;
-				const float speed = (96 + 12 * b.phase) * kFieldK * spdScale;
-				bossFire(SHOT_ACID, b.x + dx / len * b.radius * 0.7f, b.y + dy / len * b.radius * 0.7f, dx / len * speed, dy / len * speed);
+				const int shots = b.enraged ? 2 : 1;
+				for (int s = 0; s < shots; s++) {
+					if (b.lemonadeOn && b.lemLevel > 0.1f) {
+						const float dir = gRng.below(2) ? 1.0f : -1.0f;
+						const float vx = dir * gRng.range(52, 112) * acrossScale() * spdScale;
+						const float vy = -gRng.range(18, 36) * kFieldK;
+						bossFire(SHOT_ACID, b.x + dir * b.radius * 0.45f, fminf(b.y, targetH - 36.0f), vx, vy);
+					} else {
+						const float tx = gRng.range(30, kFieldW - 30), ty = targetH;
+						const float dx = tx - b.x, dy = ty - b.y, len = sqrtf(dx * dx + dy * dy) + 1;
+						const float speed = (96 + 12 * b.phase) * kFieldK * spdScale;
+						bossFire(SHOT_ACID, b.x + dx / len * b.radius * 0.7f, b.y + dy / len * b.radius * 0.7f, dx / len * speed, dy / len * speed);
+					}
+				}
 				audio::play(SFX_THROW, 0.55f, fieldPan(b.x), 1.6f);
 				b.squash = 0.35f;
 				b.volley--;
-				b.volleyT = fmaxf(0.22f, 0.34f - 0.03f * b.phase);
+				b.volleyT = fmaxf(0.18f, (b.enraged ? 0.26f : 0.34f) - 0.03f * b.phase);
 			}
 			if (b.volley <= 0 && b.volleyT < -0.45f) b.attack = ATK_NONE;
 			break;
@@ -699,24 +760,63 @@ void Game::bossAttack(float dt) {
 			if (b.volley > 0 && b.volleyT <= 0) {
 				const int dir = (b.volley & 1) ? 1 : -1;
 				const float sx = dir > 0 ? 22.0f : kFieldW - 22.0f;
-				bossFire(SHOT_ACID, sx, b.y + 10, dir * 105.0f * acrossScale() * spdScale, 92 * kFieldK * spdScale);
+				const float sy = (b.lemonadeOn && b.lemLevel > 0.1f) ? fminf(b.y, kFieldTop + 44.0f) : (b.y + 10.0f);
+				const float vy = (b.lemonadeOn && b.lemLevel > 0.1f ? -14.0f : 92.0f) * kFieldK * spdScale;
+				bossFire(SHOT_ACID, sx, sy, dir * 105.0f * acrossScale() * spdScale, vy);
+				if (b.enraged) {
+					const float vy2 = (b.lemonadeOn && b.lemLevel > 0.1f ? -12.0f : 86.0f) * kFieldK * spdScale;
+					bossFire(SHOT_ACID, kFieldW - sx, sy, -dir * 95.0f * acrossScale() * spdScale, vy2);
+				}
 				audio::play(SFX_POP, 0.65f, fieldPan(sx), 1.3f);
 				b.volley--;
-				b.volleyT = 0.42f;
+				b.volleyT = b.enraged ? 0.28f : 0.42f;
 			}
 			if (b.volley <= 0 && b.volleyT < -0.5f) b.attack = ATK_NONE;
 			break;
 		case LEM_BLITZ: {
-			const float sweep = kFieldW * 0.5f + sinf(b.attackT * 6.4f * spdScale) * kFieldW * 0.38f;
+			const float sweep = kFieldW * 0.5f + sinf(b.attackT * (b.enraged ? 8.4f : 6.4f) * spdScale) * kFieldW * 0.38f;
 			b.x = lerpf(b.x, sweep, 1 - powf(0.004f, dt));
-			b.y = lerpf(b.y, b.baseY + sinf(b.attackT * 3.2f) * 24, 1 - powf(0.01f, dt));
+			const bool lemUp = b.lemonadeOn && b.lemLevel > 0.1f;
+			const float minBase = lemUp ? fminf(b.baseY, lemonadeSurfaceY(b) - b.radius * 1.10f) : b.baseY;
+			b.y = lerpf(b.y, minBase + sinf(b.attackT * 3.2f) * (lemUp ? 8.0f : 18.0f), 1 - powf(0.01f, dt));
 			if (b.volley > 0 && b.volleyT <= 0) {
-				bossFire(SHOT_ACID, b.x, b.y + b.radius * 0.55f, gRng.range(-48, 48) * acrossScale(), 112 * kFieldK * spdScale);
+				const float sy = lemUp ? (b.y + b.radius * 0.25f) : (b.y + b.radius * 0.55f);
+				const float vy = (lemUp ? 16.0f : 112.0f) * kFieldK * spdScale;
+				bossFire(SHOT_ACID, b.x, sy, gRng.range(-48, 48) * acrossScale(), vy);
 				audio::play(SFX_SWISH2, 0.65f, fieldPan(b.x), 1.4f);
 				b.volley--;
-				b.volleyT = 0.38f;
+				b.volleyT = b.enraged ? 0.27f : 0.38f;
 			}
 			if (b.volley <= 0 && b.volleyT < -0.45f) {
+				if (b.finisher) bossOpen(lv.openTime);
+				b.attack = ATK_NONE;
+			}
+			break;
+		}
+		case LEM_LEMONADE: {
+			const float tx = kFieldW * 0.5f;
+			const float ty = kFieldTop + (kFieldH - kFieldTop) * 0.28f;
+			b.x = lerpf(b.x, tx, 1 - powf(0.004f, dt));
+			b.y = lerpf(b.y, ty, 1 - powf(0.004f, dt));
+			const float t = b.attackT;
+			if (t >= 0.55f) {
+				// Squeezes himself while floating in the swim ring until the bottom half fills with lemonade.
+				b.lemonadeOn = true;
+				b.lemStage = 1;
+				b.lemLevel = clampf((t - 0.55f) / 1.65f, 0.0f, 1.0f);
+				b.squash = 0.25f + 0.25f * sinf(t * 16.0f);
+				if (b.volleyT <= 0) {
+					b.volleyT = 0.24f;
+					emitJuice(b.x + gRng.range(-18, 18), b.y + b.radius * 0.5f, rgba(248, 226, 62), juiceAmount(8), 0, 1);
+					audio::play(SFX_JUICY0, 0.6f, fieldPan(b.x), gRng.range(1.1f, 1.4f));
+				}
+			}
+			if (t >= 2.35f) {
+				b.lemStage = 2;
+				b.lemLevel = 1.0f;
+				b.lemTimer = b.enraged ? 2.6f : 3.6f;
+				b.drainOn = false;
+				b.squash = 0;
 				if (b.finisher) bossOpen(lv.openTime);
 				b.attack = ATK_NONE;
 			}
@@ -726,20 +826,20 @@ void Game::bossAttack(float dt) {
 			if (b.volley > 0) {
 				b.volley = 0;
 				static const float kHoles[4][2] = {{-0.56f, -0.34f}, {0.56f, -0.32f}, {-0.54f, 0.36f}, {0.54f, 0.36f}};
-				const int cnt = b.phase >= 3 ? 4 : 3;
-				const float life = clampf(3.2f - 0.30f * (gSave.difficulty >= DIFF_HARD) - 0.12f * b.phase, 1.9f, 3.2f);
+				const int cnt = (b.enraged || b.phase >= 3) ? 4 : 3;
+				const float life = clampf((b.enraged ? 2.75f : 3.2f) - 0.30f * (gSave.difficulty >= DIFF_HARD) - 0.12f * b.phase, 1.65f, 3.2f);
 				for (int i = 0; i < cnt; i++) {
 					b.worms[i].on = true;
 					b.worms[i].ox = kHoles[i][0] * b.radius;
 					b.worms[i].oy = kHoles[i][1] * b.radius;
 					b.worms[i].emergeT = 0.0f;
-					b.worms[i].timer = life + i * 0.25f;
+					b.worms[i].timer = life + i * 0.20f;
 				}
 				audio::play(SFX_POP, 0.8f, fieldPan(b.x), 0.9f);
 			}
 			bool anyWorm = false;
 			for (const auto& w : b.worms) anyWorm |= w.on;
-			if (!anyWorm || b.attackT > 4.2f) {
+			if (!anyWorm || b.attackT > (b.enraged ? 3.5f : 4.2f)) {
 				if (b.finisher) bossOpen(lv.openTime);
 				b.attack = ATK_NONE;
 			}
@@ -747,14 +847,17 @@ void Game::bossAttack(float dt) {
 		}
 		case APP_BARRAGE:
 			if (b.volley > 0 && b.volleyT <= 0) {
-				const float tx = gRng.range(28, kFieldW - 28), ty = (float)kFieldH;
-				const float dx = tx - b.x, dy = ty - b.y, len = sqrtf(dx * dx + dy * dy) + 1;
-				const float speed = (96 + 12 * b.phase) * kFieldK * spdScale;
-				bossFire(SHOT_SEED, b.x + dx / len * b.radius * 0.7f, b.y + dy / len * b.radius * 0.7f, dx / len * speed, dy / len * speed);
+				const int shots = b.enraged ? 2 : 1;
+				for (int s = 0; s < shots; s++) {
+					const float tx = gRng.range(28, kFieldW - 28), ty = targetH;
+					const float dx = tx - b.x, dy = ty - b.y, len = sqrtf(dx * dx + dy * dy) + 1;
+					const float speed = (96 + 12 * b.phase) * kFieldK * spdScale;
+					bossFire(SHOT_SEED, b.x + dx / len * b.radius * 0.7f, b.y + dy / len * b.radius * 0.7f, dx / len * speed, dy / len * speed);
+				}
 				audio::play(SFX_THROW, 0.55f, fieldPan(b.x), 1.35f);
 				b.squash = 0.35f;
 				b.volley--;
-				b.volleyT = fmaxf(0.22f, 0.32f - 0.025f * b.phase);
+				b.volleyT = fmaxf(0.18f, (b.enraged ? 0.24f : 0.32f) - 0.025f * b.phase);
 			}
 			if (b.volley <= 0 && b.volleyT < -0.45f) b.attack = ATK_NONE;
 			break;
@@ -769,8 +872,10 @@ void Game::bossAttack(float dt) {
 				b.squash = 1.0f;
 				shake = 0.65f;
 				audio::play(SFX_BOOM, 0.75f, fieldPan(b.x), 0.8f);
-				for (int i = -1; i <= 1; i++) {
-					bossFire(SHOT_SPLASH, b.x + i * 24, floorY - b.radius * 0.45f, i * 85.0f * acrossScale(), -gRng.range(260, 320) * kFieldK);
+				const int spread = b.enraged ? 2 : 1;
+				for (int i = -spread; i <= spread; i++) {
+					if (i == 0 && b.enraged) continue;
+					bossFire(SHOT_SPLASH, b.x + i * 20, floorY - b.radius * 0.45f, i * 74.0f * acrossScale(), -gRng.range(250, 320) * kFieldK);
 				}
 				if (--b.volley > 0) b.attackT = 0;
 				else {
@@ -784,7 +889,7 @@ void Game::bossAttack(float dt) {
 		default: b.attack = ATK_NONE; break;
 	}
 	const float jit = gRng.range(0.82f, 1.16f);
-	if (b.attack == ATK_NONE) b.nextAttack = lerpf(2.3f, 1.35f, (b.phase - 1) * 0.5f) * jit / atkScale * (b.royal ? 0.8f : 1.0f);
+	if (b.attack == ATK_NONE) b.nextAttack = lerpf(2.3f, 1.35f, (b.phase - 1) * 0.5f) * jit / atkScale * (b.royal ? 0.8f : 1.0f) * (b.enraged ? 0.55f : 1.0f);
 }
 
 void Game::shotsUpdate(float dt) {
@@ -794,11 +899,13 @@ void Game::shotsUpdate(float dt) {
 		s.age += dt;
 		s.rot += dt * 6;
 		if (s.kind == SHOT_CROWN) {
-			// Out and back in a loop, like a thrown boomerang.
+			// Out and back in a smooth clamped boomerang arc so it never leaves narrow/wide screens.
 			const float k = s.age / kCrownLife * 6.2832f;
 			const float ox = s.vx, oy = s.vy;
-			s.x = ox + sinf(k) * kFieldW * 0.38f;
-			s.y = oy - b.radius + (1 - cosf(k)) * (kFieldH - oy) * 0.42f;
+			const float ampX = clampf(fminf(ox - 24.0f, kFieldW - 24.0f - ox), kFieldW * 0.20f, kFieldW * 0.34f);
+			s.x = clampf(ox + sinf(k) * ampX, 22.0f, kFieldW - 22.0f);
+			s.y = clampf(oy - b.radius * 0.6f + (1 - cosf(k)) * (kFieldH - oy - 24.0f) * 0.44f, kFieldTop + 24.0f, kFieldH - 34.0f);
+			s.rot = sinf(k) * 0.48f;
 			s.life -= dt;
 			if (s.life <= 0) {
 				s.on = false;
@@ -817,13 +924,14 @@ void Game::shotsUpdate(float dt) {
 			s.on = false;
 			continue;
 		}
-		if (s.y > kFieldH - 4 && s.vy > 0) {
+		const float hitY = (b.lemonadeOn && b.lemLevel > 0.1f) ? lemonadeSurfaceY(b) - 2.0f : (float)kFieldH - 4.0f;
+		if (s.y > hitY && s.vy > 0) {
 			s.on = false;
 			const int dmg = (s.kind == SHOT_CANNON || s.kind == SHOT_EMBER || s.kind == SHOT_THORN || s.kind == SHOT_ACID) ? 2 : 1;
 			const u32 col = s.kind == SHOT_CANNON ? rgba(90, 90, 100) : (s.kind == SHOT_EMBER ? rgba(255, 130, 40) : (s.kind == SHOT_ACID ? rgba(220, 240, 70) : (s.kind == SHOT_THORN ? rgba(165, 145, 70) : (s.kind == SHOT_SPIKE ? rgba(210, 190, 70) : rgba(255, 90, 110)))));
 			const char* msg = s.kind == SHOT_CANNON ? "CANNON" : (s.kind == SHOT_EMBER ? "EMBER" : (s.kind == SHOT_ACID ? "ACID" : (s.kind == SHOT_THORN ? "THORN" : (s.kind == SHOT_SPIKE ? "SPIKE" : (s.kind == SHOT_SEED ? "SEED" : "SPLASH")))));
-			emitJuice(s.x, (float)kFieldH - 6, col, juiceAmount(6), 0, -1);
-			orcHurt(bossDamage(dmg), s.x, kFieldH - 20.0f, msg);
+			emitJuice(s.x, hitY - 2.0f, col, juiceAmount(6), 0, -1);
+			orcHurt(bossDamage(dmg), s.x, fminf(hitY, (float)kFieldH - 20.0f), msg);
 		}
 	}
 	if (b.crownOut > 0) b.crownOut -= dt;
@@ -912,6 +1020,11 @@ void Game::bossUpdate(float dt) {
 	b.squash *= powf(0.02f, kDt);
 	if (b.beaten) {
 		b.leaveT += kDt;
+		if (b.lemonadeOn) {
+			b.lemLevel = fmaxf(0.0f, b.lemLevel - kDt * 0.90f);
+			if (b.lemLevel <= 0.0f) b.lemonadeOn = false;
+			b.drainOn = false;
+		}
 		if (b.id >= kFirstMilestoneBoss) {
 			const float cx = kFieldW * 0.5f;
 			const float cy = kFieldTop + (kFieldH - kFieldTop) * 0.46f;
@@ -937,6 +1050,11 @@ void Game::bossUpdate(float dt) {
 				audio::play(SFX_FINALE_BURST, 1.0f);
 				audio::play(SFX_VICTORY, 1.0f);
 				b.on = false;
+#ifdef BOSS_TEST_APP
+				extern bool gBossTestDone;
+				gBossTestDone = true;
+				return;
+#endif
 				orcNextRoom();
 			}
 			return;
@@ -944,6 +1062,11 @@ void Game::bossUpdate(float dt) {
 		b.y -= 40 * kDt;
 		if (b.leaveT > 1.6f) {
 			b.on = false;
+#ifdef BOSS_TEST_APP
+			extern bool gBossTestDone;
+			gBossTestDone = true;
+			return;
+#endif
 			orcNextRoom();
 		}
 		return;
@@ -952,6 +1075,59 @@ void Game::bossUpdate(float dt) {
 		b.enterT -= kDt;
 		b.y = lerpf(b.baseY, -b.radius * 2, clampf(b.enterT / 1.6f, 0, 1) * clampf(b.enterT / 1.6f, 0, 1));
 		return;
+	}
+	if (b.lemHurtCd > 0) b.lemHurtCd -= kDt;
+	// Milestone Phase 2 steam jets shooting from both sides.
+	if (b.enraged && b.id >= kFirstMilestoneBoss && !gSave.calmFx) {
+		b.steamT -= kDt;
+		if (b.steamT <= 0) {
+			b.steamT = 0.075f;
+			for (int side = -1; side <= 1; side += 2) {
+				for (auto& p : parts) {
+					if (p.on) continue;
+					p = {};
+					p.on = true;
+					p.x = b.x + side * b.radius * 0.85f;
+					p.y = b.y - b.radius * 0.10f + gRng.range(-5, 5);
+					p.vx = side * gRng.range(72, 128) * acrossScale();
+					p.vy = gRng.range(-48, -14) * kFieldK;
+					p.gravity = -45.0f * kFieldK;
+					p.life = p.maxLife = gRng.range(0.28f, 0.45f);
+					p.size = gRng.range(0.75f, 1.15f);
+					p.color = rgba(242, 246, 255, 220);
+					break;
+				}
+			}
+		}
+	}
+	// Lord Lemon's Lemonade & rising bubbling drain lifecycle.
+	if (b.lemonadeOn) {
+		if (b.lemStage == 2) {
+			if (!b.drainOn) {
+				b.lemTimer -= dt;
+				if (b.lemTimer <= 0) {
+					b.drainOn = true;
+					b.drainX = clampf(kFieldW * 0.22f + gRng.range(0, kFieldW * 0.56f), 44.0f, kFieldW - 44.0f);
+					b.drainY = (float)kFieldH + 14.0f;
+					b.drainRise = 0.0f;
+					audio::play(SFX_BUBBLES, 0.90f, fieldPan(b.drainX));
+					addPopup("SLICE THE DRAIN!", b.drainX, lemonadeSurfaceY(b) - 18.0f, rgba(255, 245, 130), 0.58f);
+				}
+			} else {
+				b.drainRise = fminf(1.0f, b.drainRise + dt * 1.15f);
+				b.drainY = lerpf((float)kFieldH + 14.0f, lemonadeSurfaceY(b), b.drainRise) + sinf(b.t * 4.5f) * 3.0f;
+				if ((int)(b.t * 5.0f) != (int)((b.t - dt) * 5.0f)) {
+					emitSparks(b.drainX + gRng.range(-8, 8), b.drainY - 4, rgba(255, 250, 175), juiceAmount(2), 60);
+				}
+			}
+		} else if (b.lemStage == 3) {
+			b.lemLevel = fmaxf(0.0f, b.lemLevel - dt * 0.78f);
+			if (b.lemLevel <= 0.0f) {
+				b.lemonadeOn = false;
+				b.lemStage = 0;
+				b.drainOn = false;
+			}
+		}
 	}
 	shotsUpdate(dt);
 	// Check returning Pineapple Guard bombs (tag == 4) colliding with the boss, and Aggro Apple peeking worms.
@@ -1018,11 +1194,12 @@ void Game::bossUpdate(float dt) {
 		return;
 	}
 	// Drifts about between attacks, and floats back up after a flop/slam.
-	if (b.attack != MEL_FLOP && b.attack != MEL_CHARGE && b.attack != KING_GIANT && b.attack != PINE_SLAM && b.attack != PINE_WHIRL && b.attack != CHILI_RUSH && b.attack != DUR_SLAM && b.attack != DUR_SPIN && b.attack != LEM_BLITZ && b.attack != APP_CRUSH) {
-		const float speed = (b.id == BOSS_KING ? 0.9f : (b.id == BOSS_CHILI || b.id >= BOSS_DURIAN ? 1.15f : 0.65f)) * lv.bossSpeed;
+	if (b.attack != MEL_FLOP && b.attack != MEL_CHARGE && b.attack != KING_GIANT && b.attack != PINE_SLAM && b.attack != PINE_WHIRL && b.attack != CHILI_RUSH && b.attack != DUR_SLAM && b.attack != DUR_SPIN && b.attack != LEM_BLITZ && b.attack != LEM_LEMONADE && b.attack != APP_CRUSH) {
+		const float speed = (b.id == BOSS_KING ? 0.9f : (b.id == BOSS_CHILI || b.id >= BOSS_DURIAN ? 1.15f : 0.65f)) * lv.bossSpeed * (b.enraged ? 1.22f : 1.0f);
 		const float tx = kFieldW * 0.5f + sinf(b.t * speed) * kFieldW * 0.28f;
 		b.x = lerpf(b.x, tx, 1 - powf(0.2f, dt));
-		if (b.openT <= 0) b.y = lerpf(b.y, b.baseY + sinf(b.t * 1.3f) * 6, 1 - powf(0.1f, dt));
+		const float targetBaseY = (b.lemonadeOn && b.lemLevel > 0.1f) ? fminf(b.baseY, lemonadeSurfaceY(b) - b.radius * 1.10f) : b.baseY;
+		if (b.openT <= 0) b.y = lerpf(b.y, targetBaseY + sinf(b.t * 1.3f) * 6, 1 - powf(0.1f, dt));
 	}
 	if (b.attack != ATK_NONE) {
 		bossAttack(dt);
@@ -1055,10 +1232,31 @@ void Game::bossTest(Blade& blade) {
 		}
 	}
 	if (!blade.active || blade.strokeStart) return;
+	// Lord Lemon: sliceable Drain plug takes priority over sour Lemonade damage on the surface.
+	bool hitDrain = false;
+	if (b.lemonadeOn && b.drainOn && b.lemStage == 2) {
+		const float dr = 24.0f * reach;
+		if (segDist2(b.drainX, b.drainY, blade) <= dr * dr) {
+			hitDrain = true;
+			b.drainOn = false;
+			b.lemStage = 3;
+			b.deflectStroke = blade.strokeId;
+			audio::play(SFX_BUBBLES, 0.95f, fieldPan(b.drainX), 0.78f);
+			audio::play(SFX_OPEN, 0.75f, fieldPan(b.drainX), 1.15f);
+			addPopup("DRAINED!", b.drainX, b.drainY - 18, rgba(170, 245, 255), 0.75f);
+			emitSparks(b.drainX, b.drainY, rgba(255, 248, 160), juiceAmount(14), 170);
+		}
+	}
+	if (!hitDrain && b.lemonadeOn && b.lemLevel > 0.25f && b.lemHurtCd <= 0 && blade.y >= lemonadeSurfaceY(b) + 4.0f) {
+		b.lemHurtCd = 0.65f;
+		audio::play(SFX_JUICY1, 0.85f, fieldPan(blade.x), 1.45f);
+		emitSparks(blade.x, blade.y, rgba(245, 240, 95), juiceAmount(8), 140);
+		orcHurt(bossDamage(1), blade.x, blade.y, "SOUR!");
+	}
 	// Shots first: they're small and quick.
 	for (auto& s : orc.shots) {
 		if (!s.on || s.stroke == blade.strokeId) continue;
-		const float r = (s.kind == SHOT_CANNON ? 15.0f : (s.kind == SHOT_CROWN ? 18.0f : 11.0f)) * reach + 4;
+		const float r = (s.kind == SHOT_CANNON ? 15.0f : (s.kind == SHOT_CROWN ? 22.0f : 11.0f)) * reach + 4;
 		if (segDist2(s.x, s.y, blade) > r * r) continue;
 		s.stroke = blade.strokeId;
 		if (--s.hits > 0) {
@@ -1249,17 +1447,27 @@ void Game::bossGiantTest(const Blade& blade, float reach) {
 }
 
 // ---------------------------------------------------------------- drawing
-static void drawCrown(float x, float y, float s, u32 gold) {
+static void drawCrown(float x, float y, float s, u32 gold, float tilt = 0.0f) {
 	const u32 dark = rgba(200, 140, 30, (gold >> 24) & 0xFF);
-	gfx::rect(x - 14 * s, y - 2 * s, 28 * s, 8 * s, dark);
+	const float c = cosf(tilt), sn = sinf(tilt);
+	auto rx = [&](float dx, float dy) { return x + (dx * c - dy * sn) * s; };
+	auto ry = [&](float dx, float dy) { return y + (dx * sn + dy * c) * s; };
+	auto quad = [&](float x0, float y0, float x1, float y1, u32 col) {
+		const float ax = rx(x0, y0), ay = ry(x0, y0), bx = rx(x1, y0), by = ry(x1, y0);
+		const float cx = rx(x1, y1), cy = ry(x1, y1), dx = rx(x0, y1), dy = ry(x0, y1);
+		gfx::tri(ax, ay, col, bx, by, col, cx, cy, col);
+		gfx::tri(ax, ay, col, cx, cy, col, dx, dy, col);
+	};
+	quad(-14, -2, 14, 6, dark);
 	for (int i = -1; i <= 1; i++) {
-		const float cx = x + i * 10 * s;
-		gfx::tri(cx - 6 * s, y, gold, cx + 6 * s, y, gold, cx, y - (i == 0 ? 15 : 11) * s, gold);
+		const float ox = i * 10.0f;
+		gfx::tri(rx(ox - 6, 0), ry(ox - 6, 0), gold, rx(ox + 6, 0), ry(ox + 6, 0), gold, rx(ox, i == 0 ? -15.0f : -11.0f), ry(ox, i == 0 ? -15.0f : -11.0f), gold);
 	}
-	gfx::rect(x - 14 * s, y, 28 * s, 5 * s, gold);
+	quad(-14, 0, 14, 5, gold);
 }
 
 void Game::drawShots() const {
+	const Boss& b = orc.boss;
 	const bool in3D = drawing3D();
 	if (in3D) {
 		m3d::begin(kFieldW, gfx::stereoPerZ(), true);
@@ -1306,12 +1514,31 @@ void Game::drawShots() const {
 			case SHOT_CANNON:
 				gfx::sprite(SHEET_FRUIT, fruit_bomb_idx, s.x, s.y, 0.8f, 0.8f, s.rot, s.hits > 1 ? rgba(120, 120, 130) : rgba(200, 120, 110));
 				break;
-			case SHOT_CROWN: drawCrown(s.x, s.y, 1.1f, rgba(255, 210, 70)); break;
+			case SHOT_CROWN: drawCrown(s.x, s.y, 1.1f, rgba(255, 210, 70), s.rot); break;
 			case SHOT_SPIKE: gfx::sprite(SHEET_SPRITES, sprites_spark_idx, s.x, s.y, 1.15f, 1.15f, s.rot, rgba(210, 235, 95)); break;
 			case SHOT_THORN: gfx::sprite(SHEET_SPRITES, sprites_spark_idx, s.x, s.y, 1.3f, 1.3f, s.rot, rgba(180, 155, 70)); break;
 			case SHOT_ACID: gfx::sprite(SHEET_SPRITES, sprites_drop_idx, s.x, s.y, 1.35f, 1.35f, s.rot, rgba(225, 245, 75)); break;
 			case SHOT_EMBER: gfx::sprite(SHEET_SPRITES, sprites_spark_idx, s.x, s.y, 1.3f, 1.3f, -s.rot, rgba(255, 145, 50)); break;
 			default: break;
+		}
+	}
+	// Lord Lemon's sour Lemonade pool & sliceable Drain plug.
+	if (b.on && b.lemonadeOn && b.lemLevel > 0.01f) {
+		const float surfY = lemonadeSurfaceY(b);
+		const float bottomY = kFillX + kFillW;
+		gfx::rect(kFillX, surfY, kFillW, fmaxf(0.0f, bottomY - surfY), rgba(246, 224, 48, 136));
+		// Animated citrus surface crest across the pool.
+		const int segs = 16;
+		const float segW = kFillW / segs;
+		for (int i = 0; i < segs; i++) {
+			const float wave = gSave.calmFx ? 0.0f : sinf(b.t * 4.0f + i * 0.65f) * 2.2f;
+			gfx::rect(kFillX + i * segW, surfY + wave - 2.0f, segW + 1.0f, 5.0f, rgba(255, 248, 156, 210));
+		}
+		gfx::text("SOUR LEMONADE! SLICE ABOVE", kFieldW * 0.5f, fminf((float)kFieldH - 18.0f, surfY + 8.0f), 0.30f, rgba(112, 74, 8, 220), ALIGN_CENTER);
+		if (b.drainOn) {
+			const float pulse = 0.85f + 0.15f * sinf(b.t * 8.0f);
+			gfx::sprite(SHEET_SPRITES, sprites_ring_idx, b.drainX, b.drainY, pulse * 0.9f, pulse * 0.9f, 0, rgba(160, 245, 255, 225));
+			gfx::sprite(SHEET_SPRITES, sprites_lem_drain_idx, b.drainX, b.drainY, 1.0f, 1.0f, sinf(b.t * 4.0f) * 0.12f);
 		}
 	}
 }
@@ -1376,43 +1603,39 @@ void Game::drawBoss(bool solid) const {
 	}
 	// The pose: shocked X-eye death pose on milestone finales, dizzy when confused/beaten, laughing with guard down, gritting mid-attack.
 	const int pose = b.beaten || b.dazeT > 0 ? BOSS_POSE_DAZE : !b.guard ? BOSS_POSE_OPEN : b.attack != ATK_NONE ? BOSS_POSE_WIND : BOSS_POSE_GUARD;
+	const bool angryRed = !b.beaten && b.enraged && b.id >= kFirstMilestoneBoss;
 	const u32 tint = hurt ? rgba(255, 140, 140, (int)(255 * alpha))
-	                      : (milestoneDead ? rgba(255, 240 - (int)(55 * deadP), 240 - (int)(85 * deadP), 255) : rgba(255, 255, 255, (int)(255 * alpha)));
-	static const float kArtDiv[BOSS_COUNT] = {40.0f, 35.5f, 39.0f, 38.0f, 40.0f, 39.0f, 40.0f};
-	static const float kMeshDiv[BOSS_COUNT] = {23.0f, 19.0f, 20.5f, 18.0f, 21.0f, 21.0f, 22.0f};
-	static const int kMeshId[BOSS_COUNT] = {m3d::MESH_MELON, m3d::MESH_BOMB, m3d::MESH_PINEAPPLE, m3d::MESH_CHILI, m3d::MESH_SPIKY, m3d::MESH_LEMON, m3d::MESH_APPLE};
-	static const int kFaceIdx[BOSS_COUNT] = {
-	    sprites_bface_melon_guard_idx, sprites_bface_king_guard_idx, sprites_bface_pineapple_guard_idx, sprites_bface_chili_guard_idx,
-	    sprites_bface_durian_guard_idx, sprites_bface_lemon_guard_idx, sprites_bface_apple_guard_idx};
-	static const int kBodyIdx[BOSS_COUNT] = {
-	    sprites_boss_melon_guard_idx, sprites_boss_king_guard_idx, sprites_boss_pineapple_guard_idx, sprites_boss_chili_guard_idx,
-	    sprites_boss_durian_guard_idx, sprites_boss_lemon_guard_idx, sprites_boss_apple_guard_idx};
+	                      : (milestoneDead ? rgba(255, 240 - (int)(55 * deadP), 240 - (int)(85 * deadP), 255)
+	                      : (angryRed ? rgba(255, 128, 116, (int)(255 * alpha)) : rgba(255, 255, 255, (int)(255 * alpha))));
 	static const int kDeadFaceIdx[3] = {
 	    sprites_bface_durian_dead_idx, sprites_bface_lemon_dead_idx, sprites_bface_apple_dead_idx};
 	static const int kDeadBodyIdx[3] = {
 	    sprites_boss_durian_dead_idx, sprites_boss_lemon_dead_idx, sprites_boss_apple_dead_idx};
 	const int bi = b.id % BOSS_COUNT;
-	const int faceIdx = milestoneDead ? kDeadFaceIdx[bi - kFirstMilestoneBoss] : (kFaceIdx[bi] + pose);
-	const int bodyIdx = milestoneDead ? kDeadBodyIdx[bi - kFirstMilestoneBoss] : (kBodyIdx[bi] + pose);
+	const int faceIdx = milestoneDead ? kDeadFaceIdx[bi - kFirstMilestoneBoss] : (kBossFaceIdx[bi] + pose);
+	const int bodyIdx = milestoneDead ? kDeadBodyIdx[bi - kFirstMilestoneBoss] : (kBossBodyIdx[bi] + pose);
 	const float art = b.radius / kArtDiv[bi];
 	if (drawing3D()) {
 		// The game's own 3D fruit, made big, with the pose's face laid over it.
 		m3d::begin(kFieldW, gfx::stereoPerZ(), true);
-		m3d::Skin skin = {hurt ? 0.6f : (b.surgeT > 0 ? 0.25f : 0.0f), 1.0f, 0.35f, b.surgeT > 0 ? 0.1f : 0.35f, alpha, 0.3f};
-		if (!hurt && b.surgeT <= 0 && milestoneDead) {
+		m3d::Skin skin = {hurt ? 0.6f : (angryRed ? 0.42f : (b.surgeT > 0 ? 0.25f : 0.0f)), 1.0f, angryRed ? 0.22f : 0.35f, (angryRed || b.surgeT > 0) ? 0.14f : 0.35f, alpha, 0.3f};
+		if (!hurt && b.surgeT <= 0 && !angryRed && milestoneDead) {
 			skin = {0.22f * deadP, 1.0f, 0.62f, 0.25f, 1.0f, 0.35f};
-		} else if (!hurt && b.surgeT <= 0 && bi == BOSS_DURIAN) {
+		} else if (!hurt && b.surgeT <= 0 && !angryRed && bi == BOSS_DURIAN) {
 			skin = {0.26f, 0.80f, 0.70f, 0.32f, alpha, 0.25f};
 		}
 		m3d::setSkin(&skin);
 		const float s = b.radius / kMeshDiv[bi];
 		m3d::Pose pose3 = {bx, by, 30, b.rx, b.t * 0.4f, wob, s * (1 + grow), 0, 0, 0};
-		m3d::draw(kMeshId[bi], m3d::PART_WHOLE, pose3);
+		m3d::draw(kBossMeshId[bi], m3d::PART_WHOLE, pose3);
 		m3d::setSkin(nullptr);
 		m3d::end();
 		gfx::sprite(SHEET_SPRITES, faceIdx, bx, by, art * sx, art * sy, wob, tint);
 	} else {
 		gfx::sprite(SHEET_SPRITES, bodyIdx, bx, by, art * sx, art * sy, wob, tint);
+	}
+	if (b.id == BOSS_LEMON && !b.beaten && (b.attack == LEM_LEMONADE || b.lemonadeOn)) {
+		gfx::sprite(SHEET_SPRITES, sprites_lem_floatie_idx, bx, by + b.radius * 0.30f * sy, art * 1.18f * sx, art * 1.18f * sy, wob * 0.35f, withAlpha(WHITE, alpha));
 	}
 	if (b.id == BOSS_APPLE && !b.beaten) {
 		for (const auto& w : b.worms) {
@@ -1445,3 +1668,27 @@ void Game::drawBoss(bool solid) const {
 		gfx::rect(visX - w * 0.5f, b.y + b.radius * sy + 8, w * k, 5, rgba(255, 220, 110));
 	}
 }
+
+#ifdef BOSS_TEST_APP
+void Game::bossPreview(int bossId, bool royal, float x, float y, float radius, float t, float screenW) const {
+	const int bi = (bossId >= 0 && bossId < BOSS_COUNT) ? bossId : 0;
+	const float wob = sinf(t * 1.7f) * 0.06f;
+	const float art = radius / kArtDiv[bi];
+	if (gSave.artStyle == ART_3D && m3d::ready()) {
+		m3d::begin(screenW, gfx::stereoPerZ(), false);
+		m3d::Skin skin = {0.0f, 1.0f, 0.35f, 0.35f, 1.0f, 0.3f};
+		if (bi == BOSS_DURIAN) skin = {0.26f, 0.80f, 0.70f, 0.32f, 1.0f, 0.25f};
+		m3d::setSkin(&skin);
+		const float s = radius / kMeshDiv[bi];
+		m3d::Pose pose3 = {x, y, 0, 0, t * 0.55f, wob, s, 0, 0, 0};
+		m3d::draw(kBossMeshId[bi], m3d::PART_WHOLE, pose3);
+		m3d::setSkin(nullptr);
+		m3d::end();
+		gfx::sprite(SHEET_SPRITES, kBossFaceIdx[bi], x, y, art, art, wob, WHITE);
+	} else {
+		gfx::sprite(SHEET_SPRITES, kBossBodyIdx[bi], x, y, art, art, wob, WHITE);
+	}
+	if (bi == BOSS_KING || royal)
+		drawCrown(x, y - radius - (bi == BOSS_KING ? 2 : 7), radius / (royal ? 32.0f : 40.0f), rgba(255, 210, 70));
+}
+#endif

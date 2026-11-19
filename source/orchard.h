@@ -16,6 +16,7 @@ enum CardId : u8 {
 	// Single-use charms (slotted, used once)
 	CARD_GOLDAPPLE, CARD_FRUITBOMB, CARD_RINDWALL, CARD_RIPESEED, CARD_SKIPPEEL, CARD_BOSSBANE, CARD_LUCKYPIT, CARD_COINJAR,
 	CARD_LASTSTAND, CARD_FLOOD,
+	CARD_CUTBOARD, CARD_LIFESTEAL, CARD_BOSSHARVEST,
 	CARD_COUNT, CARD_NONE = 0xFF
 };
 enum CardKind : u8 { KIND_UPGRADE, KIND_PASSIVE, KIND_REUSABLE, KIND_SINGLE };
@@ -37,7 +38,7 @@ int cardIcon(int card);  // its badge on SHEET_SPRITES
 // What the next level of a card would do, with real numbers, for the details panel. Empty if nothing changes.
 void cardNextLine(int card, int level, char* out, int size);
 
-// The bosses of Orchard Blast (regular 4 in seeded 5-room loop, plus 3 Milestone Bosses every 50th room).
+// The bosses of Orchard Blast (regular 4 in seeded 5-room loop, plus 3 Milestone Bosses every 25th room).
 enum BossId : u8 { BOSS_MELON, BOSS_KING, BOSS_PINEAPPLE, BOSS_CHILI, BOSS_DURIAN, BOSS_LEMON, BOSS_APPLE, BOSS_COUNT };
 static constexpr int kRegularBossCount = 4;
 static constexpr int kFirstMilestoneBoss = BOSS_DURIAN;
@@ -85,6 +86,7 @@ enum BossAttack : u8 {
 	LEM_ACID,      // Lord Lemon: crisscrossing sour citrus shots
 	LEM_ZEST,      // Lord Lemon: bouncing sour zest balls & temporary speed hazard
 	LEM_BLITZ,     // Lord Lemon: unpredictable figure-8 dash + rapid citrus volley
+	LEM_LEMONADE,  // Lord Lemon: floatie squeeze fills bottom half with sour Lemonade + floating drain
 	APP_WORMS,     // Aggro Apple: angry worms peek out—slice near/tap them quickly before they lunge!
 	APP_BARRAGE,   // Aggro Apple: fierce bouncy apple-core seed barrage
 	APP_CRUSH,     // Aggro Apple: aggressive dive slam with simultaneous worm ambush
@@ -152,6 +154,15 @@ struct Boss {
 	float surgeT;     // The Inferno Pepper's temporary speedup duration
 	float boomT;      // Milestone boss 5s death sequence: countdown to the next blast
 	AppleWorm worms[4];  // Aggro Apple's peeking worms
+	bool enraged;     // Milestone Boss Phase 2 (<= 50% HP): red tint, steam & faster guard drops
+	bool lemonadeOn;  // Lord Lemon: bottom-half sour Lemonade hazard is active
+	bool drainOn;     // Lord Lemon: sliceable Drain plug has surfaced
+	u8 lemStage;      // 0 idle, 1 floatie put-on/squeeze fill, 2 active hazard, 3 draining out
+	float lemLevel;   // 0..1 Lemonade fill fraction of lower screen
+	float lemTimer;   // stage progress / wait until drain rises
+	float drainX, drainY, drainRise;  // floating drain plug coordinates and bubble bobbing
+	float lemHurtCd;  // brief i-frame cooldown between sour Lemonade hits
+	float steamT;     // Phase 2 bilateral steam puff accumulator
 };
 
 // The run itself.

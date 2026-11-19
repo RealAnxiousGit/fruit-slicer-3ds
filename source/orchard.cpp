@@ -63,10 +63,21 @@ const CardInfo kCards[CARD_COUNT] = {
 	{"Coin Jar", "Coins count twice for", "the rest of the room.", KIND_SINGLE, RARE_COMMON, 1, 0, 0},
 	{"Last Stand", "For 10 s nothing takes you below", "1 HP, and Deflected! is free.", KIND_SINGLE, RARE_LEGEND, 1, 0, 0},
 	{"Juice Flood", "For 5 s, the screen floods", "with fruit, at double XP.", KIND_SINGLE, RARE_RARE, 1, 0, 0},
+	{"Cutting Board", "Sliced fruit splits into pieces", "you can cut again for extra XP.", KIND_PASSIVE, RARE_LEGEND, 1, 0, 0},
+	{"Lifesteal Tome", "Clean boss slices heal HP", "based on your Blade level.", KIND_PASSIVE, RARE_RARE, 1, 0, 0},
+	{"Boss Harvest", "Fruits and shots in boss rooms", "grant XP again.", KIND_PASSIVE, RARE_RARE, 1, 0, 0},
 };
 
-// Each card's badge on the sprite sheet: drawn in CardId order, so the first one leads.
-int cardIcon(int card) { return card >= 0 && card < CARD_COUNT ? sprites_cd_ring_idx + card : sprites_cd_ring_idx; }
+// Each card's badge on the sprite sheet: older cards stay contiguous at sprites_cd_ring_idx + card.
+int cardIcon(int card) {
+	if (card >= 0 && card <= CARD_FLOOD) return sprites_cd_ring_idx + card;
+	switch (card) {
+		case CARD_CUTBOARD: return sprites_cd_cutboard_idx;
+		case CARD_LIFESTEAL: return sprites_cd_lifesteal_idx;
+		case CARD_BOSSHARVEST: return sprites_cd_bossharvest_idx;
+		default: return sprites_cd_ring_idx;
+	}
+}
 static_assert(sprites_cd_flood_idx - sprites_cd_ring_idx == CARD_FLOOD, "a card icon for every card, in order");
 
 const char* cardKindName(CardKind k) {
@@ -123,9 +134,9 @@ void orchardBuildBossOrder(u32 seed, u8 outOrder[kRegularBossCount]) {
 }
 
 int orchardBossForRoom(int room, u32 seed, const u8 order[kRegularBossCount], bool* royalOut) {
-	if (room >= 50 && room % 50 == 0) {
+	if (room >= 25 && room % 25 == 0) {
 		const u32 h = (seed ^ ((u32)room * 2654435761u)) * 1664525u + 1013904223u;
-		if (royalOut) *royalOut = room >= 100;
+		if (royalOut) *royalOut = room >= 50;
 		return kFirstMilestoneBoss + (int)((h >> 16) % (u32)kMilestoneBossCount);
 	}
 	const int enc = (room / 5) - 1;
@@ -196,7 +207,7 @@ struct OrcRunSave {
 	Pending pending[Game::kMaxPending];
 	u32 sum;
 };
-static constexpr u32 kOrcSaveMagic = 0x4F524332u;
+static constexpr u32 kOrcSaveMagic = 0x4F524333u;
 
 static u32 orcSaveHash(const void* data, size_t n) {
 	const u8* p = (const u8*)data;
@@ -226,6 +237,10 @@ static bool orcReadSaveFile(OrcRunSave* out) {
 }
 
 bool Game::orchardHasSave(int* savedRoomOut) {
+#ifdef BOSS_TEST_APP
+	(void)savedRoomOut;
+	return false;
+#endif
 	OrcRunSave s = {};
 	if (!orcReadSaveFile(&s)) return false;
 	if (savedRoomOut) *savedRoomOut = s.orc.room;
@@ -233,6 +248,9 @@ bool Game::orchardHasSave(int* savedRoomOut) {
 }
 
 void Game::orchardClearSave() {
+#ifdef BOSS_TEST_APP
+	return;
+#endif
 	char file[256], temp[256];
 	port::dataPath(file, sizeof file, "orc_run.bin");
 	port::dataPath(temp, sizeof temp, "orc_run.tmp");
@@ -241,6 +259,9 @@ void Game::orchardClearSave() {
 }
 
 bool Game::orcSaveRun() const {
+#ifdef BOSS_TEST_APP
+	return false;
+#endif
 	if (mode != MODE_ORCHARD || phase == PHASE_OVER || phase == PHASE_DYING || orc.resumePrompt || passName) return false;
 	port::ensureDataDir();
 	char file[256], temp[256];
@@ -310,6 +331,9 @@ void Game::orcBeginRoom50Cutscene(int bid) {
 }
 
 bool Game::orcLoadRun() {
+#ifdef BOSS_TEST_APP
+	return false;
+#endif
 	OrcRunSave s = {};
 	if (!orcReadSaveFile(&s)) return false;
 	gSpawn.s = s.spawnSeed ? s.spawnSeed : 1u;
@@ -360,7 +384,7 @@ bool Game::orcLoadRun() {
 		waveTimer = 999.0f;
 		bool royal = false;
 		const int bid = orchardBossForRoom(orc.room, orc.runSeed, orc.bossOrder, &royal);
-		if (orc.room == 50 && !gSave.seenRoom50Cutscene && !passName) {
+		if (orc.room == 25 && !gSave.seenRoom50Cutscene && !passName) {
 			orcBeginRoom50Cutscene(bid);
 		} else {
 			bossStart(bid, royal);
@@ -495,7 +519,7 @@ void Game::orcApplyDevSkip(int targetRoom, int targetLevel) {
 	if (orc.bossRoom) {
 		bool royal = false;
 		const int bid = orchardBossForRoom(orc.room, orc.runSeed, orc.bossOrder, &royal);
-		if (orc.room == 50 && !gSave.seenRoom50Cutscene && !passName) {
+		if (orc.room == 25 && !gSave.seenRoom50Cutscene && !passName) {
 			orcBeginRoom50Cutscene(bid);
 		} else {
 			bossStart(bid, royal);
@@ -508,6 +532,91 @@ void Game::orcApplyDevSkip(int targetRoom, int targetLevel) {
 	}
 	if (!passName) orcSaveRun();
 }
+
+#ifdef BOSS_TEST_APP
+void Game::bossTestLaunch(int bossId, bool useRush, bool royal, int diff, int preset) {
+	if (bossId < 0 || bossId >= BOSS_COUNT) bossId = BOSS_MELON;
+	if (diff < 0 || diff >= DIFF_COUNT) diff = DIFF_NORMAL;
+	gSave.difficulty = (u8)diff;
+	const OrchardLevel& lv = orchardLevel(gSave.difficulty);
+
+	mode = useRush ? MODE_BOSSRUSH : MODE_ORCHARD;
+	score = 0;
+	sliced = 0;
+	bestCombo = 0;
+	coinsCaught = 0;
+	coinsThrown = 0;
+	journalCoins = 0;
+	coinsEarned = 0;
+	dailyCoins = 0;
+	elapsed = 0;
+	waveTimer = 999.0f;
+	chain = 0;
+	comboCount = 0;
+	comboTimer = 0;
+	feverT = frenzyT = freezeT = doubleT = magnetT = wideT = chiliT = stunT = stickyT = 0;
+	flash = 0;
+	shake = 0;
+	maxStrikes = 0;
+	strikes = 0;
+	passName = nullptr;
+	for (auto& o : objs) o = {};
+	for (auto& p : pending) p = {};
+	for (auto& h : halves) h = {};
+	for (auto& pt : parts) pt = {};
+	for (auto& pop : popups) pop = {};
+	for (auto& r : rings) r = {};
+	orc = {};
+	orc.slot[0] = orc.slot[1] = CARD_NONE;
+	m12 = {};
+
+	orc.endless = true;
+	orc.bossRoom = true;
+	orc.runSeed = 0xB0557E57u;
+	orchardBuildBossOrder(orc.runSeed, orc.bossOrder);
+	if (useRush) {
+		orc.room = 0;
+		m12.rushPicking = false;
+		m12.rushStage = (u8)(bossId >= kFirstMilestoneBoss ? 4 : bossId);
+		m12.rushBuild = (u8)(preset == 1 ? BUILD_TANK : (preset == 2 ? BUILD_GLASS : (preset == 3 ? BUILD_CHARMER : BUILD_TANK)));
+	} else {
+		if (bossId >= kFirstMilestoneBoss) orc.room = royal ? 50 : 25;
+		else orc.room = royal ? 30 + (bossId + 1) * 5 : (bossId + 1) * 5;
+	}
+	orc.level = preset == 4 ? 10 : 1;
+
+	auto addPassive = [this](int card) {
+		orc.upgrade[card] = 1;
+		orc.passiveOrder[orc.passiveCount++] = (u8)card;
+	};
+	switch (preset) {
+		case 1: orcApplyRushPreset(BUILD_TANK); break;
+		case 2: orcApplyRushPreset(BUILD_GLASS); break;
+		case 3: orcApplyRushPreset(BUILD_CHARMER); break;
+		case 4:  // Full Charms: endgame Orchard showcase with all 2.0c passives
+			orc.maxHp = orc.hp = (float)lv.startHp + 10.0f;
+			orc.upgrade[CARD_ARMOR] = 2;
+			orc.upgrade[CARD_BLADE] = 3;
+			addPassive(CARD_JUICE);
+			addPassive(CARD_THICKPEEL);
+			addPassive(CARD_CUTBOARD);
+			addPassive(CARD_LIFESTEAL);
+			addPassive(CARD_BOSSHARVEST);
+			orc.slot[0] = CARD_CLEAVER;
+			orc.slot[1] = CARD_BLENDER;
+			break;
+		default:  // Starter
+			orc.maxHp = orc.hp = (float)lv.startHp;
+			break;
+	}
+	orc.peelShield = orc.upgrade[CARD_THICKPEEL] != 0;
+	gravity = lerpf(300, 430, useRush ? 0.5f : clampf(orc.room / 30.0f, 0.2f, 1.0f)) * kFieldK * levelGravity(gSave.difficulty);
+	phase = PHASE_PLAY;
+	phaseT = 0;
+	gSpawn.s = 0xB0557E57u ^ (u32)(bossId * 97 + royal * 13);
+	bossStart(bossId, royal);
+}
+#endif
 
 void Game::orchardResumeChoice(bool continueRun, u32 seed) {
 	if (mode != MODE_ORCHARD) return;
@@ -595,7 +704,7 @@ bool Game::orcWave() {
 }
 
 void Game::orcGainXp(float amount) {
-	if (amount <= 0 || mode == MODE_BOSSRUSH) return;  // Boss Rush has no level ups
+	if (amount <= 0 || mode == MODE_BOSSRUSH || (orc.bossRoom && !orc.upgrade[CARD_BOSSHARVEST])) return;  // Boss Rush has no level ups; Boss Harvest unlocks boss-room XP
 	amount *= 1.0f + 0.2f * orc.upgrade[CARD_RING];
 	if (orc.upgrade[CARD_GLASS]) amount *= 2;
 	if (orc.floodT > 0) amount *= 2;
@@ -609,6 +718,9 @@ void Game::orcGainXp(float amount) {
 		orc.level++;
 		orc.levelsWaiting++;
 	}
+#ifdef BOSS_TEST_APP
+	if (orc.boss.beaten) return;
+#endif
 	if (orc.levelsWaiting > 0 && !orc.choosing && !orcBossExploding() && !orc.cutscene && phase == PHASE_PLAY && (feverT > 0 || frenzyT > 0)) orcOffer();
 }
 
@@ -616,13 +728,15 @@ void Game::orcSliced(const Obj& o) {
 	float xp = 0;
 	switch (o.kind) {
 		case OBJ_FRUIT:
-			if (o.loose) xp = orc.upgrade[CARD_SEEDPOUCH] ? 3 : 1;
+			if (o.cutGen == 1) xp = o.fruit >= kSpiky ? 1.5f : 0.5f;
+			else if (o.cutGen >= 2) xp = o.fruit >= kSpiky ? 0.75f : 0.25f;
+			else if (o.loose) xp = orc.upgrade[CARD_SEEDPOUCH] ? 3 : 1;
 			else xp = o.fruit >= kSpiky ? 3 : 1;
-			if (orc.upgrade[CARD_JUICE]) orc.hp = fminf(orc.maxHp, orc.hp + 0.25f);
+			if (orc.upgrade[CARD_JUICE] && o.cutGen == 0) orc.hp = fminf(orc.maxHp, orc.hp + 0.25f);
 			break;
 		case OBJ_GOLD:
-			xp = 3;
-			if (orc.upgrade[CARD_JUICE]) orc.hp = fminf(orc.maxHp, orc.hp + 0.25f);
+			xp = o.cutGen == 1 ? 1.5f : (o.cutGen >= 2 ? 0.75f : 3.0f);
+			if (orc.upgrade[CARD_JUICE] && o.cutGen == 0) orc.hp = fminf(orc.maxHp, orc.hp + 0.25f);
 			break;
 		case OBJ_SEED: xp = orc.upgrade[CARD_SEEDPOUCH] ? 1 : 0; break;
 		case OBJ_COIN:
@@ -745,9 +859,8 @@ void Game::orcNextRoom() {
 	if (orc.bossRoom) {
 		bool royal = false;
 		const int bid = orchardBossForRoom(orc.room, orc.runSeed, orc.bossOrder, &royal);
-		for (auto& o : objs) o = {};
 		for (auto& p : pending) p = {};
-		if (orc.room == 50 && !gSave.seenRoom50Cutscene && !passName) {
+		if (orc.room == 25 && !gSave.seenRoom50Cutscene && !passName) {
 			orcBeginRoom50Cutscene(bid);
 		} else {
 			bossStart(bid, royal);
@@ -1200,7 +1313,7 @@ void Game::drawOrchardOverlay() const {
 		gfx::rect(x, y, w, 2, ready ? rgba(150, 230, 255) : rgba(90, 90, 110));
 		if (card != CARD_NONE) {
 			const CardInfo& info = kCards[card];
-			const float is = (PORT_3DS ? 0.56f : 0.70f) * (w / 40.0f);
+			const float is = (PORT_3DS ? 0.64f : 0.80f) * (w / 40.0f);
 			gfx::sprite(SHEET_SPRITES, cardIcon(card), x + w * 0.5f, y + h * 0.5f + 2, is, is, 0, ready ? WHITE : rgba(150, 150, 160, 200));
 			if (orc.slotCool[s] > 0 && info.cooldown > 0) {
 				const float k = clampf(orc.slotCool[s] / info.cooldown, 0, 1);
@@ -1285,7 +1398,8 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 			}
 		snprintf(d, sizeof d, "%d of %d", filesThere, bossTracks);
 		check(bossTracks == 13 && filesThere == bossTracks, "Every boss track's file is in the game, 13 in all", d);
-		check(audio::loaded(SFX_BOSS_BLIP), "Room 50 retro boss blip SFX loads", "");
+		check(audio::loaded(SFX_BOSS_BLIP), "Room 25 retro boss blip SFX loads", "");
+		check(audio::loaded(SFX_TRAIN_WHISTLE) && audio::loaded(SFX_BUBBLES), "Phase 2 train whistle and Lord Lemon bubbles SFX load", "");
 		const int mTrack0 = bossTrackPick(BOSS_DURIAN, 3);
 		const int mTrack1 = bossTrackPick(BOSS_LEMON, 3);
 		check(bossTrackCount(4) == 4 && mTrack0 >= 0 && mTrack1 >= 0 && mTrack0 != mTrack1, "Milestone Boss tracks unlock from a 4-track pool without repeating back-to-back", "");
@@ -1320,25 +1434,41 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 		gSave.menuTrack = menuTrackWas;
 		gSave.gameTrack = gameTrackWas;
 
-		// The Shop keeps each boss track locked until that track is discovered in a boss fight.
+		// The Shop keeps each boss track locked until defeated, and Auto follows discovery + owned boss track rules.
 		const u32 beatenNow = gSave.bossesBeaten, seenNow = gSave.bossTracksSeen, ownedNow = gSave.ownedTracks, coinsNow = gSave.coins;
 		const u32 foundNow = gSave.bossTracksFound;
+		const u8 bmNow = gSave.bossMusic;
 		const int item = fight - kBaseTracks;
 		gSave.bossesBeaten = gSave.bossTracksSeen = 0;
 		gSave.ownedTracks = 0;
 		gSave.bossTracksFound = 0;
+		gSave.bossMusic = 1;
 		gSave.coins = 5000;
-		check(shopLocked(SHOP_MUSIC, item) && shopBuy(SHOP_MUSIC, item) != BUY_DONE && !shopOwned(SHOP_MUSIC, item) && !shopHasNew(),
-		      "A boss track is locked, and can't be bought, until it is discovered in a boss fight", "");
-		gSave.bossTracksFound = 1u << item;
-		check(!shopLocked(SHOP_MUSIC, item) && shopHasNew() && shopBuy(SHOP_MUSIC, item) == BUY_DONE,
-		      "Discovering a boss track unlocks that track to buy, and the Shop marks it new", "");
+		const int undiscAuto = bossMusicResolve(BOSS_MELON, 3);
+		check(undiscAuto >= 0 && trackBoss(undiscAuto) == BOSS_MELON && shopLocked(SHOP_MUSIC, item) && shopBuy(SHOP_MUSIC, item) != BUY_DONE && !shopOwned(SHOP_MUSIC, item) && !shopHasNew(),
+		      "Undefeated boss plays undiscovered track in Auto and keeps boss tracks locked until beaten", "");
+		u8 unlockedCnt = 0;
+		bossUnlockAllTracks(BOSS_MELON, &unlockedCnt);
+		gSave.bossesBeaten |= 1u << BOSS_MELON;
+		const int noPurchaseFallback = bossMusicResolve(BOSS_MELON, 3);
+		check(unlockedCnt == bossTrackCount(BOSS_MELON) && !shopLocked(SHOP_MUSIC, item) && shopHasNew() && noPurchaseFallback < 0,
+		      "Defeating boss unlocks all its Shop tracks, and Auto keeps Game Music when zero boss tracks are bought", "");
+		const int anyBossItem = bossTrackPick(BOSS_KING, 1) - kBaseTracks;
+		gSave.bossTracksFound |= 1u << anyBossItem;
+		const bool boughtOk = shopBuy(SHOP_MUSIC, anyBossItem) == BUY_DONE;
+		const int ownedAuto = bossMusicResolve(BOSS_MELON, 3);
+		check(boughtOk && ownedAuto >= 0 && trackBoss(ownedAuto) >= 0 && shopOwned(SHOP_MUSIC, ownedAuto - kBaseTracks),
+		      "Once any boss track is purchased, Auto shuffles purchased boss tracks across all bosses", "");
+		shopEquip(SHOP_MUSIC, anyBossItem);
+		const u8 bossMusEquipped = gSave.bossMusic;
+		check(bossMusEquipped == (u8)(2 + kBaseTracks + anyBossItem), "Equipping a Boss Track in Shop sets Boss Music without overwriting Menu/Game Music", "");
 		shopSeenNew();
 		check(!shopHasNew(), "Opening the Music tab clears the new mark", "");
 		gSave.bossesBeaten = beatenNow;
 		gSave.bossTracksSeen = seenNow;
 		gSave.bossTracksFound = foundNow;
 		gSave.ownedTracks = ownedNow;
+		gSave.bossMusic = bmNow;
 		gSave.coins = coinsNow;
 	}
 
@@ -1587,7 +1717,7 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 		      "After defeating a boss, non-boss rooms reset waveTimer and spawn fruits again", d);
 	}
 
-	// Dev skip helper jumps cleanly to any room (including Room 50 Milestone Boss + buffered level-ups) and non-boss rooms.
+	// Dev skip helper jumps cleanly to any room (including Room 25 Milestone Boss + buffered level-ups) and non-boss rooms.
 	{
 		const u8 seenWas = gSave.seenRoom50Cutscene;
 		setup();
@@ -1596,11 +1726,11 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 		const bool room6Ok = !orc.bossRoom && orc.room == 6 && waveTimer < 2.0f && orc.level == 4 && orc.levelsWaiting == 3;
 		setup();
 		gSave.seenRoom50Cutscene = 0;
-		orcApplyDevSkip(50, 3);
-		const bool room50Ok = orc.bossRoom && orc.room == 50 && orc.cutscene && orc.level == 3 && orc.levelsWaiting == 2;
+		orcApplyDevSkip(25, 3);
+		const bool room25Ok = orc.bossRoom && orc.room == 25 && orc.cutscene && orc.level == 3 && orc.levelsWaiting == 2;
 		orchardClearSave();
 		gSave.seenRoom50Cutscene = seenWas;
-		check(room6Ok && room50Ok, "Orchard dev skip cleanly enters non-boss rooms (with waves) and Milestone Boss Room 50 with buffered levels", "");
+		check(room6Ok && room25Ok, "Orchard dev skip cleanly enters non-boss rooms (with waves) and Milestone Boss Room 25 with buffered levels", "");
 	}
 
 	// Boss attacks hurt, and their shots can be sliced away.
@@ -1658,14 +1788,15 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 			mask |= 1 << ordA[i];
 		}
 		check(same && mask == ((1 << kRegularBossCount) - 1), "Seeded boss order deterministically permutes every regular boss once", "");
-		bool royalFirst = false, royalLap2 = false, royal50 = false, royal100 = false;
+		bool royalFirst = false, royalLap2 = false, royal25 = false, royal50 = false;
 		const int b0 = orchardBossForRoom(5, 0x12345678u, ordA, &royalFirst);
-		const int b4 = orchardBossForRoom(5 + kRegularBossCount * 5, 0x12345678u, ordA, &royalLap2);
+		const int b4 = orchardBossForRoom(5 + kRegularBossCount * 5 + 5, 0x12345678u, ordA, &royalLap2);
+		const int b25 = orchardBossForRoom(25, 0x12345678u, ordA, &royal25);
 		const int b50 = orchardBossForRoom(50, 0x12345678u, ordA, &royal50);
-		const int b100 = orchardBossForRoom(100, 0x12345678u, ordA, &royal100);
-		check(!royalFirst && royalLap2 && b0 == b4, "Endless lap 2 repeats the seeded boss order with Royal variants", "");
-		check(b50 >= BOSS_DURIAN && b50 < BOSS_COUNT && !royal50 && b100 >= BOSS_DURIAN && b100 < BOSS_COUNT && royal100,
-		      "Room 50 picks a Milestone Boss and Room 100 brings its Royal variant", "");
+		check(!royalFirst && royalLap2, "Endless lap 2 switches to Royal variants on regular boss rooms (Room 30)", "");
+		check(b25 >= BOSS_DURIAN && b25 < BOSS_COUNT && !royal25 && b50 >= BOSS_DURIAN && b50 < BOSS_COUNT && royal50,
+		      "Room 25 picks a Milestone Boss and Room 50+ brings its Royal variant", "");
+		(void)b0; (void)b4;
 
 		const u8 seenCutsceneWas = gSave.seenRoom50Cutscene;
 		gSave.seenRoom50Cutscene = 1;
@@ -1707,11 +1838,24 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 
 		start(MODE_ORCHARD);
 		phase = PHASE_PLAY;
-		orc.room = 24;
+		orc.room = 29;
 		orc.bossRoom = false;
 		orc.roomT = kRoomSeconds;
 		orcUpdate(none);
-		check(orc.room == 25 && orc.bossRoom && orc.boss.on && orc.boss.royal, "Lap 2 brings Royal boss variants (Room 25)", "");
+		check(orc.room == 30 && orc.bossRoom && orc.boss.on && orc.boss.royal, "Lap 2 brings Royal regular boss variants (Room 30)", "");
+		start(MODE_ORCHARD);
+		phase = PHASE_PLAY;
+		orc.room = 24;
+		orc.bossRoom = false;
+		queue(0, 160, 0, -280, OBJ_FRUIT, 0);
+		launch(pending[0]);
+		pending[0].on = false;
+		orc.roomT = kRoomSeconds;
+		orcUpdate(none);
+		bool keptLiveFruit = false;
+		for (const auto& o2 : objs)
+			if (o2.on && o2.kind == OBJ_FRUIT) keptLiveFruit = true;
+		check(orc.room == 25 && orc.bossRoom && keptLiveFruit, "Entering a boss room keeps existing in-flight fruits instead of vanishing them", "");
 		const u16 bestEndWas = gSave.endlessBestRoom;
 		const u32 endRunsWas = gSave.endlessRuns;
 		gSave.endlessBestRoom = 0;
@@ -1750,6 +1894,9 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 		      "Continue restores room-start seed, score, HP, level/XP, and inventory without keeping mid-room gains", "");
 		if (audio::available()) {
 			const u8 bossMusWas = gSave.bossMusic;
+			const u32 beatTmp = gSave.bossesBeaten, foundTmp = gSave.bossTracksFound;
+			gSave.bossesBeaten = 0;
+			gSave.bossTracksFound = 0;
 			gSave.bossMusic = 1;
 			audio::bossMusicEnd();
 			for (int i = 0; i < 90; i++) audio::update(kDt);
@@ -1763,6 +1910,8 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 			check(orc.bossRoom && orc.boss.on && audio::bossMusicOn(), "Continuing onto a boss room spawns the boss and starts boss music", "");
 			audio::bossMusicEnd();
 			for (int i = 0; i < 90; i++) audio::update(kDt);
+			gSave.bossesBeaten = beatTmp;
+			gSave.bossTracksFound = foundTmp;
 			gSave.bossMusic = bossMusWas;
 		}
 		start(MODE_ORCHARD);
@@ -1876,24 +2025,126 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 		const float wx = ab.x + ab.worms[0].ox, wy = ab.y + ab.worms[0].oy;
 		Blade wSwat = swipe(wx - 10, wy, wx + 10, wy, 0x57000001u);
 		bossTest(wSwat);
-		check(!ab.worms[0].on && orc.hp == hpW0 && orc.xp > xpW0, "Swiping an Aggro Apple worm swats it without triggering Deflected", "");
+		check(!ab.worms[0].on && orc.hp == hpW0 && orc.xp == xpW0, "Boss room slices grant 0 XP without Boss Harvest passive", "");
+		orc.upgrade[CARD_BOSSHARVEST] = 1;
+		ab.worms[2].on = true;
+		ab.worms[2].ox = ab.radius * 0.54f;
+		ab.worms[2].oy = 0;
+		ab.worms[2].emergeT = 1.0f;
+		ab.worms[2].timer = 2.0f;
+		Blade wSwat2 = swipe(ab.x + ab.worms[2].ox - 10, ab.y, ab.x + ab.worms[2].ox + 10, ab.y, 0x57000002u);
+		bossTest(wSwat2);
+		check(!ab.worms[2].on && orc.hp == hpW0 && orc.xp > xpW0, "Boss Harvest enables XP gain in boss rooms and worm swat stays Deflect-free", "");
 		ab.worms[1].on = true;
 		ab.worms[1].emergeT = 1.0f;
 		ab.worms[1].timer = kDt * 0.5f;
 		bossUpdate(kDt);
 		check(!ab.worms[1].on && orc.hp < hpW0, "An unswatted Aggro Apple worm lunges and costs HP", "");
 
-		// Room 50 cutscene gate, save separation (Reset Scores keeps seenRoom50Cutscene; Reset Everything clears it), and Dev Skip.
+		// New §2c mechanics: Cutting Board diminishing halves->quarters, Lifesteal Tome Blade-scaled heal, Phase 2 Enrage, and Lord Lemon Lemonade+Drain.
+		{
+			setup();
+			orc.bossRoom = false;
+			orc.upgrade[CARD_CUTBOARD] = 1;
+			queue(0, 160, 0, -260, OBJ_FRUIT, 0);
+			launch(pending[0]);
+			pending[0].on = false;
+			Obj* whole = nullptr;
+			for (auto& o2 : objs)
+				if (o2.on) { whole = &o2; break; }
+			whole->hitCooldown = 0;
+			const float x0 = orc.xp;
+			sliceFruit(*whole, swipe(whole->x - 18, whole->y, whole->x + 18, whole->y, 0x58000001u));
+			const float dx0 = orc.xp - x0;
+			int gen1Count = 0;
+			Obj* firstHalf = nullptr;
+			for (auto& o2 : objs) {
+				if (o2.on && o2.cutGen == 1) {
+					gen1Count++;
+					if (!firstHalf) firstHalf = &o2;
+				}
+			}
+			const float x1 = orc.xp;
+			if (firstHalf) sliceFruit(*firstHalf, swipe(firstHalf->x - 14, firstHalf->y, firstHalf->x + 14, firstHalf->y, 0x58000002u));
+			const float dx1 = orc.xp - x1;
+			int gen2Count = 0;
+			Obj* firstQuarter = nullptr;
+			for (auto& o2 : objs) {
+				if (o2.on && o2.cutGen == 2) {
+					gen2Count++;
+					if (!firstQuarter) firstQuarter = &o2;
+				}
+			}
+			const float x2 = orc.xp;
+			if (firstQuarter) sliceFruit(*firstQuarter, swipe(firstQuarter->x - 12, firstQuarter->y, firstQuarter->x + 12, firstQuarter->y, 0x58000003u));
+			const float dx2 = orc.xp - x2;
+			check(gen1Count == 2 && gen2Count == 2 && dx0 > dx1 && dx1 > dx2 && dx2 > 0,
+			      "Cutting Board splits whole -> halves -> quarters with strictly diminishing extra XP", "");
+
+			setup();
+			orc.maxHp = 40;
+			orc.hp = 10;
+			orc.upgrade[CARD_LIFESTEAL] = 1;
+			orc.upgrade[CARD_BLADE] = 0;
+			bossStart(BOSS_DURIAN);
+			orc.boss.enterT = 0;
+			orc.boss.guard = false;
+			const float hpBefore0 = orc.hp;
+			bossHitSlice(orc.boss.x, orc.boss.y, 1, 0);
+			const float heal0 = orc.hp - hpBefore0;
+			orc.upgrade[CARD_BLADE] = 4;
+			const float hpBefore4 = orc.hp;
+			bossHitSlice(orc.boss.x, orc.boss.y, 1, 0);
+			const float heal4 = orc.hp - hpBefore4;
+			check(heal0 > 0 && heal4 > heal0, "Lifesteal Tome heals HP on clean boss slices and scales up with Blade level", "");
+
+			// Milestone Boss Phase 2 enrage (<=50% HP) + shorter chain + no open laugh + Lord Lemon Lemonade/Drain lifecycle.
+			setup();
+			orc.hp = orc.maxHp = 50;
+			bossStart(BOSS_LEMON);
+			Boss& lb = orc.boss;
+			lb.enterT = 0;
+			lb.y = lb.baseY;
+			lb.guard = false;
+			lb.dazeT = 0;
+			lb.left = (u8)(lb.total / 2 + 1);
+			bossHitSlice(lb.x, lb.y, 1, 0);
+			const bool enragedAtHalf = lb.enraged && lb.left * 2 <= lb.total;
+			lb.dazeT = 0;
+			lb.roarT = 0;
+			lb.guard = false;
+			lb.chain = 0;
+			bossNextAttack();
+			const bool fasterChain = lb.chain <= 2;
+			lb.attack = LEM_LEMONADE;
+			lb.attackT = 0;
+			for (int i = 0; i < 150; i++) bossUpdate(kDt);
+			const bool lemFilled = lb.lemonadeOn && lb.lemStage == 2 && lb.lemLevel >= 0.99f;
+			const float hpPreSour = orc.hp;
+			Blade sourBlade = swipe(60, kFieldH - 18.0f, 90, kFieldH - 18.0f, 0x59000001u);
+			bossTest(sourBlade);
+			const bool sourHurt = orc.hp < hpPreSour;
+			for (int i = 0; i < 240 && !lb.drainOn; i++) bossUpdate(kDt);
+			for (int i = 0; i < 80; i++) bossUpdate(kDt);
+			const bool drainAppeared = lb.drainOn && lb.drainRise >= 0.9f;
+			Blade cutDrain = swipe(lb.drainX - 10, lb.drainY, lb.drainX + 10, lb.drainY, 0x59000002u);
+			bossTest(cutDrain);
+			for (int i = 0; i < 120 && lb.lemonadeOn; i++) bossUpdate(kDt);
+			check(enragedAtHalf && fasterChain && lemFilled && sourHurt && drainAppeared && !lb.lemonadeOn,
+			      "Milestone Phase 2 enrages at <=50% HP and Lord Lemon Lemonade fills, hurts below surface, surfaces Drain, and drains", "");
+		}
+
+		// Room 25 cutscene gate, save separation (Reset Scores keeps seenRoom50Cutscene; Reset Everything clears it), and Dev Skip.
 		const Settings saveSnapshot = gSave;
 		gSave.seenRoom50Cutscene = 0;
 		orchardClearSave();
 		if (audio::available()) audio::music(MUSIC_PLAY);
-		orcApplyDevSkip(50, 1);
+		orcApplyDevSkip(25, 1);
 		if (audio::available()) {
 			audio::update(kDt);
-			check(orc.cutscene && audio::currentTrack() < 0, "Entering the Room 50 dialogue box stops playing music", "");
+			check(orc.cutscene && audio::currentTrack() < 0, "Entering the Room 25 dialogue box stops playing music", "");
 		}
-		check(orc.cutscene && orc.pendingMilestoneBoss >= BOSS_DURIAN, "Entering Room 50 for the first time triggers the Milestone cutscene", "");
+		check(orc.cutscene && orc.pendingMilestoneBoss >= BOSS_DURIAN, "Entering Room 25 for the first time triggers the Milestone cutscene", "");
 		port::AssetFile* tensionFile = port::assetOpen("audio/music_tension.pcm");
 		if (!tensionFile) tensionFile = port::assetOpen("audio/music_tension.ogg");
 		check(tensionFile != nullptr, "music_tension audio asset opens cleanly", "");
@@ -1902,7 +2153,7 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 		orc.tensionStarted = true;
 		orcStartBossAfterCutscene();
 		check(!orc.cutscene && gSave.seenRoom50Cutscene == 1 && orc.boss.on && orc.boss.id >= BOSS_DURIAN && (!audio::available() || audio::currentTrack() >= 0),
-		      "Finishing the Room 50 cutscene marks it seen, restores music when Boss Music is off, and starts the Milestone Boss", "");
+		      "Finishing the Room 25 cutscene marks it seen, restores music when Boss Music is off, and starts the Milestone Boss", "");
 		saveResetScores();
 		const bool keptAfterResetScores = gSave.seenRoom50Cutscene == 1;
 		saveDefaults(false, SEC_ALL);
@@ -1943,7 +2194,8 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 		setup();
 		for (auto& h : halves) h = {};
 		boom::clear();
-		orcApplyDevSkip(50, 1);
+		orcApplyDevSkip(25, 1);
+		orc.upgrade[CARD_BOSSHARVEST] = 1;  // Boss Harvest enables XP gain in boss room so final hit triggers deferred level-up
 		orc.choosing = false;
 		orc.levelsWaiting = 0;
 		orc.boss.enterT = 0;
@@ -1966,7 +2218,7 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 			orcUpdate(none);
 			boom::update(kDt);
 		}
-		const bool afterBoom = !orc.boss.on && activeHalves() >= 8 && orc.room == 51 && !orc.bossRoom && orc.choosing && orc.offerCount >= 3;
+		const bool afterBoom = !orc.boss.on && activeHalves() >= 8 && orc.room == 26 && !orc.bossRoom && orc.choosing && orc.offerCount >= 3;
 		check(deferredStart && midExploding && afterBoom,
 		      "Milestone boss explodes at center for 5s, holds level-up until explosion ends, then bursts into pieces and advances room", "");
 		while (orc.choosing) {
@@ -1974,15 +2226,15 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 			else orcPick(0);
 		}
 		orc.resumeT = 0;
-		bool sawWave51 = false;
+		bool sawWave26 = false;
 		for (int i = 0; i < 60; i++) {
 			update(none);
 			for (const auto& o2 : objs)
-				if (o2.on) sawWave51 = true;
+				if (o2.on) sawWave26 = true;
 			for (const auto& p2 : pending)
-				if (p2.on) sawWave51 = true;
+				if (p2.on) sawWave26 = true;
 		}
-		check(!orc.choosing && orc.room == 51 && sawWave51, "Fruit spawns normally in Room 51 after Milestone boss finale and deferred level-up", "");
+		check(!orc.choosing && orc.room == 26 && sawWave26, "Fruit spawns normally in Room 26 after Milestone boss finale and deferred level-up", "");
 		addPopup("SOUR BARRAGE", kFieldW * 0.5f, kFieldTop, rgba(255, 230, 120), 0.7f);
 		for (int i = 0; i < 40; i++) updateEffects(kDt);
 		bool popupSafe = true;
@@ -2048,11 +2300,16 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 						}
 						for (auto& s : orc.shots)
 							if (s.on && s.age > (s.kind == SHOT_CROWN ? 1.8f : 0.45f)) {
+								if (f.lemonadeOn && s.y > kFieldTop + (kFieldH - kFieldTop) * 0.50f) continue;
 								const float ddx = s.x - f.x, ddy = s.y - f.y;
 								if (ddx * ddx + ddy * ddy < f.radius * f.radius * 2.2f) continue;
 								Blade cut = swipe(s.x - 4, s.y - 4, s.x + 4, s.y + 4, ++stroke);
 								bossTest(cut);
 							}
+						if (f.lemonadeOn && f.drainOn && f.lemStage == 2 && f.drainRise >= 0.9f) {
+							Blade dc = swipe(f.drainX - 8, f.drainY, f.drainX + 8, f.drainY, ++stroke);
+							bossTest(dc);
+						}
 						if (f.id == BOSS_APPLE && f.dazeT <= 0) {
 							for (auto& w : f.worms) {
 								if (!w.on || w.emergeT < 0.4f) continue;
@@ -2143,7 +2400,7 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 				gSave.difficulty = (u8)dif;
 				setup();
 				const OrchardLevel& lv = orchardLevel(dif);
-				orc.room = bossId == BOSS_LEMON ? 50 : (bossId == BOSS_KING ? 10 : 5);
+				orc.room = bossId == BOSS_LEMON ? 25 : (bossId == BOSS_KING ? 10 : 5);
 				orc.maxHp = orc.hp = (float)lv.startHp + (bossId == BOSS_LEMON ? 15.0f : (dif == DIFF_INSANE ? 10.0f : 5.0f));
 				orc.upgrade[CARD_ARMOR] = (u8)(bossId == BOSS_LEMON ? 2 : (dif == DIFF_INSANE ? 1 : 0));
 				orc.upgrade[CARD_BLADE] = (u8)(bossId == BOSS_LEMON ? 2 : 1);
@@ -2169,12 +2426,17 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 					}
 					for (auto& s : orc.shots) {
 						if (s.on && s.age > (s.kind == SHOT_CROWN ? 1.8f : 0.45f)) {
+							if (orc.boss.lemonadeOn && s.y > kFieldTop + (kFieldH - kFieldTop) * 0.50f) continue;
 							const float ddx = s.x - orc.boss.x, ddy = s.y - orc.boss.y;
 							if (ddx * ddx + ddy * ddy >= orc.boss.radius * orc.boss.radius * 2.2f) {
 								Blade c = swipe(s.x - 4, s.y - 4, s.x + 4, s.y + 4, ++st);
 								bossTest(c);
 							}
 						}
+					}
+					if (orc.boss.lemonadeOn && orc.boss.drainOn && orc.boss.lemStage == 2 && orc.boss.drainRise >= 0.9f) {
+						Blade dc = swipe(orc.boss.drainX - 8, orc.boss.drainY, orc.boss.drainX + 8, orc.boss.drainY, ++st);
+						bossTest(dc);
 					}
 					if (orc.boss.attack == KING_GIANT && orc.boss.giant.on && !orc.boss.giant.launched && orc.boss.volley == 1) {
 						static float gs = 0;

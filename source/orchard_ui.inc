@@ -156,31 +156,17 @@ static void drawOrcCard(int card, float x, float y, float w, float h, bool focus
 	const u32 rc = rarityColor(info.rarity);
 	drawPlank(x, y, w, h, focused, false);
 	gfx::rect(x + 4, y + 4, w - 8, 4, rc);
-	const float iconS = PORT_3DS ? 0.55f : 0.58f;
-	gfx::sprite(SHEET_SPRITES, cardIcon(card), x + w * 0.5f, y + 19, iconS, iconS);
+	const float iconS = PORT_3DS ? 0.64f : 0.68f;
+	gfx::sprite(SHEET_SPRITES, cardIcon(card), x + w * 0.5f, y + 20, iconS, iconS);
 	char buf[128];
 	const float cx = x + w * 0.5f, maxW = w - 8;
 	snprintf(buf, sizeof buf, "%s %s", rarityName(info.rarity), cardKindName(info.kind));
-	float ty = orcWrap(buf, cx, y + 31, 0.30f, maxW, 10.5f, rc, 2);
+	float ty = orcWrap(buf, cx, y + 34, 0.30f, maxW, 10.5f, rc, 2);
 	ty += 2;
 	orcFit(info.name, cx, ty, 0.39f, maxW, COL_CREAM);
 	ty += 15;
-	snprintf(buf, sizeof buf, "%s%s%s", info.line1, info.line2[0] ? " " : "", info.line2);
 
-	// Dynamic text scaling: ensure description + footer never overflow card bottom.
-	float descScale = 0.31f, descStep = 11.5f;
-	float footScale = 0.28f, footStep = 10.5f;
-	const float safeBottom = y + h - 8.0f;
-	const float footerReserve = (info.kind == KIND_UPGRADE ? 22.0f : (info.kind == KIND_REUSABLE ? 18.0f : 12.0f));
-	const float descBudget = safeBottom - footerReserve - ty;
-	if (descBudget < 38.0f) {
-		descScale = 0.27f;
-		descStep = 10.0f;
-	}
-
-	ty = orcWrap(buf, cx, ty, descScale, maxW, descStep, COL_CREAM, 4);
-
-	// Position footer neatly within the bottom bounds of the card plank.
+	// Build and measure footer FIRST so description text can never collide with footer lines.
 	char foot[128] = "";
 	char footSub[64] = "";
 	if (info.kind == KIND_UPGRADE) {
@@ -200,35 +186,42 @@ static void drawOrcCard(int card, float x, float y, float w, float h, bool focus
 		snprintf(foot, sizeof foot, "Slot charm (1 use)");
 	}
 
+	const float footMaxW = fmaxf(48.0f, w - 18.0f);  // clear corner rivets on the bottom edge of narrow cards
+	float footScale = 0.27f, footStep = 10.0f;
+	float footY = y + h - 7.0f;
 	if (foot[0]) {
-		// If footer text is wider than maxW, scale down dynamically so it fits on 1 line or wraps safely.
 		float tw = gfx::textWidth(foot, footScale);
-		if (tw > maxW) {
-			float targetScale = footScale * (maxW / tw);
-			if (targetScale >= 0.20f) {
+		if (tw > footMaxW) {
+			float targetScale = footScale * (footMaxW / tw);
+			if (targetScale >= 0.21f) {
 				footScale = targetScale;
 				tw = gfx::textWidth(foot, footScale);
 			}
 		}
-		int linesNeeded = (tw > maxW) ? 2 : 1;
-		if (linesNeeded > 1) {
-			float halfW = tw * 0.55f;
-			if (halfW > maxW) footScale = clampf(footScale * (maxW / halfW), 0.18f, footScale);
+		int footLines = orcCountWrapLines(foot, footMaxW, footScale, 2);
+		if (footLines > 1) {
+			footScale = clampf(footScale * 0.90f, 0.20f, footScale);
+			footStep = fmaxf(8.5f, footScale * 34.0f);
+			footLines = orcCountWrapLines(foot, footMaxW, footScale, 2);
 		}
-		int totalLines = linesNeeded + (footSub[0] ? 1 : 0);
-		float footH = totalLines * footStep;
-		float footY = y + h - 10.0f - footH;
-		if (footY < ty + 2.0f) {
-			footScale = 0.20f;
-			footStep = 8.5f;
-			footH = totalLines * footStep;
-			footY = y + h - 8.0f - footH;
-		}
-		float nextY = orcWrap(foot, cx, footY, footScale, maxW, footStep, rgba(170, 230, 255), 2);
-		if (footSub[0]) {
-			orcFit(footSub, cx, nextY, 0.24f, maxW, COL_DIM);
-		}
+		const float subH = footSub[0] ? 10.0f : 0.0f;
+		const float footH = footLines * footStep + subH;
+		footY = y + h - 8.0f - footH;
+		float nextY = orcWrap(foot, cx, footY, footScale, footMaxW, footStep, rgba(170, 230, 255), 2);
+		if (footSub[0]) orcFit(footSub, cx, nextY, 0.24f, footMaxW, COL_DIM);
 	}
+
+	// Auto-fit description strictly above footY with at least a 4px gap.
+	snprintf(buf, sizeof buf, "%s%s%s", info.line1, info.line2[0] ? " " : "", info.line2);
+	float descScale = 0.31f, descStep = 11.2f;
+	const float descBudget = fmaxf(14.0f, footY - 4.0f - ty);
+	while (descScale > 0.205f) {
+		descStep = descScale * 36.0f;
+		const int linesNeeded = orcCountWrapLines(buf, maxW, descScale, 6);
+		if (linesNeeded * descStep <= descBudget) break;
+		descScale -= 0.015f;
+	}
+	orcWrap(buf, cx, ty, descScale, maxW, descStep, COL_CREAM, 6);
 }
 
 static void drawOrcSlotBox(int s, float x, float y, float w, float h, bool focused) {
@@ -240,9 +233,9 @@ static void drawOrcSlotBox(int s, float x, float y, float w, float h, bool focus
 	if (card == CARD_NONE) {
 		orcFit("Empty", x + w * 0.5f, y + h * 0.5f - 6, 0.36f, w - 10, COL_DIM);
 	} else {
-		const float is = PORT_3DS ? 0.55f : 0.58f;
-		gfx::sprite(SHEET_SPRITES, cardIcon(card), x + 20, y + h * 0.5f + 4, is, is);
-		orcFit(kCards[card].name, x + 36, y + h * 0.5f - 4, 0.3f, w - 42, COL_CREAM, ALIGN_LEFT);
+		const float is = PORT_3DS ? 0.62f : 0.66f;
+		gfx::sprite(SHEET_SPRITES, cardIcon(card), x + 21, y + h * 0.5f + 4, is, is);
+		orcFit(kCards[card].name, x + 38, y + h * 0.5f - 4, 0.3f, w - 44, COL_CREAM, ALIGN_LEFT);
 	}
 }
 
@@ -314,7 +307,7 @@ static OrcInvLayout orcInvLayout() {
 static void orcPassiveArea(const OrcInvLayout& L, float* top, float* bottom, float* icon, int* perRow) {
 	*top = L.cy + 75.0f;
 	*bottom = L.bottom - 2.0f;
-	*icon = 22.0f;
+	*icon = 25.0f;
 	const int cols = (int)((L.cw - 6.0f) / *icon);
 	*perRow = cols > 0 ? cols : 1;
 }
@@ -486,37 +479,37 @@ static void drawOrcInventory() {
 					orcFit("Empty slot", it.x + it.w * 0.5f, it.y + 19, 0.28f, it.w - 6, COL_DIM);
 					break;
 				}
-				gfx::sprite(SHEET_SPRITES, cardIcon(card), it.x + 14, it.y + 27, 0.54f, 0.54f);
-				orcFit(kCards[card].name, it.x + 26, it.y + 15, 0.26f, it.w - 29, COL_CREAM, ALIGN_LEFT);
+				gfx::sprite(SHEET_SPRITES, cardIcon(card), it.x + 15, it.y + 27, 0.62f, 0.62f);
+				orcFit(kCards[card].name, it.x + 28, it.y + 15, 0.26f, it.w - 31, COL_CREAM, ALIGN_LEFT);
 				if (kCards[card].kind == KIND_SINGLE) {
-					orcFit("Used once", it.x + 26, it.y + 27, 0.24f, it.w - 29, COL_DIM, ALIGN_LEFT);
+					orcFit("Used once", it.x + 28, it.y + 27, 0.24f, it.w - 31, COL_DIM, ALIGN_LEFT);
 				} else if (o.slotCool[it.index] > 0) {
 					snprintf(buf, sizeof buf, "Ready in %ds", (int)ceilf(o.slotCool[it.index]));
-					orcFit(buf, it.x + 26, it.y + 27, 0.24f, it.w - 29, rgba(170, 230, 255), ALIGN_LEFT);
+					orcFit(buf, it.x + 28, it.y + 27, 0.24f, it.w - 31, rgba(170, 230, 255), ALIGN_LEFT);
 				} else {
-					orcFit("Ready", it.x + 26, it.y + 27, 0.24f, it.w - 29, rgba(170, 255, 170), ALIGN_LEFT);
+					orcFit("Ready", it.x + 28, it.y + 27, 0.24f, it.w - 31, rgba(170, 255, 170), ALIGN_LEFT);
 				}
 				break;
 			}
 			case INV_PASSIVE:
 				if (it.y + it.h < pTop - 2 || it.y > pBottom + 2) break;
 				if (f) gfx::rect(it.x, it.y, it.w, it.h, withAlpha(COL_ACCENT, 0.5f));
-				gfx::sprite(SHEET_SPRITES, cardIcon(o.passiveOrder[it.index]), it.x + it.w * 0.5f, it.y + it.h * 0.5f, 0.46f, 0.46f);
+				gfx::sprite(SHEET_SPRITES, cardIcon(o.passiveOrder[it.index]), it.x + it.w * 0.5f, it.y + it.h * 0.5f, 0.54f, 0.54f);
 				break;
 			case INV_UPGRADE: {
 				const int lv = o.upgrade[it.index];
 				const CardInfo& info = kCards[it.index];
 				if (f) gfx::rect(it.x - 2, it.y, it.w + 4, it.h, withAlpha(COL_ACCENT, 0.45f));
-				gfx::sprite(SHEET_SPRITES, cardIcon(it.index), it.x + 5, it.y + it.h * 0.5f, 0.28f, 0.28f);
+				gfx::sprite(SHEET_SPRITES, cardIcon(it.index), it.x + 6, it.y + it.h * 0.5f, 0.34f, 0.34f);
 				if (cardUncapped(info)) {
 					char lvBuf[16];
 					snprintf(lvBuf, sizeof lvBuf, "Lv %d", lv);
 					const float badgeW = fmaxf(gfx::textWidth(lvBuf, 0.25f) + 4.0f, 24.0f);
-					orcFit(info.name, it.x + 12, it.y + (it.h - 9) * 0.5f, 0.26f, it.w - 14 - badgeW, lv ? COL_CREAM : COL_DIM, ALIGN_LEFT);
+					orcFit(info.name, it.x + 14, it.y + (it.h - 9) * 0.5f, 0.26f, it.w - 16 - badgeW, lv ? COL_CREAM : COL_DIM, ALIGN_LEFT);
 					orcFit(lvBuf, it.x + it.w, it.y + (it.h - 8) * 0.5f, 0.25f, badgeW, lv ? rgba(255, 220, 110) : COL_DIM, ALIGN_RIGHT);
 				} else {
 					const int max = info.maxLevel;
-					orcFit(info.name, it.x + 12, it.y + (it.h - 9) * 0.5f, 0.26f, it.w - 14 - max * 7, lv ? COL_CREAM : COL_DIM, ALIGN_LEFT);
+					orcFit(info.name, it.x + 14, it.y + (it.h - 9) * 0.5f, 0.26f, it.w - 16 - max * 7, lv ? COL_CREAM : COL_DIM, ALIGN_LEFT);
 					orcPips(it.x + it.w - max * 7, it.y + (it.h - 5) * 0.5f, lv, max, rgba(255, 220, 110));
 				}
 				break;
@@ -808,7 +801,7 @@ static void drawRushPick() {
 		y += (1.0f - ce) * 24.0f;
 		const RushBuildInfo& b = kRushBuilds[i];
 		drawPlank(x, y, w, h, sGame.m12.rushFocus == i, false);
-		const float is = PORT_3DS ? 0.65f : 0.68f;
+		const float is = PORT_3DS ? 0.72f : 0.76f;
 		gfx::sprite(SHEET_SPRITES, cardIcon(kIcon[i]), x + w * 0.5f, y + 24, is, is);
 		orcFit(b.name, x + w * 0.5f, y + 44, 0.44f, w - 10, COL_CREAM);
 		snprintf(desc, sizeof desc, "%s %s", b.line1, b.line2);
@@ -902,10 +895,10 @@ static bool updateResumePrompt(const Input& in, bool wasTouching) {
 	return true;
 }
 
-// ---------------------------------------------------------------- Room 50 first-encounter retro dialogue cutscene
+// ---------------------------------------------------------------- Room 25 first-encounter retro dialogue cutscene
 static const char* const kRoom50Lines[10] = {
     "At last...",
-    "You have made it to room 50.",
+    "You have made it to room 25.",
     "Tell me, are you proud of yourself?",
     "What exactly were you expecting when you went into this game? Another bootleg? Another clone? Just a simple game all about slicing fruit?",
     "Perhaps it's time you learned the truth...",
@@ -1406,3 +1399,179 @@ static bool updateOrchardMenus(const Input& in, bool wasTouching) {
 	}
 	return false;
 }
+
+#if defined(DEV_TOOLS) && defined(BOSS_TEST_APP)
+static const Button kBossTestBtns[14] = {
+	{10, 29, 146, 23, nullptr},       // 0: Mode (Orchard / Boss Rush)
+	{164, 29, 146, 23, nullptr},      // 1: Tier (Regular / Royal)
+	{10, 56, 126, 23, nullptr},       // 2: Difficulty (Easy..Insane)
+	{142, 56, 168, 23, nullptr},      // 3: Build Preset
+	{10, 85, 146, 26, "Big Melon"},   // 4: BOSS_MELON
+	{164, 85, 146, 26, "Bomb King"},  // 5: BOSS_KING
+	{10, 115, 146, 26, "Pineapple"},  // 6: BOSS_PINEAPPLE
+	{164, 115, 146, 26, "Pepper"},    // 7: BOSS_CHILI
+	{10, 156, 96, 46, "Durian"},      // 8: BOSS_DURIAN
+	{112, 156, 96, 46, "Lemon"},      // 9: BOSS_LEMON
+	{214, 156, 96, 46, "Apple"},      // 10: BOSS_APPLE
+	{10, 208, 198, 26, "Fight"},      // 11: Fight selected
+	{216, 208, 94, 26, "Quit"},       // 12: Quit
+	{208, 5, 102, 20, nullptr},       // 13: Art 2D/3D [TAB]
+};
+
+static const char* const kBossTestNames[BOSS_COUNT] = {
+	"THE BIG MELON", "THE BOMB KING", "THE PINEAPPLE GUARD", "THE INFERNO PEPPER",
+	"DUSTY DURIAN", "LORD LEMON", "AGGRO APPLE"
+};
+static const char* const kBossTestShort[BOSS_COUNT] = {
+	"BIG MELON", "BOMB KING", "PINEAPPLE GUARD", "INFERNO PEPPER",
+	"DUSTY DURIAN", "LORD LEMON", "AGGRO APPLE"
+};
+static const char* const kBossTestDiffs[DIFF_COUNT] = {"EASY", "NORMAL", "HARD", "INSANE"};
+static const char* const kBossTestPresets[5] = {"STARTER", "TANK", "GLASS CANNON", "CHARMER", "FULL CHARMS"};
+static const char* const kBossTestPresetDesc[5] = {
+	"Starter: Base Lv1 HP, no extra charms",
+	"Tank: Double HP, Armor Lv2, Smoothie slot",
+	"Glass Cannon: Half HP, Blade Lv3, Cleaver + Boss Bane",
+	"Charmer: 0.8x HP, Juice + Peel, Freeze Pop + Gold Apple",
+	"Full Charms: +10 HP, Blade 3, CutBoard + Lifesteal + Harvest"
+};
+
+static void startBossTestFight() {
+	sCardNoteT = 0;
+	sResultBoard = false;
+	sLbTypingName = false;
+	sOrcInv = false;
+	gBossTestDone = false;
+	sGame.bossTestLaunch(sBossTestBoss, sBossTestUseRush, sBossTestRoyal, sBossTestDiff, sBossTestPreset);
+	sBlade.reset();
+	gfx::setShake(0, 0);
+	sScreen = SCREEN_GAME;
+	sPressed = -1;
+}
+
+static void drawBossTestTop() {
+	char buf[96];
+	topPanel(20, 12, 360, 216);
+	const char* rawName = kBossTestNames[sBossTestBoss % BOSS_COUNT];
+	if (sBossTestRoyal) {
+		const char* base = strncmp(rawName, "THE ", 4) == 0 ? rawName + 4 : rawName;
+		snprintf(buf, sizeof buf, "ROYAL %s", base);
+	} else {
+		snprintf(buf, sizeof buf, "%s", rawName);
+	}
+	gfx::setDepth(0.8f);
+	orcFit(buf, 200, 19, 0.44f, 336, sBossTestRoyal ? rgba(255, 220, 110) : COL_ACCENT);
+	gfx::setDepth(1.0f);
+	sGame.bossPreview(sBossTestBoss, sBossTestRoyal, 200, 79, 27.0f, sTime, 400.0f);
+	gfx::setDepth(0.8f);
+	const int slices = kBosses[sBossTestBoss].slices + (sBossTestRoyal ? 1 : 0);
+	snprintf(buf, sizeof buf, "SLICES: %d   |   %s", slices, sBossTestBoss >= kFirstMilestoneBoss ? "MILESTONE BOSS" : "REGULAR BOSS");
+	orcFit(buf, 200, 113, 0.32f, 336, COL_CREAM);
+	const int roomPreview = sBossTestBoss >= kFirstMilestoneBoss
+	                            ? (sBossTestRoyal ? 50 : 25)
+	                            : (sBossTestRoyal ? 30 + (sBossTestBoss + 1) * 5 : (sBossTestBoss + 1) * 5);
+	if (sBossTestUseRush) {
+		snprintf(buf, sizeof buf, "BOSS RUSH (%s)   |   %s", sBossTestRoyal ? "ROYAL" : "REGULAR", kBossTestDiffs[sBossTestDiff]);
+	} else {
+		snprintf(buf, sizeof buf, "ORCHARD ROOM %d (%s)   |   %s", roomPreview, sBossTestRoyal ? "ROYAL" : "REGULAR", kBossTestDiffs[sBossTestDiff]);
+	}
+	orcFit(buf, 200, 132, 0.30f, 336, rgba(170, 220, 255));
+	orcFit(kBossTestPresetDesc[sBossTestPreset], 200, 151, 0.29f, 336, COL_DIM);
+	orcFit(gSave.artStyle == ART_3D ? "ART: 3D MODELS  (PRESS TAB TO SWITCH)" : "ART: 2D STICKERS  (PRESS TAB TO SWITCH)",
+	       200, 173, 0.31f, 336, rgba(160, 235, 190));
+	orcFit("SAVES ISOLATED - BEATING BOSS CLOSES APP", 200, 196, 0.29f, 336, rgba(255, 220, 140));
+}
+
+static void drawBossTestSelector(const Button& b, const char* text, bool focused, bool pressed, float textScale = 0.28f) {
+	drawPlank(b.x, b.y, b.w, b.h, focused, pressed);
+	const float cy = b.y + b.h * 0.5f;
+	gfx::sprite(SHEET_SPRITES, sprites_arrow_idx, b.x + 11, cy, 0.36f, 0.36f, 0, focused ? WHITE : COL_ACCENT);
+	gfx::sprite(SHEET_SPRITES, sprites_arrow_idx, b.x + b.w - 11, cy, 0.36f, 0.36f, kPi, focused ? WHITE : COL_ACCENT);
+	orcFit(text, b.x + b.w * 0.5f, b.y + (b.h - 26.0f * textScale) * 0.5f - 1.0f, textScale, b.w - 28.0f, focused ? COL_ACCENT : COL_CREAM);
+}
+
+static void drawBossTestBottom() {
+	char buf[48];
+	drawMenuBack();
+	const int f = sFocus[SCREEN_BOSS_TEST];
+	gfx::text("BOSS TEST", 104, 5, 0.48f, COL_CREAM, ALIGN_CENTER);
+	{
+		const Button& ab = kBossTestBtns[13];
+		drawPlank(ab.x, ab.y, ab.w, ab.h, f == 13, sPressed == 13);
+		orcFit(gSave.artStyle == ART_3D ? "TAB: 3D" : "TAB: 2D", ab.x + ab.w * 0.5f, ab.y + 4.5f, 0.28f, ab.w - 10.0f, f == 13 ? COL_ACCENT : rgba(160, 235, 190));
+	}
+	drawBossTestSelector(kBossTestBtns[0], sBossTestUseRush ? "MODE: RUSH" : "MODE: ORCHARD", f == 0, sPressed == 0, 0.27f);
+	drawBossTestSelector(kBossTestBtns[1], sBossTestRoyal ? "TIER: ROYAL" : "TIER: REGULAR", f == 1, sPressed == 1, 0.27f);
+	snprintf(buf, sizeof buf, "DIFF: %s", kBossTestDiffs[sBossTestDiff]);
+	drawBossTestSelector(kBossTestBtns[2], buf, f == 2, sPressed == 2, 0.26f);
+	snprintf(buf, sizeof buf, "BUILD: %s", kBossTestPresets[sBossTestPreset]);
+	drawBossTestSelector(kBossTestBtns[3], buf, f == 3, sPressed == 3, 0.25f);
+
+	for (int bi = 0; bi < 4; bi++) {
+		const Button& b = kBossTestBtns[4 + bi];
+		const bool foc = f == 4 + bi;
+		const bool sel = sBossTestBoss == bi;
+		drawPlank(b.x, b.y, b.w, b.h, foc || sel, sPressed == 4 + bi);
+		gfx::sprite(SHEET_SPRITES, bossSprite(bi), b.x + 18, b.y + b.h * 0.5f, 0.23f, 0.23f);
+		orcFit(kBossTestShort[bi], b.x + 28 + (b.w - 34) * 0.5f, b.y + 7.5f, 0.26f, b.w - 38.0f, foc ? COL_ACCENT : (sel ? rgba(160, 235, 190) : COL_CREAM));
+	}
+	gfx::text("MILESTONE BOSSES (ROOM 25/50)", 160, 143, 0.27f, rgba(255, 160, 140), ALIGN_CENTER);
+	for (int mi = 0; mi < 3; mi++) {
+		const int bi = BOSS_DURIAN + mi;
+		const Button& b = kBossTestBtns[8 + mi];
+		const bool foc = f == 8 + mi;
+		const bool sel = sBossTestBoss == bi;
+		drawPlank(b.x, b.y, b.w, b.h, foc || sel, sPressed == 8 + mi);
+		gfx::sprite(SHEET_SPRITES, bossSprite(bi), b.x + b.w * 0.5f, b.y + 15.0f, 0.30f, 0.30f);
+		orcFit(kBossTestShort[bi], b.x + b.w * 0.5f, b.y + 30.0f, 0.24f, b.w - 14.0f, foc ? COL_ACCENT : (sel ? rgba(160, 235, 190) : rgba(255, 195, 175)));
+	}
+	{
+		const Button& fb = kBossTestBtns[11];
+		snprintf(buf, sizeof buf, "FIGHT %s", kBossTestShort[sBossTestBoss]);
+		drawPlank(fb.x, fb.y, fb.w, fb.h, f == 11, sPressed == 11);
+		orcFit(buf, fb.x + fb.w * 0.5f, fb.y + 7.0f, 0.28f, fb.w - 14.0f, f == 11 ? COL_ACCENT : COL_CREAM);
+		const Button& qb = kBossTestBtns[12];
+		drawPlank(qb.x, qb.y, qb.w, qb.h, f == 12, sPressed == 12);
+		orcFit("QUIT", qb.x + qb.w * 0.5f, qb.y + 7.0f, 0.28f, qb.w - 14.0f, f == 12 ? COL_ACCENT : rgba(255, 160, 150));
+	}
+}
+
+static void updateBossTest(const Input& in, bool wasTouching) {
+	int& f = sFocus[SCREEN_BOSS_TEST];
+	if (f < 0 || f >= 14) f = 4;
+	const int prevF = f;
+	int t = menuInput(kBossTestBtns, 14, SCREEN_BOSS_TEST, in, wasTouching, 0);
+	if (f != prevF && f >= 4 && f <= 10) sBossTestBoss = f - 4;
+	if (f >= 4 && f <= 10) sBossTestBoss = f - 4;
+	if (in.down & KEY_L) {
+		audio::click(0.6f);
+		if (f == 0) sBossTestUseRush = !sBossTestUseRush;
+		else if (f == 1) sBossTestRoyal = !sBossTestRoyal;
+		else if (f == 2) sBossTestDiff = (sBossTestDiff + DIFF_COUNT - 1) % DIFF_COUNT;
+		else if (f == 3) sBossTestPreset = (sBossTestPreset + 4) % 5;
+	}
+	if (in.down & KEY_R) {
+		audio::click(0.6f);
+		if (f == 0) sBossTestUseRush = !sBossTestUseRush;
+		else if (f == 1) sBossTestRoyal = !sBossTestRoyal;
+		else if (f == 2) sBossTestDiff = (sBossTestDiff + 1) % DIFF_COUNT;
+		else if (f == 3) sBossTestPreset = (sBossTestPreset + 1) % 5;
+	}
+	if (t < 0) return;
+	audio::click();
+	if (t == 0) sBossTestUseRush = !sBossTestUseRush;
+	else if (t == 1) sBossTestRoyal = !sBossTestRoyal;
+	else if (t == 2) sBossTestDiff = (sBossTestDiff + 1) % DIFF_COUNT;
+	else if (t == 3) sBossTestPreset = (sBossTestPreset + 1) % 5;
+	else if (t >= 4 && t <= 10) {
+		sBossTestBoss = t - 4;
+		fadeThen(startBossTestFight);
+	} else if (t == 11) {
+		fadeThen(startBossTestFight);
+	} else if (t == 12) {
+		sLeaving = true;
+	} else if (t == 13) {
+		gSave.artStyle = gSave.artStyle == ART_3D ? ART_2D : ART_3D;
+	}
+}
+#endif

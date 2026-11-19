@@ -41,7 +41,7 @@ static constexpr float kSlideTop = 900, kSlideBottom = 900;
 enum Screen {
 	SCREEN_LOADING, SCREEN_TITLE, SCREEN_MODES, SCREEN_OPTIONS, SCREEN_SECTION, SCREEN_CREDITS, SCREEN_HOWTO, SCREEN_GUIDES, SCREEN_SHOP,
 	SCREEN_JOURNAL, SCREEN_STATS, SCREEN_BEAT, SCREEN_BEATTOOL, SCREEN_UPDATE,
-	SCREEN_GAME, SCREEN_PAUSE, SCREEN_RESULT, SCREEN_BENCH, SCREEN_PASS_TURN, SCREEN_PASS_BOARD, SCREEN_LATENCY, SCREEN_COUNT
+	SCREEN_GAME, SCREEN_PAUSE, SCREEN_RESULT, SCREEN_BENCH, SCREEN_PASS_TURN, SCREEN_PASS_BOARD, SCREEN_LATENCY, SCREEN_BOSS_TEST, SCREEN_COUNT
 };
 
 static Screen sScreen = SCREEN_LOADING;
@@ -50,6 +50,15 @@ static Game sGame;  // static storage: all gameplay pools are allocated once at 
 static Blade sBlade;
 static int sFocus[SCREEN_COUNT];
 static int sPressed = -1;
+static bool sLeaving = false;
+#if defined(DEV_TOOLS) && defined(BOSS_TEST_APP)
+bool gBossTestDone = false;
+static bool sBossTestUseRush = false;
+static bool sBossTestRoyal = false;
+static int sBossTestDiff = DIFF_NORMAL;
+static int sBossTestPreset = 0;
+static int sBossTestBoss = BOSS_MELON;
+#endif
 static bool sShowDebug = false;
 static bool sSuspended = false;
 static bool sNoSound = false;
@@ -544,6 +553,10 @@ static const Button kPauseSign = {2, kFieldTop + 5, 36, 36, nullptr};  // in fie
 static const Button kInvSign = {40, kFieldTop + 5, 36, 36, nullptr};   // mobile: opens Inventory in Orchard Blast
 #endif
 static const Button kPauseButtons[] = {kBack, {50, 44, 220, 56, "Resume"}, {50, 108, 220, 56, "Options"}, {50, 172, 220, 56, "Main Menu"}};
+static const Button kPauseOrchardButtons[] = {kBack, {50, 38, 220, 44, "Resume"}, {50, 88, 220, 44, "Options"}, {50, 138, 220, 44, "Start Over"}, {50, 188, 220, 44, "Main Menu"}};
+static const Button kStartOverConfirmBtns[2] = {{54, 144, 96, 32, "Yes"}, {170, 144, 96, 32, "No"}};
+static bool sPauseStartOverConfirm = false;
+static int sPauseConfirmFocus = 1;
 
 static bool hit(const Button& b, int x, int y) {
 #if PORT_PAUSE_BUTTON
@@ -630,7 +643,7 @@ static int fruitFor(const char* label) {
 		{"StreetPass", MF_MELON}, {"Enable", MF_MELON}, {"Not Now", MF_APPLE}, {"Challenge", MF_MELON},
 		{"Top 10", MF_GOLD}, {"Summary", MF_PEAR},
 		{"Yes", MF_MELON}, {"No", MF_APPLE}, {"Update Now", MF_GOLD}, {"Install Now", MF_GOLD},
-		{"Later", MF_ORANGE}, {"Restart", MF_PINEAPPLE}, {"Close", MF_PEAR}, {"OK", MF_PEACH},
+		{"Later", MF_ORANGE}, {"Restart", MF_PINEAPPLE}, {"Start Over", MF_PINEAPPLE}, {"Close", MF_PEAR}, {"OK", MF_PEACH},
 	};
 	if (!label) return MF_BERRY;
 	for (const auto& m : kMap)
@@ -1258,6 +1271,11 @@ static const char* const kTrackRowNames[kTrackCount + 1] = {
 #define SHOP_TRACK(name, ...) name,
 #include "shop_items.inc"
 };
+static const char* const kBossTrackRowNames[kTrackCount + 2] = {
+	"Off", "Auto", "Orchard Morning", "Picnic Stroll", "Sleepy Meadow", "Lantern Walk", "Still Water", "Moss Garden", "Bamboo Breeze", "Drifting Clouds",
+#define SHOP_TRACK(name, ...) name,
+#include "shop_items.inc"
+};
 
 // Pass and Play: 2 to 4 people take one run each on the same device, and the highest score wins.
 static constexpr int kPassMax = 4, kPassNameLen = 10;
@@ -1270,7 +1288,14 @@ static u32 sPassScores[kPassMax];
 static int sPassTurn = -1;    // whose run it is, or -1 when nobody is playing Pass and Play
 static int sPassTyping = -1;  // the player whose name is being typed
 static bool sSpTypingMsg = false;  // typing the StreetPass greeting message in Options
-static int sStatsTab = 0;          // 0 Personal, 1 StreetPass (PORT_3DS)
+static int sStatsTab = 0;          // 0 Personal, 1 StreetPass (3DS) / Global (Univ), 2 Global (3DS)
+static int sGlobalModeIdx = 0;     // selected gamemode tab in Stats -> Global
+static int sGlobalScroll = 0;      // vertical scroll index in Stats -> Global Top 100
+static int sGlobalTabScroll = 0;   // horizontal scroll index of clickable gamemode tabs
+static bool sGlobalDragging = false;
+static int sGlobalDragY = 0;
+static bool sGlobalMoved = false;
+static int sSpMetric = 0;          // 3DS StreetPass metric toggle via ZL/ZR (0 Classic, 1 Orchard Room)
 static int sSpStatSel = 0;         // highlighted inbox player in Stats -> StreetPass
 static int sSpStatScroll = 0;
 static int sSpModal = 0;           // 0 none, 1 startup Enable StreetPass prompt, 2 incoming tag challenge
@@ -1342,9 +1367,9 @@ static Row kAudioRows[] = {  // not const: Menu and Game Music grow with the Cus
 	{ROW_SLIDER, "Sound Effects", &gSave.sfx, 0, 100, nullptr, 0, 100, ACT_NONE, "Slices, combos and bombs.", ""},
 	{ROW_SLIDER, "Music", &gSave.music, 0, 100, nullptr, 0, 100, ACT_NONE, "Menu and game music.", ""},
 	{ROW_SLIDER, "Menu Sounds", &gSave.menuSfx, 0, 100, nullptr, 0, 100, ACT_NONE, "The tap when you press a sign.", ""},
-	{ROW_CHOICE, "Menu Music", &gSave.menuTrack, 0, kTrackCount, kTrackRowNames, 0, 0, ACT_NONE, "What plays in the menus. Auto", "shuffles every track you own."},
-	{ROW_CHOICE, "Game Music", &gSave.gameTrack, 0, kTrackCount, kTrackRowNames, 0, 0, ACT_NONE, "What plays during a game. Auto", "shuffles them; Zen keeps it calm."},
-	{ROW_CHOICE, "Boss Music", &gSave.bossMusic, 0, 1, kOffOn, 0, 0, ACT_NONE, "Boss fights get their own music.", "Off keeps your music playing."},
+	{ROW_CHOICE, "Menu Music", &gSave.menuTrack, 0, kTrackCount, kTrackRowNames, 0, 0, ACT_NONE, "What plays in the menus. Auto", "shuffles every regular or custom song."},
+	{ROW_CHOICE, "Game Music", &gSave.gameTrack, 0, kTrackCount, kTrackRowNames, 0, 0, ACT_NONE, "What plays during a game. Auto", "shuffles regular/custom; Zen stays calm."},
+	{ROW_CHOICE, "Boss Music", &gSave.bossMusic, 0, kTrackCount + 1, kBossTrackRowNames, 0, 0, ACT_NONE, "Auto unlocks and shuffles owned", "boss tracks, or pick a boss/custom song."},
 	{ROW_ACTION, "Latency Test", nullptr, 0, 0, nullptr, 0, 0, ACT_LATENCY, "Slice in time with a metronome", "to set Beat Timing for you."},
 	{ROW_SLIDER, "Beat Timing", &gSave.beatLatency, 0, 200, nullptr, 0, 0, ACT_NONE, "Moves the Beat Slice beat. Raise it", "if your slices land late."},
 	{ROW_ACTION, "Reset Audio", nullptr, 0, 0, nullptr, 0, 0, ACT_RESET_AUDIO, "Puts these back to their defaults.", ""},
@@ -1642,15 +1667,19 @@ static void refreshResolutions() {
 }
 #endif
 
-// Menu and Game Music list the game's tracks, then every song in the Custom Music folder.
+// Menu, Game and Boss Music grow dynamically with the Custom Music folder.
 static void refreshMusicRows() {
 #if PORT_CUSTOM_MUSIC
 	custom::scan();  // songs added since last time
-	for (Row& r : kAudioRows)
+	for (Row& r : kAudioRows) {
 		if (r.value == &gSave.menuTrack || r.value == &gSave.gameTrack) {
 			r.hi = (u8)(kTrackCount + custom::count());
 			if (*r.value > r.hi) r.hi = *r.value;  // a song that left the folder stays chosen until it's changed
+		} else if (r.value == &gSave.bossMusic) {
+			r.hi = (u8)(1 + kTrackCount + custom::count());
+			if (*r.value > r.hi) r.hi = *r.value;
 		}
+	}
 #endif
 }
 
@@ -1672,6 +1701,15 @@ static void rowValueText(const Row& r, char* buf, size_t size) {
 		if ((r.value == &gSave.menuTrack || r.value == &gSave.gameTrack) && *r.value > kTrackCount) {
 #if PORT_CUSTOM_MUSIC
 			const int song = *r.value - 1 - kTrackCount;
+			snprintf(buf, size, "%s", song < custom::count() ? custom::name(song) : "Song not found");
+#else
+			snprintf(buf, size, "Auto");
+#endif
+			return;
+		}
+		if (r.value == &gSave.bossMusic && *r.value >= 2 + kTrackCount) {
+#if PORT_CUSTOM_MUSIC
+			const int song = *r.value - 2 - kTrackCount;
 			snprintf(buf, size, "%s", song < custom::count() ? custom::name(song) : "Song not found");
 #else
 			snprintf(buf, size, "Auto");
@@ -1713,7 +1751,9 @@ static void changedSetting(const Row& r) {
 	sDirty = true;
 	if (r.value == &gSave.music) audio::refreshVolumes();
 	if (r.value == &gSave.bossMusic && sOptionsFromPause && sGame.orchardLike() && sGame.orc.boss.on && !sGame.orc.boss.beaten) {
-		if (gSave.bossMusic) audio::bossMusic(sGame.orc.boss.track);
+		const int tr = bossMusicResolve(sGame.orc.boss.id, gRng.next());
+		sGame.orc.boss.track = (s8)(tr >= 0 ? tr : -1);
+		if (gSave.bossMusic && tr >= 0 && tr < audio::trackCount()) audio::bossMusic(tr);
 		else audio::bossMusicEnd();
 	}
 	if (r.value == &gSave.mixer[MIX_GIANT] && *r.value) gSave.mixer[MIX_TINY] = 0;
@@ -1741,7 +1781,8 @@ static void changedSetting(const Row& r) {
 static bool choiceLocked(const Row& r, int v) {
 	if (r.value == &gSave.board) return !boardUnlocked(v);
 	if (r.value == &gSave.trail) return !trailUnlocked(v);
-	if (r.value == &gSave.menuTrack || r.value == &gSave.gameTrack) return v > 0 && v <= kTrackCount && !trackUnlocked(v - 1);
+	if (r.value == &gSave.menuTrack || r.value == &gSave.gameTrack) return v > 0 && v <= kTrackCount && (!trackUnlocked(v - 1) || trackBoss(v - 1) >= 0);
+	if (r.value == &gSave.bossMusic) return v >= 2 && v <= kTrackCount + 1 && (trackBoss(v - 2) < 0 || !trackUnlocked(v - 2));
 	return false;
 }
 
@@ -1951,6 +1992,7 @@ static constexpr float kShopWindowTop = kShopTop - 2, kShopWindowH = kShopRowsSh
 static int sShopTab, sShopItem;
 static RowScroller sShopList;
 static u8 sKeep[SHOP_TABS];  // the real choices, while the item in focus is being tried on
+static u8 sKeepBossMusic;
 static float sShopArmT;    // a Buy press waits this long for the second press that confirms it
 static float sShopNoteT;
 static const char* sShopNote = "";
@@ -1970,14 +2012,17 @@ static int shopHiddenRows(int tab) { return (shopCount(tab) + kShopCols - 1) / k
 
 static void shopRemember() {
 	for (int t = 0; t < SHOP_TABS; t++) sKeep[t] = *shopSlot(t);
+	sKeepBossMusic = gSave.bossMusic;
 }
 
 static void shopPutBack() {
 	for (int t = 0; t < SHOP_TABS; t++) *shopSlot(t) = sKeep[t];
+	gSave.bossMusic = sKeepBossMusic;
 }
 
-// A song is in use once it is both the Menu and the Game Music.
+// A song is in use once it is both the Menu and the Game Music (or selected as Boss Music if it's a boss track).
 static bool shopInUse(int tab, int item) {
+	if (tab == SHOP_MUSIC && trackBoss(kBaseTracks + item) >= 0) return sKeepBossMusic == (u8)(2 + kBaseTracks + item);
 	const int v = shopValue(tab, item);
 	return sKeep[tab] == v && (tab != SHOP_MUSIC || gSave.gameTrack == v);
 }
@@ -2072,18 +2117,28 @@ static void shopEquipNow() {
 	shopTryOn();
 	shopSave();
 	if (sShopTab == SHOP_MUSIC) {
-		// In use now: it plays on in full, even if its preview had already given way.
-		shopPreviewStop();
-		audio::preview(MUSIC_MENU);
+		// Regular songs play on in full; Boss tracks set Boss Music and return Shop audio cleanly.
+		if (trackBoss(kBaseTracks + sShopItem) < 0) {
+			shopPreviewStop();
+			audio::preview(MUSIC_MENU);
+		}
 	}
 }
 
-static const char* bossName(int boss) { return boss == 0 ? "The Big Melon" : "The Bomb King"; }
+static const char* bossName(int boss) {
+	switch (boss) {
+		case 0: return "The Big Melon";
+		case 1: return "The Bomb King";
+		case 2: return "The Pineapple Guard";
+		case 3: return "The Inferno Pepper";
+		default: return "Milestone Bosses";
+	}
+}
 
-// "Discover fighting The Big Melon", for a locked boss track.
+// "Discover beating The Big Melon", for a locked boss track.
 static const char* shopUnlockLine(int item) {
 	static char line[48];
-	snprintf(line, sizeof line, "Discover fighting %s", bossName(trackBoss(kBaseTracks + item)));
+	snprintf(line, sizeof line, "Discover beating %s", bossName(trackBoss(kBaseTracks + item)));
 	return line;
 }
 
@@ -2278,14 +2333,14 @@ static void drawShopIcon(int tab, int item, float cx, float cy) {
 		gfx::sprite(SHEET_SPRITES, sprites_drop_idx, cx + 2, cy - 4, 2.2f, 2.2f, 0, c);
 		gfx::sprite(SHEET_SPRITES, sprites_drop_idx, cx + 14, cy + 4, 1.1f, 1.1f, -0.5f, c);
 	} else {
-		// Two beamed notes.
+		// Two beamed notes, compact enough to clear two-line tile names cleanly.
 		u32 c = COL_CREAM;
-		gfx::rect(cx - 10, cy - 10, 3, 16, c);
-		gfx::rect(cx + 8, cy - 12, 3, 16, c);
-		gfx::tri(cx - 10, cy - 10, c, cx + 11, cy - 12, c, cx + 11, cy - 8, c);
-		gfx::tri(cx - 10, cy - 10, c, cx + 11, cy - 8, c, cx - 10, cy - 6, c);
-		gfx::rect(cx - 16, cy + 3, 8, 6, c);
-		gfx::rect(cx + 2, cy + 1, 8, 6, c);
+		gfx::rect(cx - 8, cy - 6.0f, 2.5f, 10.0f, c);
+		gfx::rect(cx + 5, cy - 7.5f, 2.5f, 10.0f, c);
+		gfx::tri(cx - 8, cy - 6.0f, c, cx + 7.5f, cy - 7.5f, c, cx + 7.5f, cy - 4.5f, c);
+		gfx::tri(cx - 8, cy - 6.0f, c, cx + 7.5f, cy - 4.5f, c, cx - 8, cy - 3.0f, c);
+		gfx::rect(cx - 12.5f, cy + 2.0f, 6.5f, 4.5f, c);
+		gfx::rect(cx + 0.5f, cy + 0.5f, 6.5f, 4.5f, c);
 	}
 }
 
@@ -2314,18 +2369,28 @@ static void drawShop() {
 		if (!sel && f == kShopTile0 + k) gfx::sign(sprites_plank_focus_idx, b.x - 2, b.y - 2 + (pressed ? 2 : 0), b.w + 4, b.h + 4, withAlpha(COL_CREAM, 0.5f));
 		const ShopItem& it = shopItem(sShopTab, k);
 		const bool locked = shopLocked(sShopTab, k);
+		const bool isBossSong = sShopTab == SHOP_MUSIC && trackBoss(kBaseTracks + k) >= 0;
 		// A name too long for one line goes on two, so it stays as big as its neighbours. The icon moves up for it.
 		char top[32], bottom[32];
 		const bool two = splitLine(locked ? "Boss Track" : it.name, 0.32f, b.w - 8, top, bottom, sizeof top);
-		if (locked) drawPadlock(b.x + b.w / 2, b.y + (two ? 12 : 16), two ? 0.72f : 0.8f);
-		else drawShopIcon(sShopTab, k, b.x + b.w / 2, b.y + (two ? 10 : 14));
+		if (locked) {
+			drawPadlock(b.x + b.w / 2, b.y + (two ? 12 : 16), two ? 0.72f : 0.8f);
+			if (isBossSong) gfx::sprite(SHEET_SPRITES, sprites_ic_skull_idx, b.x + b.w - 13, b.y + 11, 0.44f, 0.44f);
+		} else {
+			if (isBossSong) {
+				drawShopIcon(sShopTab, k, b.x + b.w / 2 - 9, b.y + (two ? 11.0f : 14.0f));
+				gfx::sprite(SHEET_SPRITES, sprites_ic_skull_idx, b.x + b.w / 2 + 14, b.y + (two ? 11.0f : 14.0f), 0.42f, 0.42f);
+			} else {
+				drawShopIcon(sShopTab, k, b.x + b.w / 2, b.y + (two ? 11.0f : 14.0f));
+			}
+		}
 		if (two) {
-			fitText(top, b.x + b.w / 2, b.y + 18.0f, 0.29f, b.w - 8, COL_CREAM);
-			fitText(bottom, b.x + b.w / 2, b.y + 28.0f, 0.29f, b.w - 8, COL_CREAM);
+			fitText(top, b.x + b.w / 2, b.y + 19.0f, 0.28f, b.w - 8, COL_CREAM);
+			fitText(bottom, b.x + b.w / 2, b.y + 29.0f, 0.28f, b.w - 8, COL_CREAM);
 		} else {
 			fitText(locked ? "Boss Track" : it.name, b.x + b.w / 2, b.y + 25.0f, 0.33f, b.w - 8, COL_CREAM);
 		}
-		const float priceY = b.y + 39.5f;
+		const float priceY = b.y + (two ? 40.5f : 39.5f);
 		if (locked) {
 			gfx::text("LOCKED", b.x + b.w / 2, priceY, 0.30f, COL_DIM, ALIGN_CENTER);
 		} else if (shopInUse(sShopTab, k)) {
@@ -2361,11 +2426,12 @@ static void drawShopPreview() {
 	const ShopItem& it = shopItem(sShopTab, sShopItem);
 	gfx::setDepth(0.7f);
 	if (shopLocked(sShopTab, sShopItem)) {
+		gfx::sprite(SHEET_SPRITES, sprites_ic_skull_idx, 96, 28, 0.65f, 0.65f);
 		gfx::text("Locked Boss Track", 200, 20, 0.58f, COL_ACCENT, ALIGN_CENTER);
 		gfx::text(shopUnlockLine(sShopItem), 200, 46, 0.36f, COL_CREAM, ALIGN_CENTER);
 		gfx::setDepth(0.5f);
 		drawPadlock(200, 110, 2.0f);
-		fitText("Its music stays a surprise until then.", 200, 150, 0.38f, 304, COL_DIM);
+		fitText("Beat its boss to unlock in Shop. Restricted to Boss Music.", 200, 150, 0.35f, 316, COL_DIM);
 		if (sShopNoteT > 0) gfx::text(sShopNote, 200, 192, 0.40f, withAlpha(COL_CREAM, clampf(sShopNoteT * 2, 0, 1)), ALIGN_CENTER);
 		return;
 	}
@@ -2381,11 +2447,18 @@ static void drawShopPreview() {
 		gfx::setDepth(0.5f);
 		drawShopIcon(sShopTab, sShopItem, 200, 114);
 	} else {
-		const char* now = shopInUse(sShopTab, sShopItem) ? "Playing in the menus and in games"
-		                  : sPreviewOver ? "Preview over, your music is back"
-		                  : sPreviewT >= 0 ? "Now playing as a preview" : "Your Menu Music, not your Game Music.";
+		const bool isBossSong = trackBoss(kBaseTracks + sShopItem) >= 0;
+		if (isBossSong) gfx::sprite(SHEET_SPRITES, sprites_ic_skull_idx, 200, 82, 0.72f, 0.72f);
+		const char* now = isBossSong
+		                  ? (shopInUse(sShopTab, sShopItem) ? "Selected as Boss Music"
+		                     : sPreviewOver ? "Preview over, your music is back"
+		                     : sPreviewT >= 0 ? "Previewing boss track" : "Restricted to Boss Music.")
+		                  : (shopInUse(sShopTab, sShopItem) ? "Playing in the menus and in games"
+		                     : sPreviewOver ? "Preview over, your music is back"
+		                     : sPreviewT >= 0 ? "Now playing as a preview" : "Your Menu Music, not your Game Music.");
 		fitText(now, 200, 108, 0.38f, 310, COL_DIM);
-		if (!shopInUse(sShopTab, sShopItem)) fitText("Use it for the Menu and Game Music.", 200, 129, 0.38f, 310, COL_DIM);
+		if (!shopInUse(sShopTab, sShopItem))
+			fitText(isBossSong ? "Boss fights only. Use to set Boss Music." : "Use it for the Menu and Game Music.", 200, 129, 0.38f, 310, COL_DIM);
 	}
 	// What the item costs against the purse, or that it is already yours.
 	char buf[48];
@@ -3352,9 +3425,9 @@ static void drawJournalBossTop(int boss) {
 		"ORCHARD BLAST & BOSS RUSH",
 		"ORCHARD BLAST & BOSS RUSH",
 		"ORCHARD BLAST & BOSS RUSH",
-		"ORCHARD ROOM 50+ & BOSS RUSH",
-		"ORCHARD ROOM 50+ & BOSS RUSH",
-		"ORCHARD ROOM 50+ & BOSS RUSH",
+		"ORCHARD ROOM 25+ & BOSS RUSH",
+		"ORCHARD ROOM 25+ & BOSS RUSH",
+		"ORCHARD ROOM 25+ & BOSS RUSH",
 	};
 	gfx::text(boss >= 0 && boss < BOSS_COUNT ? kBossWhere[boss] : "ORCHARD BLAST", 200, 94, 0.38f, COL_CREAM, ALIGN_CENTER);
 	const u32 wins = gSave.bossWins[boss];
@@ -3365,7 +3438,7 @@ static void drawJournalBossTop(int boss) {
 		"Fires cannonballs and lights its fuse. Snuff the fuse in three swipes.",
 		"Keeps its spiny guard up. Knock lobbed bombs back into it!",
 		"Rains embers and triggers Heat Surges that speed up combat.",
-		"Launches armored thorn volleys and dust quakes every 50 rooms.",
+		"Launches armored thorn volleys and dust quakes every 25 rooms.",
 		"Fires crisscrossing sour zest barrages at blistering speed.",
 		"Pokes out hungry worms. Slice or tap them before they lunge!",
 	};
@@ -3454,8 +3527,44 @@ static int statsRoomsConquered() {
 	return (int)gSave.endlessBestRoom > legClamped ? (int)gSave.endlessBestRoom : legClamped;
 }
 
-static const Button kStatsTabs[] = {{16, 42, 138, 20, "Personal"}, {166, 42, 138, 20, "StreetPass"}};
+#if PORT_3DS
+static const Button kStatsTabs[] = {{12, 42, 94, 18, "Personal"}, {113, 42, 94, 18, "StreetPass"}, {214, 42, 94, 18, "Global"}};
+static constexpr int kStatsTabCount = 3, kStatsGlobalTab = 2;
+#else
+static const Button kStatsTabs[] = {{16, 42, 138, 18, "Personal"}, {166, 42, 138, 18, "Global"}};
+static constexpr int kStatsTabCount = 2, kStatsGlobalTab = 1;
+#endif
 static const Button kSpChallengeBtn = {90, 200, 140, 34, "Challenge"};
+static constexpr Mode kGlobalModes[] = {
+	MODE_CLASSIC, MODE_ARCADE, MODE_FRENZY, MODE_ZEN, MODE_SUDDEN, MODE_MINEFIELD,
+	MODE_COMBO, MODE_DAILY, MODE_BEAT, MODE_ORCHARD, MODE_BOSSRUSH, MODE_RECIPE, MODE_SHARP, MODE_JUGGLE
+};
+static constexpr int kGlobalModeCount = sizeof kGlobalModes / sizeof kGlobalModes[0];
+static constexpr int kGlobalTabsVis = 4, kGlobalRowsVis = 8;
+static const Button kGlobalModeArrows[2] = {{8, 62, 16, 17, "<"}, {296, 62, 16, 17, ">"}};
+
+static const char* lbShortPlatform(const char* p);
+
+static Button globalModeTabRect(int col) {
+	return {26.0f + col * 67.0f, 62.0f, 65.0f, 17.0f, nullptr};
+}
+
+static void statsSelectGlobalMode(int idx) {
+	sGlobalModeIdx = (idx % kGlobalModeCount + kGlobalModeCount) % kGlobalModeCount;
+	if (sGlobalModeIdx < sGlobalTabScroll) sGlobalTabScroll = sGlobalModeIdx;
+	if (sGlobalModeIdx >= sGlobalTabScroll + kGlobalTabsVis) sGlobalTabScroll = sGlobalModeIdx - kGlobalTabsVis + 1;
+	if (sGlobalTabScroll > kGlobalModeCount - kGlobalTabsVis) sGlobalTabScroll = kGlobalModeCount - kGlobalTabsVis;
+	if (sGlobalTabScroll < 0) sGlobalTabScroll = 0;
+	sGlobalScroll = 0;
+	lb::clearView();
+	lb::fetch(kGlobalModes[sGlobalModeIdx], false, false, 100);
+}
+
+static void statsSwitchTab(int next) {
+	sStatsTab = (next % kStatsTabCount + kStatsTabCount) % kStatsTabCount;
+	sFocus[SCREEN_STATS] = 0;
+	if (sStatsTab == kStatsGlobalTab) statsSelectGlobalMode(sGlobalModeIdx);
+}
 
 static void launchSpChallenge(int idx) {
 	if (idx < 0 || idx >= streetpass::count()) return;
@@ -3472,15 +3581,15 @@ static void launchSpChallenge(int idx) {
 	sGame.startStreetPassChallenge(tagIdx, rival, target);
 }
 
-// Stats: the long view of everything played (and on 3DS, a StreetPass inbox tab).
+// Stats: Personal overview, 3DS StreetPass rivals, and Global Top 100 leaderboards.
 static void drawStats() {
 	drawHeader("Stats");
 	drawBackArrow(sFocus[SCREEN_STATS] == 0, sPressed == 0);
-#if PORT_3DS
-	for (int t = 0; t < 2; t++) {
+	for (int t = 0; t < kStatsTabCount; t++) {
 		drawPlank(kStatsTabs[t].x, kStatsTabs[t].y, kStatsTabs[t].w, kStatsTabs[t].h, sStatsTab == t, false);
-		gfx::text(kStatsTabs[t].label, kStatsTabs[t].x + kStatsTabs[t].w * 0.5f, kStatsTabs[t].y + 3, 0.34f, sStatsTab == t ? COL_ACCENT : COL_CREAM, ALIGN_CENTER);
+		fitText(kStatsTabs[t].label, kStatsTabs[t].x + kStatsTabs[t].w * 0.5f, kStatsTabs[t].y + 3, 0.31f, kStatsTabs[t].w - 8, sStatsTab == t ? COL_ACCENT : COL_CREAM);
 	}
+#if PORT_3DS
 	if (sStatsTab == 1) {
 		const int cnt = streetpass::count();
 		if (cnt == 0) {
@@ -3497,19 +3606,88 @@ static void drawStats() {
 		for (int row = 0; row < 4 && sSpStatScroll + row < cnt; row++) {
 			const int idx = sSpStatScroll + row;
 			const streetpass::Entry& e = streetpass::entry(idx);
-			const float y = 68.0f + row * 32.0f;
+			const float y = 66.0f + row * 32.0f;
 			drawPlank(8, y, 304, 29, idx == sSpStatSel, false);
 			snprintf(line, sizeof line, "%s%s", e.pkt.name, e.won ? "  *WON" : "");
-			fitText(line, 18, y + 4, 0.34f, 180, e.won ? rgba(160, 240, 170) : COL_CREAM, ALIGN_LEFT);
-			snprintf(line, sizeof line, "CLASSIC %lu", (unsigned long)e.pkt.classicBest);
-			gfx::text(line, 302, y + 4, 0.31f, COL_ACCENT, ALIGN_RIGHT);
+			fitText(line, 18, y + 4, 0.34f, 175, e.won ? rgba(160, 240, 170) : COL_CREAM, ALIGN_LEFT);
+			if (sSpMetric == 0) snprintf(line, sizeof line, "CLASSIC %lu", (unsigned long)e.pkt.classicBest);
+			else snprintf(line, sizeof line, "ORCHARD RM %u", (unsigned)e.pkt.endlessBestRoom);
+			gfx::text(line, 302, y + 4, 0.30f, COL_ACCENT, ALIGN_RIGHT);
 			fitText(e.pkt.msg, 18, y + 17, 0.27f, 280, COL_DIM, ALIGN_LEFT);
 		}
 		drawSign(kSpChallengeBtn, "Challenge", sFocus[SCREEN_STATS] == 1, sPressed == 1, 0.44f, -1, MF_MELON);
 		return;
 	}
 #endif
-	const float boxY = PORT_3DS ? 68.0f : 48.0f, boxH = PORT_3DS ? 166.0f : 186.0f;
+	if (sStatsTab == kStatsGlobalTab) {
+		for (int a = 0; a < 2; a++) {
+			drawPlank(kGlobalModeArrows[a].x, kGlobalModeArrows[a].y, kGlobalModeArrows[a].w, kGlobalModeArrows[a].h, false, false);
+			gfx::text(kGlobalModeArrows[a].label, kGlobalModeArrows[a].x + kGlobalModeArrows[a].w * 0.5f, kGlobalModeArrows[a].y + 2, 0.30f, COL_CREAM, ALIGN_CENTER);
+		}
+		for (int col = 0; col < kGlobalTabsVis && sGlobalTabScroll + col < kGlobalModeCount; col++) {
+			const int mi = sGlobalTabScroll + col;
+			const Mode m = kGlobalModes[mi];
+			const Button b = globalModeTabRect(col);
+			const bool sel = mi == sGlobalModeIdx;
+			drawPlank(b.x, b.y, b.w, b.h, sel, false);
+			fitText(kModes[m].name, b.x + b.w * 0.5f, b.y + 3.5f, 0.26f, b.w - 6, sel ? COL_ACCENT : COL_CREAM);
+		}
+		gfx::sign(sprites_plank_idx, 8, 82, 304, 152, COL_PLANK);
+		const lb::BoardView& v = lb::view();
+		const Mode curMode = kGlobalModes[sGlobalModeIdx];
+		char buf[72];
+		if (v.status == lb::STATUS_LOADING || v.status == lb::STATUS_IDLE) {
+			gfx::text("Loading Top 100...", 160, 138, 0.38f, COL_CREAM, ALIGN_CENTER);
+		} else if (v.status != lb::STATUS_READY) {
+			gfx::text("Leaderboard offline or unreachable.", 160, 130, 0.35f, COL_CREAM, ALIGN_CENTER);
+			gfx::text("Check internet connection and try again.", 160, 150, 0.29f, COL_DIM, ALIGN_CENTER);
+		} else if (v.count == 0) {
+			gfx::text("No scores uploaded yet!", 160, 138, 0.38f, COL_CREAM, ALIGN_CENTER);
+		} else {
+			const int maxScroll = v.count > kGlobalRowsVis ? v.count - kGlobalRowsVis : 0;
+			if (sGlobalScroll > maxScroll) sGlobalScroll = maxScroll;
+			if (sGlobalScroll < 0) sGlobalScroll = 0;
+			char myPid[24];
+			lb::formatPlayerId(gSave.leaderboardId, myPid, sizeof myPid);
+			gfx::setClip(14, 86, 292, 114);
+			for (int row = 0; row < kGlobalRowsVis && sGlobalScroll + row < v.count; row++) {
+				const int i = sGlobalScroll + row;
+				const lb::Entry& e = v.entries[i];
+				const float ry = 88.0f + row * 14.0f;
+				const bool isYou = e.playerId[0] && strcmp(e.playerId, myPid) == 0;
+				const u32 col = isYou ? COL_ACCENT : COL_CREAM;
+				if (isYou) gfx::rect(16, ry - 1, 282, 13, withAlpha(COL_ACCENT, 0.14f));
+				snprintf(buf, sizeof buf, "%3d. %s", i + 1, e.name);
+				gfx::text(buf, 18, ry, 0.29f, col);
+				snprintf(buf, sizeof buf, "(%s)", lbShortPlatform(e.platform));
+				gfx::text(buf, 188, ry + 0.5f, 0.26f, COL_DIM);
+				snprintf(buf, sizeof buf, "%lu", (unsigned long)e.score);
+				gfx::text(buf, 292, ry, 0.29f, col, ALIGN_RIGHT);
+			}
+			gfx::clearClip();
+			if (v.count > kGlobalRowsVis) {
+				const float trackH = 110.0f;
+				const float barH = fmaxf(14.0f, trackH * kGlobalRowsVis / v.count);
+				const float barY = 88.0f + (trackH - barH) * (maxScroll > 0 ? (float)sGlobalScroll / maxScroll : 0.0f);
+				gfx::rect(300, 88, 3, trackH, rgba(0, 0, 0, 80));
+				gfx::rect(300, barY, 3, barH, COL_ACCENT);
+			}
+		}
+		gfx::rect(16, 203, 288, 1, withAlpha(COL_DIM, 0.35f));
+		const u32 myBest = gSave.best[curMode];
+		if (v.status == lb::STATUS_READY && v.yourRank > 0) {
+			snprintf(buf, sizeof buf, "YOU: RANK %d OF %d   BEST %lu", v.yourRank, v.total > 0 ? v.total : v.yourRank, (unsigned long)v.yourScore);
+			fitText(buf, 160, 211, 0.30f, 284, COL_ACCENT);
+		} else if (!gSave.leaderboardName[0]) {
+			snprintf(buf, sizeof buf, "YOUR BEST: %lu   (SET NAME ON NEXT BEST)", (unsigned long)myBest);
+			fitText(buf, 160, 211, 0.28f, 284, COL_DIM);
+		} else {
+			snprintf(buf, sizeof buf, "YOUR BEST: %lu   (BEAT YOUR BEST TO RANK!)", (unsigned long)myBest);
+			fitText(buf, 160, 211, 0.28f, 284, COL_DIM);
+		}
+		return;
+	}
+	const float boxY = 66.0f, boxH = 168.0f;
 	gfx::sign(sprites_plank_idx, 8, boxY, 304, boxH, COL_PLANK);
 	constexpr int kRows = 11;
 	char value[kRows][32];
@@ -3536,18 +3714,18 @@ static void drawStats() {
 	else snprintf(value[10], 32, "Not cleared yet");
 	static const char* const kNames[kRows] = {"FRUIT SLICED", "COINS EARNED", "TIME PLAYED", "FAVOURITE MODE", "LONGEST COMBO", "DAILY STREAK",
 	                                          "BEST ROOM", "RUNS", "BEST LEVEL", "BOSS WINS", "FASTEST BOSS RUSH"};
-	const float rowStep = PORT_3DS ? 13.0f : 14.5f;
-	const float headGap = PORT_3DS ? 10.0f : 11.0f;
-	const float yBase = PORT_3DS ? 71.0f : 52.0f;
+	const float rowStep = 13.0f;
+	const float headGap = 10.0f;
+	const float yBase = 69.0f;
 	for (int i = 0; i < kRows; i++) {
 		// The Orchard Blast rows sit under their own heading.
 		const float y = yBase + i * rowStep + (i >= 6 ? headGap : 0);
 		if (i == 6) gfx::text("ORCHARD BLAST", 160, y - headGap - 1, 0.32f, COL_ACCENT, ALIGN_CENTER);
-		float sv = PORT_3DS ? 0.33f : 0.36f, w = gfx::textWidth(value[i], sv);
+		float sv = 0.33f, w = gfx::textWidth(value[i], sv);
 		if (w > 130) sv *= 130 / w;
 		const float valW = gfx::textWidth(value[i], sv);
 		const float nameMax = 296 - valW - 24 - 8;
-		float nl = PORT_3DS ? 0.30f : 0.33f, nw = gfx::textWidth(kNames[i], nl);
+		float nl = 0.30f, nw = gfx::textWidth(kNames[i], nl);
 		if (nw > nameMax) nl *= nameMax / nw;
 		gfx::text(kNames[i], 24, y + 1, nl, COL_DIM);
 		gfx::text(value[i], 296, y, sv, COL_CREAM, ALIGN_RIGHT);
@@ -3555,7 +3733,7 @@ static void drawStats() {
 }
 
 static void drawStatsTop() {
-	char buf[64];
+	char buf[72];
 	gfx::setDepth(1.0f);
 	gfx::sprite(SHEET_LOGO, logo_logo_idx, 200, 44, 0.52f, 0.52f);
 	topPanel(30, 80, 340, 150);
@@ -3567,7 +3745,7 @@ static void drawStatsTop() {
 			fitText(gSave.streetPassMsg[0] ? gSave.streetPassMsg : "Hello! :)", 200, 118, 0.42f, 300, COL_CREAM);
 			snprintf(buf, sizeof buf, "CLASSIC BEST %lu   WINS %u", (unsigned long)gSave.best[MODE_CLASSIC], (unsigned)gSave.spChallengesWon);
 			gfx::text(buf, 200, 152, 0.35f, COL_DIM, ALIGN_CENTER);
-			gfx::text("L / R TO SWITCH TABS", 200, 206, 0.30f, COL_DIM, ALIGN_CENTER);
+			gfx::text("L/R: TABS   ZL/ZR: METRIC", 200, 206, 0.30f, COL_DIM, ALIGN_CENTER);
 			return;
 		}
 		const streetpass::Entry& e = streetpass::entry(sSpStatSel);
@@ -3584,6 +3762,33 @@ static void drawStatsTop() {
 		return;
 	}
 #endif
+	if (sStatsTab == kStatsGlobalTab) {
+		const Mode curMode = kGlobalModes[sGlobalModeIdx];
+		snprintf(buf, sizeof buf, "GLOBAL TOP 100 - %s", modeName(curMode));
+		fitText(buf, 200, 86, 0.40f, 320, COL_ACCENT);
+		const lb::BoardView& v = lb::view();
+		snprintf(buf, sizeof buf, "YOUR BEST: %lu", (unsigned long)gSave.best[curMode]);
+		gfx::text(buf, 48, 108, 0.34f, COL_CREAM);
+		if (v.status == lb::STATUS_READY && v.yourRank > 0) snprintf(buf, sizeof buf, "RANK %d OF %d", v.yourRank, v.total > 0 ? v.total : v.yourRank);
+		else if (v.status == lb::STATUS_READY) snprintf(buf, sizeof buf, "UNRANKED");
+		else snprintf(buf, sizeof buf, v.status == lb::STATUS_OFFLINE ? "OFFLINE" : "LOADING...");
+		gfx::text(buf, 352, 108, 0.34f, v.yourRank > 0 ? COL_ACCENT : COL_DIM, ALIGN_RIGHT);
+		gfx::rect(44, 124, 312, 1, withAlpha(COL_DIM, 0.35f));
+		if (v.status == lb::STATUS_READY && v.count > 0) {
+			for (int i = 0; i < 3 && i < v.count; i++) {
+				const lb::Entry& e = v.entries[i];
+				const float y = 130.0f + i * 18.0f;
+				snprintf(buf, sizeof buf, "%d. %s (%s)", i + 1, e.name, lbShortPlatform(e.platform));
+				gfx::text(buf, 48, y, 0.34f, i == 0 ? COL_ACCENT : COL_CREAM);
+				snprintf(buf, sizeof buf, "%lu", (unsigned long)e.score);
+				gfx::text(buf, 352, y, 0.34f, i == 0 ? COL_ACCENT : COL_CREAM, ALIGN_RIGHT);
+			}
+		} else {
+			fitText(v.status == lb::STATUS_OFFLINE ? "Cannot reach leaderboard right now." : "Fetching Top 100 rankings...", 200, 150, 0.34f, 300, COL_DIM);
+		}
+		gfx::text("LB/RB: TAB   ZL/ZR: MODE   UP/DN: SCROLL", 200, 206, 0.28f, COL_DIM, ALIGN_CENTER);
+		return;
+	}
 	gfx::text("BEST SCORES", 200, 86, 0.42f, COL_ACCENT, ALIGN_CENTER);
 	// The modes on Pick a Game, in two columns: all 14 fit at seven to a column.
 	constexpr int kPerColumn = (MODE_COUNT + 1) / 2;
@@ -4232,11 +4437,11 @@ static const GuideEntry kGuides[] = {
 	{MODE_CLASSIC, nullptr, sprites_pip_on_idx, "SURVIVE WITHOUT DROPPING 3 FRUIT",
 	 "Swipe fruit to score. Chain 3+ in one swipe for a combo bonus.",
 	 "Dropping a whole fruit costs 1 life (up to 3 misses allowed).",
-	 "Every 100 points restores 1 lost life.",
+	 "Watch for rare Trick Fruit like Pomegranates and Dragon Fruit!",
 	 "Slicing a single bomb ends the run immediately!"},
 	{MODE_ARCADE, nullptr, sprites_ic_clock_idx, "60 SECONDS + POWER-UP BANANAS",
 	 "Score as much as you can before the 60-second clock runs out.",
-	 "Slice special bananas for Freeze, Frenzy, and Double Points.",
+	 "Slice special bananas for Freeze, Frenzy, Double Points, and more.",
 	 "Bombs don't end the run: they deduct 10 points and break your combo.",
 	 "At 0:00, slice the giant Sunburst fruit rapidly for a finale bonus!"},
 	{MODE_FRENZY, nullptr, sprites_ic_fast_idx, "30 SECONDS OF NON-STOP FRUIT SHOWERS",
@@ -4272,33 +4477,33 @@ static const GuideEntry kGuides[] = {
 	{MODE_BEAT, nullptr, sprites_ic_note_idx, "SLICE IN TIME WITH THE MUSIC",
 	 "Pick any unlocked track (or import your own songs) before playing.",
 	 "Watch the 4 beat lights at the top and slice right on the beat.",
-	 "On-beat slices build your rhythm chain and score bonus points.",
+	 "On-beat slices build your rhythm chain; off-beat cuts break your combo.",
 	 "Use Audio -> Latency Test to calibrate Beat Timing to your setup."},
 	{MODE_ORCHARD, nullptr, sprites_ic_tree_idx, "ENDLESS ROOMS & SEEDED BOSSES",
-	 "Each room cleared scores +1. Slicing fruit gives XP to stack uncapped upgrades.",
-	 "Every 5 rooms a seeded boss arrives. Every 50th brings a Milestone Boss!",
-	 "Your game is saved at the start of each room.",
-	 "Runs end on 0 HP. Continue restarts from the start of your saved room!"},
+	 "Each room cleared scores +1. Normal-room fruit gives XP for upgrades.",
+	 "Every 5 rooms a seeded boss arrives. Every 25th brings a Milestone Boss!",
+	 "Boss-room fruit and shots give 0 XP unless you hold Boss Harvest.",
+	 "Runs save at each room start. Pause to Start Over anytime!"},
 	{MODE_BOSSRUSH, nullptr, sprites_ic_crown_idx, "5 BOSSES BACK TO BACK, NO FRUIT WAVES",
-	 "Pick a starting Build, then face 5 escalating bosses in a row.",
-	 "Each boss defeated scores +1 (up to 5). Regular fruit never spawns.",
+	 "Pick a starting Build, then defeat 4 seeded bosses plus a Milestone finale.",
+	 "Each boss defeated scores +1 (up to 5) and heals half your Max HP.",
 	 "Blue Ring = Guard Up (don't slice!). Gold Ring = Guard Down (slice!).",
 	 "Slice boss shots, defuse Bomb King bombs, and snuff his lit fuse in 3 cuts!"},
 	{MODE_RECIPE, nullptr, sprites_ic_cup_idx, "FILL SMOOTHIE ORDERS IN 60 SECONDS",
-	 "The top bar shows 3-4 ingredients needed for the current Smoothie Cup.",
-	 "Slice the listed fruits in any order to finish the cup for a big bonus.",
-	 "Slicing a fruit not in the recipe spoils the cup and resets its progress.",
+	 "The top bar shows 2-3 fruit kinds needed for the current Smoothie Cup.",
+	 "Slice the listed fruits in any order to win bonus points and +8 seconds.",
+	 "Slicing a fruit not in the recipe spoils the cup and starts a new order.",
 	 "Slicing a bomb takes 10 seconds right off the clock!"},
 	{MODE_SHARP, nullptr, sprites_ic_target_idx, "SLICE ONLY THE CALLED RING & SHAPE",
-	 "Every fruit wears a coloured shape ring: Circle, Diamond, Triangle, or Square.",
+	 "Every fruit wears a coloured shape ring: Circle, Square, Triangle, or Star.",
 	 "Slice fruits matching the SLICE: <SHAPE> call at the top in 60 seconds.",
-	 "Slicing the called shape ring scores +5 points and builds your combo.",
+	 "Slicing the called shape ring scores double points and builds your combo.",
 	 "Slicing the wrong ring deducts 3 points and breaks your combo!"},
 	{MODE_JUGGLE, nullptr, sprites_ic_juggle_idx, "KEEP WHOLE FRUIT BOUNCING IN THE AIR",
 	 "Swiping a fruit knocks it back up into the air instead of cutting it.",
-	 "Each consecutive bounce on the same fruit scores more (up to +8).",
-	 "Keep multiple fruits airborne at once for a Juggling Bonus.",
-	 "Swipe bombs to knock them safely away! Dropping 3 fruit ends the run."},
+	 "Each bounce scores +1 for every fruit in the air (3x for Gold!).",
+	 "Keep multiple fruits airborne at once to stack big points fast.",
+	 "Avoid bombs: swiping one explodes it and costs a life! 3 misses end it."},
 	{SIGN_MIXER, "Mixer", sprites_knob_idx, "CUSTOM RULES FOR ANY GAME MODE",
 	 "Open the Mixer on Pick a Game to toggle modifiers like Low Gravity,",
 	 "Giant Fruit, Tiny Fruit, Mirror Blade, Double Bombs, and Sides Only.",
@@ -4431,7 +4636,7 @@ static void drawGuidesTop() {
 			gfx::sprite(SHEET_FRUIT, fruit_bomb_idx, 276, 104, 0.72f, 0.72f, wob);
 			gfx::sprite(SHEET_SPRITES, sprites_ring_idx, 276, 104, 0.85f, 0.85f, 0, rgba(255, 80, 70, 200));
 			gfx::sprite(SHEET_FRUIT, fruit_apple_idx, 194, 174, 0.6f, 0.6f);
-			drawGuideCallout(194, 54, one ? "SUDDEN DEATH: 1 LIFE ONLY" : "EVERY 100 PTS = +1 RESTORED LIFE", COL_ACCENT, vx + vw - 30, vy + 12);
+			drawGuideCallout(194, 54, one ? "SUDDEN DEATH: 1 LIFE ONLY" : "3 LIVES (REMAINING MISSES)", COL_ACCENT, vx + vw - 30, vy + 12);
 			drawGuideCallout(114, 144, "SWIPE FRUIT (+1)", rgba(150, 245, 160), 114, 106);
 			drawGuideCallout(276, 152, "BOMB = GAME OVER!", rgba(255, 120, 110), 276, 112);
 			drawGuideCallout(194, 204, one ? "1 DROP = GAME OVER" : "3 DROPS = GAME OVER", COL_CREAM, 194, 180);
@@ -4585,7 +4790,7 @@ static void drawGuidesTop() {
 			gfx::sprite(SHEET_SPRITES, sprites_ring_idx, 272, 114, 1.0f, 1.0f, 0, rgba(110, 225, 140));
 			gfx::sprite(SHEET_FRUIT, fruit_pear_idx, 272, 114, 0.68f, 0.68f, -wob);
 			drawGuideCallout(200, 56, "CALLED TARGET SHAPE", COL_ACCENT, 200, vy + 18);
-			drawGuideCallout(128, 172, "MATCHING RING (+5)", rgba(150, 245, 160), 128, 128);
+			drawGuideCallout(128, 172, "MATCHING RING (2X PTS)", rgba(150, 245, 160), 128, 128);
 			drawGuideCallout(272, 172, "WRONG RING (-3 PTS)", rgba(255, 120, 110), 272, 128);
 			break;
 		}
@@ -4595,9 +4800,9 @@ static void drawGuidesTop() {
 			gfx::sprite(SHEET_FRUIT, fruit_melon_idx, 116, 104, 0.72f, 0.72f, wob);
 			gfx::sprite(SHEET_FRUIT, fruit_orange_idx, 200, 88, 0.68f, 0.68f, -wob);
 			gfx::sprite(SHEET_FRUIT, fruit_bomb_idx, 286, 112, 0.68f, 0.68f);
-			drawGuideCallout(156, 148, "SWIPE FRUIT UP TO BOUNCE (+1..+8)", rgba(150, 245, 160), 116, 114);
-			drawGuideCallout(286, 168, "SWIPE BOMBS AWAY!", COL_ACCENT, 286, 122);
-			drawGuideCallout(200, 200, "3 DROPPED FRUIT ENDS THE RUN", COL_CREAM);
+			drawGuideCallout(156, 148, "BOUNCE = +1 PER FRUIT IN AIR", rgba(150, 245, 160), 116, 114);
+			drawGuideCallout(286, 168, "BOMB = BLOWS UP (-1 LIFE)!", rgba(255, 120, 110), 286, 122);
+			drawGuideCallout(200, 200, "3 MISSES OR BOMB STRIKES = OVER", COL_CREAM);
 			break;
 		}
 		case SIGN_MIXER: {
@@ -4930,6 +5135,9 @@ static void drawLatencyBottom() {
 }
 
 static bool lbEligible() {
+#if defined(DEV_TOOLS) && defined(BOSS_TEST_APP)
+	return false;
+#endif
 	return sGame.mode < MODE_COUNT && sPassTurn < 0 && !sGame.mixed && !sGame.assisted && !sGame.spChallenge;
 }
 
@@ -4991,6 +5199,10 @@ static const char* lbShortPlatform(const char* p) {
 	if (strcmp(p, "android") == 0) return "AND";
 	return "WEB";
 }
+
+#if defined(DEV_TOOLS) && defined(BOSS_TEST_APP)
+static void drawBossTestTop();
+#endif
 
 static void drawTopContent(Screen screen) {
 	char buf[48];
@@ -5129,6 +5341,24 @@ static void drawTopContent(Screen screen) {
 				gfx::text(r->label, 200, 106, 0.56f, COL_ACCENT, ALIGN_CENTER);
 				gfx::text("This console has no 3D screen,", 200, 142, 0.38f, COL_CREAM, ALIGN_CENTER);
 				gfx::text("so depth has no effect here.", 200, 160, 0.38f, COL_CREAM, ALIGN_CENTER);
+			} else if (r->value == &gSave.bossMusic) {
+				topPanel(30, 100, 340, 122);
+				gfx::setDepth(0.7f);
+				gfx::text(r->label, 200, 106, 0.56f, COL_ACCENT, ALIGN_CENTER);
+				if (*r->value == 0) {
+					gfx::text("Off: Boss fights keep playing", 200, 138, 0.38f, COL_CREAM, ALIGN_CENTER);
+					gfx::text("your regular Game Music.", 200, 156, 0.38f, COL_CREAM, ALIGN_CENTER);
+				} else if (*r->value == 1) {
+					gfx::text("Auto: Plays undiscovered boss", 200, 138, 0.38f, COL_CREAM, ALIGN_CENTER);
+					gfx::text("themes & shuffles owned tracks.", 200, 156, 0.38f, COL_CREAM, ALIGN_CENTER);
+				} else {
+					const int t = *r->value - 2;
+					const bool custom = t >= kTrackCount;
+					gfx::text(custom ? "Custom Song (All Modes)" : "Boss Track (Shop)", 200, 138, 0.38f, COL_ACCENT, ALIGN_CENTER);
+					gfx::text("Plays during every boss fight.", 200, 156, 0.38f, COL_CREAM, ALIGN_CENTER);
+				}
+				rowValueText(*r, buf, sizeof buf);
+				gfx::text(buf, 200, 190, 0.5f, COL_CREAM, ALIGN_CENTER);
 			} else if (r->value == &gSave.menuTrack || r->value == &gSave.gameTrack) {
 				topPanel(30, 100, 340, 122);
 				gfx::setDepth(0.7f);
@@ -5343,14 +5573,14 @@ static void drawTopContent(Screen screen) {
 						const u32 col = isYou ? COL_ACCENT : COL_CREAM;
 						snprintf(buf, sizeof buf, "%2d. %s", i + 1, e.name);
 						gfx::text(buf, 48, ry, 0.33f, col);
-						snprintf(buf, sizeof buf, "[%s]", lbShortPlatform(e.platform));
+						snprintf(buf, sizeof buf, "(%s)", lbShortPlatform(e.platform));
 						gfx::text(buf, 224, ry + 1, 0.29f, COL_DIM);
 						snprintf(buf, sizeof buf, "%lu", (unsigned long)e.score);
 						gfx::text(buf, 352, ry, 0.33f, col, ALIGN_RIGHT);
 					}
 					if (v.yourRank > 0) {
 						char lbBuf[72];
-						snprintf(lbBuf, sizeof lbBuf, "YOUR RANK #%d OF %d   BEST %lu", v.yourRank, v.total > 0 ? v.total : v.yourRank, (unsigned long)v.yourScore);
+						snprintf(lbBuf, sizeof lbBuf, "YOUR RANK %d OF %d   BEST %lu", v.yourRank, v.total > 0 ? v.total : v.yourRank, (unsigned long)v.yourScore);
 						gfx::text(lbBuf, 200, 204, 0.33f, COL_ACCENT, ALIGN_CENTER);
 					} else if (!gSave.leaderboardName[0]) {
 						gfx::text("SET NAME ON NEXT BEST SCORE", 200, 204, 0.32f, COL_DIM, ALIGN_CENTER);
@@ -5460,6 +5690,11 @@ static void drawTopContent(Screen screen) {
 				}
 				gfx::text(sBenchSaved ? "Saved to 3ds/FruitSlicer/bench.txt" : "Could not save the results", 200, 190, 0.36f, COL_DIM, ALIGN_CENTER);
 			}
+			break;
+#endif
+#if defined(DEV_TOOLS) && defined(BOSS_TEST_APP)
+		case SCREEN_BOSS_TEST:
+			drawBossTestTop();
 			break;
 #endif
 		default:
@@ -5910,9 +6145,35 @@ static void drawBottomContent(Screen screen) {
 			drawBackArrow(sFocus[SCREEN_PAUSE] == 0, sPressed == 0);
 #endif
 			int f = sFocus[SCREEN_PAUSE];
-			for (int i = 1; i < 4; i++) {
-				const char* label = i == 3 && sGame.mode == MODE_PRACTICE ? "Skip Lessons" : (i == 3 && sGame.mode == MODE_ZEN ? "Finish Run" : kPauseButtons[i].label);
-				drawSign(kPauseButtons[i], label, f == i, sPressed == i, 0.56f, -1, fruitFor(kPauseButtons[i].label));
+			if (sGame.mode == MODE_ORCHARD) {
+				for (int i = 1; i < 5; i++) {
+#if defined(DEV_TOOLS) && defined(BOSS_TEST_APP)
+					const char* lbl = i == 4 ? "Boss Picker" : (i == 3 ? "Restart Boss" : kPauseOrchardButtons[i].label);
+#else
+					const char* lbl = kPauseOrchardButtons[i].label;
+#endif
+					drawSign(kPauseOrchardButtons[i], lbl, !sPauseStartOverConfirm && f == i, !sPauseStartOverConfirm && sPressed == i, 0.50f, -1, fruitFor(kPauseOrchardButtons[i].label));
+				}
+				if (sPauseStartOverConfirm) {
+					gfx::rect(0, 0, 320, 240, rgba(20, 12, 8, 170));
+					gfx::sign(sprites_plank_idx, 36, 54, 248, 132, COL_PLANK);
+					orcWrap("Are you sure you wanna start over? You will lose all progress and go back to Room 1.", 160, 68, 0.34f, 224, 13.0f, COL_CREAM, 5);
+					for (int i = 0; i < 2; i++) {
+						const Button& b = kStartOverConfirmBtns[i];
+						drawPlank(b.x, b.y, b.w, b.h, sPauseConfirmFocus == i, false);
+						gfx::text(b.label, b.x + b.w * 0.5f, b.y + 7, 0.42f, sPauseConfirmFocus == i ? COL_ACCENT : COL_CREAM, ALIGN_CENTER);
+					}
+				}
+			} else {
+				for (int i = 1; i < 4; i++) {
+#if defined(DEV_TOOLS) && defined(BOSS_TEST_APP)
+					const char* base = kPauseButtons[i].label;
+					const char* label = i == 3 ? "Boss Picker" : base;
+#else
+					const char* label = i == 3 && sGame.mode == MODE_PRACTICE ? "Skip Lessons" : (i == 3 && sGame.mode == MODE_ZEN ? "Finish Run" : kPauseButtons[i].label);
+#endif
+					drawSign(kPauseButtons[i], label, f == i, sPressed == i, 0.56f, -1, fruitFor(kPauseButtons[i].label));
+				}
 			}
 			break;
 		}
@@ -6002,6 +6263,11 @@ static void drawBottomContent(Screen screen) {
 			}
 			break;
 #endif
+#if defined(DEV_TOOLS) && defined(BOSS_TEST_APP)
+		case SCREEN_BOSS_TEST:
+			drawBossTestBottom();
+			break;
+#endif
 		default:
 			break;
 	}
@@ -6011,6 +6277,10 @@ static void drawBottomContent(Screen screen) {
 // ---------------------------------------------------------------- flow
 
 static void startGame() {
+#if defined(DEV_TOOLS) && defined(BOSS_TEST_APP)
+	startBossTestFight();
+	return;
+#endif
 	sCardNoteT = 0;
 	sResultBoard = false;
 	sLbTypingName = false;
@@ -6021,11 +6291,13 @@ static void startGame() {
 	sPressed = -1;
 }
 
-static bool sLeaving = false;
-
 static void toModes() {
 	sPassTurn = -1;
+#if defined(DEV_TOOLS) && defined(BOSS_TEST_APP)
+	sScreen = SCREEN_BOSS_TEST;
+#else
 	sScreen = SCREEN_MODES;
+#endif
 	sPressed = -1;
 	gfx::setShake(0, 0);
 	audio::fuse(false);
@@ -6069,8 +6341,10 @@ static void toTitle() {
 	sPassTurn = -1;
 	sOptionsFromPause = false;
 	toModes();
+#if !defined(DEV_TOOLS) || !defined(BOSS_TEST_APP)
 	sScreen = SCREEN_TITLE;
 	pickSplash();
+#endif
 }
 
 static void quitRun() {
@@ -6086,6 +6360,8 @@ static void pauseGame() {
 	// Not while a run is ending: its score is only saved once that finishes.
 	if (sScreen != SCREEN_GAME || sGame.phase == PHASE_OVER || sGame.phase == PHASE_DYING) return;
 	sScreen = SCREEN_PAUSE;
+	sPauseStartOverConfirm = false;
+	sPauseConfirmFocus = 1;
 	gfx::setShake(0, 0);
 	audio::fuse(false);
 	sFocus[SCREEN_PAUSE] = 1;
@@ -6217,8 +6493,10 @@ static void updateFrame(const Input& in, bool wasTouching) {
 			else if (t == 2) {
 				sFocus[SCREEN_JOURNAL] = 1;
 				goTo(SCREEN_JOURNAL, 1);
-			} else if (t == 3) goTo(SCREEN_STATS, 1);
-			else if (t == 4) {
+			} else if (t == 3) {
+				sStatsTab = 0;
+				goTo(SCREEN_STATS, 1);
+			} else if (t == 4) {
 				sFocus[SCREEN_HOWTO] = 1;
 				goTo(SCREEN_HOWTO, 1);
 			} else if (t == 5) openShop();
@@ -6532,58 +6810,122 @@ static void updateFrame(const Input& in, bool wasTouching) {
 		}
 		case SCREEN_STATS: {
 			if (blocked) break;
-#if PORT_3DS
-			if (in.down & (KEY_L | KEY_R)) {
+			if (in.down & KEY_L) {
 				audio::click(0.6f);
-				sStatsTab ^= 1;
-				sFocus[sScreen] = 0;
-			}
-			if (in.touching && !wasTouching) {
-				for (int t = 0; t < 2; t++) {
-					if (hit(kStatsTabs[t], in.tx, in.ty)) {
-						audio::click(0.6f);
-						sStatsTab = t;
-						sFocus[sScreen] = 0;
-					}
-				}
-			}
-			if (sStatsTab == 1 && streetpass::count() > 0) {
-				const int cnt = streetpass::count();
-				if (in.repeat & KEY_DOWN) {
-					sSpStatSel = (sSpStatSel + 1) % cnt;
-					audio::click(0.5f);
-				}
-				if (in.repeat & KEY_UP) {
-					sSpStatSel = sSpStatSel > 0 ? sSpStatSel - 1 : cnt - 1;
-					audio::click(0.5f);
-				}
-				if (in.touching && !wasTouching) {
-					for (int row = 0; row < 4 && sSpStatScroll + row < cnt; row++) {
-						const float y = 68.0f + row * 32.0f;
-						if (in.tx >= 8 && in.tx < 312 && in.ty >= y && in.ty < y + 29) {
-							sSpStatSel = sSpStatScroll + row;
-							audio::click(0.5f);
-						}
-					}
-				}
-				Button spBtns[2] = {kBack, kSpChallengeBtn};
-				int t = menuInput(spBtns, 2, sScreen, in, wasTouching);
-				if (in.down & KEY_A && sFocus[sScreen] != 0) t = 1;
-				if (t == 1) {
-					audio::click();
-					launchSpChallenge(sSpStatSel);
-					break;
-				}
-				if (t == 0 || (in.down & KEY_B)) {
-					if (t != 0) audio::click();
-					goTo(SCREEN_TITLE, -1);
-				}
+				statsSwitchTab(sStatsTab - 1);
 				break;
 			}
+			if (in.down & KEY_R) {
+				audio::click(0.6f);
+				statsSwitchTab(sStatsTab + 1);
+				break;
+			}
+			if (in.touching && !wasTouching) {
+				for (int tab = 0; tab < kStatsTabCount; tab++) {
+					if (hit(kStatsTabs[tab], in.tx, in.ty)) {
+						audio::click(0.6f);
+						statsSwitchTab(tab);
+						break;
+					}
+				}
+			}
+#if PORT_3DS
+			if (sStatsTab == 1) {
+				if (in.down & (KEY_ZL | KEY_ZR)) {
+					audio::click(0.5f);
+					sSpMetric ^= 1;
+				}
+				if (streetpass::count() > 0) {
+					const int cnt = streetpass::count();
+					if (in.repeat & KEY_DOWN) {
+						sSpStatSel = (sSpStatSel + 1) % cnt;
+						audio::click(0.5f);
+					}
+					if (in.repeat & KEY_UP) {
+						sSpStatSel = sSpStatSel > 0 ? sSpStatSel - 1 : cnt - 1;
+						audio::click(0.5f);
+					}
+					if (in.touching && !wasTouching) {
+						for (int row = 0; row < 4 && sSpStatScroll + row < cnt; row++) {
+							const float y = 66.0f + row * 32.0f;
+							if (in.tx >= 8 && in.tx < 312 && in.ty >= y && in.ty < y + 29) {
+								sSpStatSel = sSpStatScroll + row;
+								audio::click(0.5f);
+							}
+						}
+					}
+					Button spBtns[2] = {kBack, kSpChallengeBtn};
+					int t = menuInput(spBtns, 2, sScreen, in, wasTouching);
+					if ((in.down & KEY_A) && sFocus[sScreen] != 0) t = 1;
+					if (t == 1) {
+						audio::click();
+						launchSpChallenge(sSpStatSel);
+						break;
+					}
+					if (t == 0 || (in.down & KEY_B)) {
+						if (t != 0) audio::click();
+						goTo(SCREEN_TITLE, -1);
+					}
+					break;
+				}
+			}
 #endif
+			if (sStatsTab == kStatsGlobalTab) {
+				if (in.down & (KEY_ZL | KEY_LEFT)) {
+					audio::click(0.5f);
+					statsSelectGlobalMode(sGlobalModeIdx - 1);
+				} else if (in.down & (KEY_ZR | KEY_RIGHT)) {
+					audio::click(0.5f);
+					statsSelectGlobalMode(sGlobalModeIdx + 1);
+				}
+				const int total = lb::view().count;
+				const int maxScroll = total > kGlobalRowsVis ? total - kGlobalRowsVis : 0;
+				if (in.repeat & KEY_DOWN) {
+					if (sGlobalScroll < maxScroll) { sGlobalScroll++; audio::click(0.4f); }
+				}
+				if (in.repeat & KEY_UP) {
+					if (sGlobalScroll > 0) { sGlobalScroll--; audio::click(0.4f); }
+				}
+				if (in.wheel != 0 && maxScroll > 0) {
+					sGlobalScroll = (int)clampf((float)(sGlobalScroll - in.wheel * 2), 0.0f, (float)maxScroll);
+				}
+				if (in.touching) {
+					if (!wasTouching) {
+						if (hit(kGlobalModeArrows[0], in.tx, in.ty)) {
+							audio::click(0.5f);
+							statsSelectGlobalMode(sGlobalModeIdx - 1);
+						} else if (hit(kGlobalModeArrows[1], in.tx, in.ty)) {
+							audio::click(0.5f);
+							statsSelectGlobalMode(sGlobalModeIdx + 1);
+						} else {
+							for (int col = 0; col < kGlobalTabsVis && sGlobalTabScroll + col < kGlobalModeCount; col++) {
+								if (hit(globalModeTabRect(col), in.tx, in.ty)) {
+									audio::click(0.5f);
+									statsSelectGlobalMode(sGlobalTabScroll + col);
+									break;
+								}
+							}
+						}
+						if (in.ty >= 82 && in.ty <= 204 && in.tx >= 8 && in.tx < 312) {
+							sGlobalDragging = true;
+							sGlobalDragY = in.ty;
+							sGlobalMoved = false;
+						}
+					} else if (sGlobalDragging) {
+						const int dy = sGlobalDragY - in.ty;
+						if (abs(dy) >= 14) {
+							sGlobalScroll = (int)clampf((float)(sGlobalScroll + dy / 14), 0.0f, (float)maxScroll);
+							sGlobalDragY = in.ty;
+							sGlobalMoved = true;
+						}
+					}
+				} else {
+					sGlobalDragging = false;
+				}
+			}
 			int& f = sFocus[sScreen];
 			f = 0;
-			int t = menuInput(kOnlyBack, 1, sScreen, in, wasTouching);
+			int t = sGlobalMoved ? -1 : menuInput(kOnlyBack, 1, sScreen, in, wasTouching);
 			if (t == 0 || (in.down & KEY_B)) {
 				if (t != 0) audio::click();
 				goTo(SCREEN_TITLE, -1);
@@ -6614,13 +6956,14 @@ static void updateFrame(const Input& in, bool wasTouching) {
 			}
 #endif
 			{
+				const bool wasInv = sOrcInv;
 				const bool orcTook = updateOrchardMenus(in, wasTouching);
-				if (sOrcInv) {
-					if (in.down & KEY_START) {
+				if (sOrcInv || wasInv) {
+					if (sOrcInv && (in.down & KEY_START)) {
 						sOrcInv = false;
 						pauseGame();
 					}
-					break;  // the Inventory holds the run, like the pause menu
+					break;  // the Inventory holds the run, and closing via Esc returns to play cleanly
 				}
 				Input bin = in;
 #if PORT_PAUSE_BUTTON
@@ -6645,10 +6988,33 @@ static void updateFrame(const Input& in, bool wasTouching) {
 			break;
 		case SCREEN_PAUSE: {
 			if (blocked) break;
-			Button pauseBtns[4];
-			for (int i = 0; i < 4; i++) pauseBtns[i] = kPauseButtons[i];
+			if (sPauseStartOverConfirm) {
+				int t = touchButtons(kStartOverConfirmBtns, 2, in, wasTouching, sPauseConfirmFocus);
+				if (in.repeat & (KEY_LEFT | KEY_RIGHT)) {
+					sPauseConfirmFocus ^= 1;
+					audio::click(0.5f);
+				}
+				if (in.down & KEY_A) t = sPauseConfirmFocus;
+				if (in.down & (KEY_B | KEY_START)) t = 1;
+				if (t == 0) {
+					audio::click();
+					sPauseStartOverConfirm = false;
+					sOptionsFromPause = false;
+					audio::bossMusicEnd();
+					audio::tensionMusic(false);
+					Game::orchardClearSave();
+					fadeThen(startGame);
+				} else if (t == 1) {
+					audio::click();
+					sPauseStartOverConfirm = false;
+				}
+				break;
+			}
+			const int count = sGame.mode == MODE_ORCHARD ? 5 : 4;
+			Button pauseBtns[5];
+			for (int i = 0; i < count; i++) pauseBtns[i] = sGame.mode == MODE_ORCHARD ? kPauseOrchardButtons[i] : kPauseButtons[i];
 			if (!PORT_TWO_SCREENS) pauseBtns[0] = {};
-			int t = menuInput(pauseBtns, 4, SCREEN_PAUSE, in, wasTouching);
+			int t = menuInput(pauseBtns, count, SCREEN_PAUSE, in, wasTouching);
 			if (t < 0 && (in.down & (KEY_START | KEY_B))) {
 				t = 1;
 				audio::click();
@@ -6662,7 +7028,11 @@ static void updateFrame(const Input& in, bool wasTouching) {
 				sOptionsFromPause = true;
 				sFocus[SCREEN_OPTIONS] = 1;
 				goTo(SCREEN_OPTIONS, 1);
-			} else if (t == 3) {
+			} else if (sGame.mode == MODE_ORCHARD && t == 3) {
+				audio::click();
+				sPauseStartOverConfirm = true;
+				sPauseConfirmFocus = 1;
+			} else if (t == count - 1) {
 				if (sGame.mode == MODE_ZEN) {
 					sScreen = SCREEN_GAME;
 					sBlade.reset();
@@ -6789,6 +7159,11 @@ static void updateFrame(const Input& in, bool wasTouching) {
 			benchUpdate(in);
 			break;
 #endif
+#if defined(DEV_TOOLS) && defined(BOSS_TEST_APP)
+		case SCREEN_BOSS_TEST:
+			updateBossTest(in, wasTouching);
+			break;
+#endif
 		default:
 			break;
 	}
@@ -6859,6 +7234,12 @@ static void drawFrame() {
 		if (sScreen == SCREEN_GAME) sGame.drawHud();
 		drawStickPoint();
 		if (sScreen == SCREEN_GAME) drawOrchardMenus();
+#if defined(DEV_TOOLS) && defined(BOSS_TEST_APP)
+		if (sScreen == SCREEN_GAME) {
+			gfx::text(gSave.artStyle == ART_3D ? "[TAB] 3D MODELS" : "[TAB] 2D STICKERS",
+			          kFieldW * 0.5f, kFieldH - 11.0f, 0.25f, withAlpha(COL_CREAM, 0.65f), ALIGN_CENTER);
+		}
+#endif
 #if PORT_PAUSE_BUTTON
 		if (sScreen == SCREEN_GAME) {
 			// Half see-through, so fruit passing behind it stays easy to see.
@@ -6973,7 +7354,12 @@ void app::showLoading() {
 	audio::music(MUSIC_MENU);
 	sFade = 1;  // the title fades up out of black
 	pickSplash();
+#if defined(DEV_TOOLS) && defined(BOSS_TEST_APP)
+	sScreen = SCREEN_BOSS_TEST;
+	sFocus[SCREEN_BOSS_TEST] = 4;
+#else
 	sScreen = SCREEN_TITLE;
+#endif
 #if PORT_3DS
 	sLastTick = osGetTime();
 #endif
@@ -7149,9 +7535,18 @@ bool app::frame(Input& in, int steps) {
 		if (sScreen == SCREEN_TITLE && (in.held & KEY_START) && (in.held & KEY_SELECT)) return false;
 #endif
 
+#if defined(DEV_TOOLS) && defined(BOSS_TEST_APP)
+		if (in.down & KEY_TAB) {
+			gSave.artStyle = gSave.artStyle == ART_3D ? ART_2D : ART_3D;
+			audio::play(SFX_CLICK, 0.7f);
+		}
+#endif
 		stickBlade(in);
 		gStickInUse = sPointShow > 0;
 		updateFrame(in, sWasTouching);
+#if defined(DEV_TOOLS) && defined(BOSS_TEST_APP)
+		if (gBossTestDone) return false;
+#endif
 		sWasTouching = in.touching;
 		if (sScreen != SCREEN_PAUSE) boom::update(kDt);
 #if !PORT_3DS

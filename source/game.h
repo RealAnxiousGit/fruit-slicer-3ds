@@ -17,12 +17,15 @@ struct Obj {
 	u8 hits;            // slices still needed
 	bool loose;         // broke off a trick fruit: worth a bonus, and never a miss if dropped
 	u8 tag;             // Sharpshooter: 1 + its ring colour, 0 for none
+	u8 cutGen;          // Cutting Board: 0 whole, 1 cut half, 2 quarter chunk
+	u8 cutPart;         // Cutting Board: 0 left piece, 1 right piece
 	bool on;
 };
 struct Half {
 	float x, y, vx, vy, rot, rotv;
 	float rx, ry;            // 3D: orientation kept from the moment of the cut
 	float axisX, axisY, tilt, tiltv;  // 3D: rolls the cut face towards the player
+	float scale;             // 0 defaults to 1.0f; reduced for quarter chunks
 	short sprite;
 	short cut;               // 3D: exact-cut vertex slot, or -1 for a ready-made half
 	u8 mesh, part;
@@ -200,6 +203,11 @@ struct Game {
 #endif
 
 	void start(Mode m);
+	void orcApplyRushPreset(int build);
+#ifdef BOSS_TEST_APP
+	void bossTestLaunch(int bossId, bool useRush, bool royal, int diff, int preset);
+	void bossPreview(int bossId, bool royal, float x, float y, float radius, float t, float screenW) const;
+#endif
 	void startStreetPassChallenge(int tagIdx, const char* rivalName, u32 targetScore);
 	bool spChallenge;
 	bool spWon;

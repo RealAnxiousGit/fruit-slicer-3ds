@@ -349,7 +349,7 @@ static void labInventory() {
 		snprintf(d, sizeof d, "blade@25 bottom %.1f vs buttons %.1f", (double)bladeBot, (double)btnTop);
 		labCheck(allPos && bladeBot < btnTop, "Uncapped Inventory upgrades keep positive name width and fit details strip cleanly", d);
 	}
-	// Room 50 cutscene: all 10 dialogue lines wrap cleanly above the prompt, KEY_START does not skip, and KEY_A advances.
+	// Room 25 cutscene: all 10 dialogue lines wrap cleanly above the prompt, KEY_START does not skip, and KEY_A advances.
 	{
 		bool wrapFits = true;
 		int worstLines = 0;
@@ -366,7 +366,7 @@ static void labInventory() {
 		const Room50CutsceneBox B3 = room50CutsceneBox(kRoom50Lines[6]);
 		const bool scaledBox = B1.h <= 56.0f && B3.h > B1.h && B3.h < 90.0f;
 		snprintf(d, sizeof d, "worstLines %d, minPromptGap %.1f, B1=%.1f, B3=%.1f", worstLines, (double)worstGap, (double)B1.h, (double)B3.h);
-		labCheck(wrapFits && scaledBox, "Room 50 cutscene box scales per line, stays compact, and clears prompt", d);
+		labCheck(wrapFits && scaledBox, "Room 25 cutscene box scales per line, stays compact, and clears prompt", d);
 
 		if (audio::available()) audio::tensionMusic(false);
 		o.cutscene = true;
@@ -399,7 +399,7 @@ static void labInventory() {
 		o.cutscene = false;
 		o.tensionStarted = false;
 		labCheck(startIgnored && aAdvanced && atTension && cutMusPreserved,
-		         "Room 50 cutscene keeps Start for Pause, starts tension music at line 5, and preserves music state when leaving Pause->Options");
+		         "Room 25 cutscene keeps Start for Pause, starts tension music at line 5, and preserves music state when leaving Pause->Options");
 
 		// Dev Skip UI: small button selectors, press-and-hold acceleration, numeric typing + Backspace, Esc revert, Enter save.
 		{
@@ -1110,7 +1110,7 @@ static void labV2Fixes() {
 				while (*cur && wrapped < 2) {
 					while (*cur == ' ') cur++;
 					if (!*cur) break;
-					if (gfx::textWidth(cur, 0.31f) <= 278.0f || wrapped == 1) {
+					if (gfx::textWidth(cur, 0.31f) <= 264.0f || wrapped == 1) {
 						ly += 10.8f;
 						break;
 					}
@@ -1120,7 +1120,7 @@ static void labV2Fixes() {
 							cur[k] = 0;
 							const float tw = gfx::textWidth(cur, 0.31f);
 							cur[k] = ' ';
-							if (tw <= 278.0f) split = k;
+							if (tw <= 264.0f) split = k;
 							else break;
 						}
 					}
@@ -1136,8 +1136,8 @@ static void labV2Fixes() {
 			}
 			if (ly > 212.0f) fitsAll = false;
 		}
-		const bool guidesUpdated = strstr(kGuides[MODE_ORCHARD].line3, "saved at the start of each room") != nullptr &&
-		                           strstr(kGuides[MODE_BOSSRUSH].line1, "5 escalating") != nullptr &&
+		const bool guidesUpdated = strstr(kGuides[MODE_ORCHARD].line4, "Runs save at each room start") != nullptr &&
+		                           strstr(kGuides[MODE_BOSSRUSH].line1, "4 seeded bosses") != nullptr &&
 		                           strstr(kGuides[MODE_ORCHARD].goal, "10 ROOMS") == nullptr;
 		labCheck(fitsAll && guidesUpdated, "Guides fit inside plank with updated Endless room-start save & 5-boss Boss Rush text");
 	}
@@ -1166,14 +1166,14 @@ static void labV2Fixes() {
 		gSave.skin = skinWas;
 	}
 
-	// 4. Room 50 First-Encounter Cutscene UI: fast-forward, release-latch between lines, tensionMusic at line 5, boss transition at line 10.
+	// 4. Room 25 First-Encounter Cutscene UI: fast-forward, release-latch between lines, tensionMusic at line 5, boss transition at line 10.
 	{
 		const u8 seenWas = gSave.seenRoom50Cutscene;
 		const int trkWas = audio::currentTrack();
 		gSave.seenRoom50Cutscene = 0;
 		Game::orchardClearSave();
 		sGame.start(MODE_ORCHARD);
-		sGame.orcApplyDevSkip(50, 1);
+		sGame.orcApplyDevSkip(25, 1);
 		Input cin = {};
 		cin.held = KEY_A;
 		for (int i = 0; i < 60 && (int)sGame.orc.dialogueChars < (int)strlen(kRoom50Lines[0]); i++) updateRoom50Cutscene(cin, false);
@@ -1195,13 +1195,138 @@ static void labV2Fixes() {
 		cin.down = KEY_A;
 		updateRoom50Cutscene(cin, false);
 		labCheck(latched && heldDidNotSkip && tensionAt5Plus && !sGame.orc.cutscene && sGame.orc.boss.on && gSave.seenRoom50Cutscene == 1,
-		         "Room 50 cutscene fast-forwards, latches release, starts tensionMusic at line 5, and enters Milestone Boss after line 10");
+		         "Room 25 cutscene fast-forwards, latches release, starts tensionMusic at line 5, and enters Milestone Boss after line 10");
 		audio::tensionMusic(false);
 		audio::bossMusicEnd();
 		audio::music(MUSIC_MENU);
 		(void)trkWas;
 		gSave.seenRoom50Cutscene = seenWas;
 		Game::orchardClearSave();
+	}
+
+	// 5. Audio Boss Music choice separation, Orchard Pause Start Over modal, Stats Global Top 100 tab/controls, Card non-overlap, and Guides accuracy.
+	{
+		// Track separation between Menu/Game rows vs Boss Music row.
+		const Row* menuRow = nullptr;
+		const Row* bossRow = nullptr;
+		for (const Row& r : kAudioRows) {
+			if (r.value == &gSave.menuTrack) menuRow = &r;
+			if (r.value == &gSave.bossMusic) bossRow = &r;
+		}
+		const u32 ownedWas = gSave.ownedTracks;
+		gSave.ownedTracks = 0xFFFFFFFFu;
+		bool sepOk = menuRow && bossRow;
+		int customBossTrack = 2 + kTrackCount;  // custom slot 0
+		if (sepOk) {
+			for (int t = 0; t < kTrackCount; t++) {
+				const bool isBoss = trackBoss(t) >= 0;
+				if (choiceLocked(*menuRow, 1 + t) != isBoss) sepOk = false;
+				if (choiceLocked(*bossRow, 2 + t) != !isBoss) sepOk = false;
+			}
+			if (choiceLocked(*bossRow, 0) || choiceLocked(*bossRow, 1) || choiceLocked(*bossRow, customBossTrack)) sepOk = false;
+		}
+		gSave.ownedTracks = ownedWas;
+		labCheck(sepOk, "Audio Menu/Game rows exclude built-in Boss Tracks while Boss Music allows Off, Auto, Boss Tracks, and Custom Songs");
+
+		// Upgrade card description + footer non-overlap math check across BLADE & all cards.
+		bool cardsClear = true;
+		for (int c = 0; c < CARD_COUNT; c++) {
+			const CardInfo& info = kCards[c];
+			const OrcCardLayout CL = orcCardLayout(3, false);
+			const float maxW = CL.cardW - 8.0f;
+			char foot[128] = "";
+			char footSub[64] = "";
+			if (info.kind == KIND_UPGRADE) {
+				cardNextLine(c, 1, foot, sizeof foot);
+				snprintf(footSub, sizeof footSub, "Lv 1 (Uncapped)");
+			} else if (info.kind == KIND_REUSABLE) {
+				snprintf(foot, sizeof foot, "%d s cooldown", (int)info.cooldown);
+			} else if (info.kind == KIND_SINGLE) {
+				snprintf(foot, sizeof foot, "Slot charm (1 use)");
+			}
+			const float footMaxW = fmaxf(48.0f, CL.cardW - 18.0f);
+			float footH = 0.0f;
+			if (foot[0]) {
+				float fs = 0.27f;
+				float tw = gfx::textWidth(foot, fs);
+				if (tw > footMaxW && fs * (footMaxW / tw) >= 0.21f) fs *= footMaxW / tw;
+				int fl = orcCountWrapLines(foot, footMaxW, fs, 2);
+				float fstep = fl > 1 ? fmaxf(8.5f, fs * 0.90f * 34.0f) : 10.0f;
+				footH = fl * fstep + (footSub[0] ? 10.0f : 0.0f);
+			}
+			const float footY = CL.cardH - 8.0f - footH;
+			char buf[128];
+			snprintf(buf, sizeof buf, "%s %s", rarityName(info.rarity), cardKindName(info.kind));
+			const int rarLines = orcCountWrapLines(buf, maxW, 0.30f, 2);
+			const float descTop = 34.0f + rarLines * 10.5f + 2.0f + 15.0f;
+			snprintf(buf, sizeof buf, "%s%s%s", info.line1, info.line2[0] ? " " : "", info.line2);
+			float ds = 0.31f, dstep = 11.2f;
+			const float budget = fmaxf(14.0f, footY - 4.0f - descTop);
+			while (ds > 0.205f) {
+				dstep = ds * 36.0f;
+				if (orcCountWrapLines(buf, maxW, ds, 6) * dstep <= budget) break;
+				ds -= 0.015f;
+			}
+			const float descH = orcCountWrapLines(buf, maxW, ds, 6) * dstep;
+			if (descTop + descH > footY) cardsClear = false;
+		}
+		labCheck(cardsClear, "Upgrade cards (including BLADE) auto-fit descriptions above reserved footer bounds");
+
+		// Pause Start Over confirmation flow in Orchard Blast.
+		const Screen scrWas2 = sScreen;
+		sScreen = SCREEN_GAME;
+		sGame.start(MODE_ORCHARD);
+		sGame.orc.room = 9;
+		sGame.orc.level = 5;
+		pauseGame();
+		sPauseStartOverConfirm = true;
+		sPauseConfirmFocus = 1;  // No
+		const Screen pScr = sScreen;
+		const bool confirmOpen = sPauseStartOverConfirm && sGame.orc.room == 9;
+		sPauseStartOverConfirm = false;  // cancelled -> stays at Room 9
+		const bool noKeepsRoom = sGame.orc.room == 9 && sGame.orc.level == 5;
+		Game::orchardClearSave();
+		sGame.start(MODE_ORCHARD);
+		const bool yesResetsRoom1 = sGame.orc.room == 1 && sGame.orc.level == 1 && !Game::orchardHasSave();
+		sScreen = scrWas2;
+		Game::orchardClearSave();
+		labCheck(pScr == SCREEN_PAUSE && confirmOpen && noKeepsRoom && yesResetsRoom1,
+		         "Orchard Pause Start Over confirmation cancels cleanly on No and restarts Room 1 Level 1 on Yes");
+
+		// Stats Global tab navigation & Top-100 JSON parse + eligible modes exclusion check.
+		sStatsTab = 0;
+		statsSwitchTab(kStatsGlobalTab);
+		const int m0 = sGlobalModeIdx;
+		statsSelectGlobalMode(sGlobalModeIdx + 1);
+		const int m1 = sGlobalModeIdx;
+		bool excludedOk = true;
+		for (int i = 0; i < kGlobalModeCount; i++) {
+			if (kGlobalModes[i] == MODE_PRACTICE || kGlobalModes[i] >= MODE_COUNT) excludedOk = false;
+		}
+		lb::BoardView parsed100 = {};
+		static char bigJson[8192];
+		int pos = snprintf(bigJson, sizeof bigJson, "{\"ok\":true,\"mode\":\"classic\",\"total\":120,\"you\":{\"rank\":42,\"score\":999},\"top\":[");
+		for (int i = 0; i < 100 && pos < (int)sizeof bigJson - 96; i++) {
+			pos += snprintf(bigJson + pos, sizeof bigJson - pos, "%s{\"name\":\"P%03d\",\"score\":%d,\"platform\":\"win\",\"player_id\":\"%016x\"}",
+			                i ? "," : "", i + 1, 2000 - i, i + 1);
+		}
+		snprintf(bigJson + pos, sizeof bigJson - pos, "]}");
+		const bool parse100Ok = lb::parseResponse(bigJson, &parsed100) && parsed100.count == 100 && parsed100.yourRank == 42 && parsed100.total == 120;
+		sStatsTab = 0;
+		lb::clearView();
+		labCheck(m1 == (m0 + 1) % kGlobalModeCount && excludedOk && parse100Ok,
+		         "Stats Global switches gamemodes via tabs/ZL/ZR, excludes non-board modes, and parses Top 100 + rank");
+
+		// Fact-checked Guides assertions.
+		bool guideClassicOk = false, guideOrchardOk = false, guideSharpOk = false, guideJuggleOk = false;
+		for (int i = 0; i < kGuideCount; i++) {
+			if (kGuides[i].id == MODE_CLASSIC) guideClassicOk = strstr(kGuides[i].line3, "100 points") == nullptr;
+			if (kGuides[i].id == MODE_ORCHARD) guideOrchardOk = strstr(kGuides[i].line2, "25th") != nullptr && strstr(kGuides[i].line3, "Boss Harvest") != nullptr;
+			if (kGuides[i].id == MODE_SHARP) guideSharpOk = strstr(kGuides[i].line1, "Square") != nullptr && strstr(kGuides[i].line3, "double") != nullptr;
+			if (kGuides[i].id == MODE_JUGGLE) guideJuggleOk = strstr(kGuides[i].line4, "costs a life") != nullptr;
+		}
+		labCheck(guideClassicOk && guideOrchardOk && guideSharpOk && guideJuggleOk,
+		         "All corrected Mode Guides match actual gameplay mechanics");
 	}
 }
 

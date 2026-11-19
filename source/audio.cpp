@@ -39,7 +39,7 @@ static const char* const kSfxFiles[SFX_COUNT] = {
 	"coin", "plink", "shopbell",
 	"clang", "open", "roar", "bossin", "victory", "pop",
 	"laugh", "chuckle", "whoosh", "launch", "levelup",
-	"boss_blip",
+	"boss_blip", "train_whistle", "bubbles",
 };
 static_assert(sizeof kSfxFiles / sizeof kSfxFiles[0] == SFX_COUNT, "every sound needs a file name");
 // How much of the mix one sound may take. A new sound is turned down if the ones still playing have
@@ -225,7 +225,7 @@ bool isSongTrack(int track) {
 static bool calmTrack(int t) { return t == 0 || (t >= 2 && t <= 7); }
 
 static bool inAutoPool(int context, int t) {
-	if (t < 0 || t >= kTrackCount || !trackUnlocked(t)) return false;
+	if (t < 0 || t >= kTrackCount || !trackUnlocked(t) || trackBoss(t) >= 0) return false;
 	return context != MUSIC_ZEN || calmTrack(t);
 }
 
@@ -567,6 +567,8 @@ static const char* captionFor(Sfx s) {
 		case SFX_FINALE_BURST: return "Burst!";
 		case SFX_LAUGH: return "Ha ha ha!";
 		case SFX_CHUCKLE: return "Ho ho!";
+		case SFX_TRAIN_WHISTLE: return "Choo choo!";
+		case SFX_BUBBLES: return "Bubbles!";
 		default: return nullptr;
 	}
 }
@@ -801,7 +803,7 @@ static void bossCancel() {
 }
 
 void bossMusic(int track) {
-	if (!sReady || track < 0 || track >= kTrackCount) return;
+	if (!sReady || track < 0 || track >= trackCount()) return;
 	sBossTrack = track;
 	if (sBossStage == BOSS_PLAYING) {
 		startTrack(track, false, sContext);

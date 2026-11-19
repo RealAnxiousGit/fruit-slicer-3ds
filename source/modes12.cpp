@@ -87,14 +87,12 @@ void Game::m12Start() {
 }
 
 // ---------------------------------------------------------------- Boss Rush
-void Game::rushPick(int build) {
-	if (mode != MODE_BOSSRUSH || !m12.rushPicking || build < 0 || build >= BUILD_COUNT) return;
+void Game::orcApplyRushPreset(int build) {
 	const OrchardLevel& lv = orchardLevel(gSave.difficulty);
 	auto passive = [this](int card) {
 		orc.upgrade[card] = 1;
 		orc.passiveOrder[orc.passiveCount++] = (u8)card;
 	};
-	m12.rushBuild = (u8)build;
 	switch (build) {
 		case BUILD_TANK:
 			orc.maxHp = (float)lv.startHp * 2;
@@ -118,6 +116,12 @@ void Game::rushPick(int build) {
 			break;
 	}
 	orc.hp = orc.maxHp;
+}
+
+void Game::rushPick(int build) {
+	if (mode != MODE_BOSSRUSH || !m12.rushPicking || build < 0 || build >= BUILD_COUNT) return;
+	m12.rushBuild = (u8)build;
+	orcApplyRushPreset(build);
 	orc.peelShield = orc.upgrade[CARD_THICKPEEL] != 0;
 	m12.rushPicking = false;
 	m12.rushStage = 0;

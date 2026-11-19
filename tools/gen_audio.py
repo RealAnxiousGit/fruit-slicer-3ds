@@ -1241,18 +1241,49 @@ def build_audio():
     write_pcm("whoosh", whoosh(), s)
     write_pcm("launch", launch(), s)
     write_pcm("levelup", levelup(), s)
-    # Warm resonant boss voice dialogue blip (Room 50 encounter): soft fundamental + triangle blend, filtered edges.
+    # Clear speaker-audible boss voice dialogue blip (Room 25 encounter): warm midrange + soft harmonics.
     dur_blip = 0.062
     bt = np.arange(n_of(dur_blip)) / s
-    bf = 122.0 - 24.0 * (bt / dur_blip) ** 0.75
+    bf = 560.0 - 110.0 * (bt / dur_blip) ** 0.75
     bph = 2 * np.pi * np.cumsum(bf) / s
     tri = (2.0 / np.pi) * np.arcsin(np.sin(bph))
-    tone = 0.62 * np.sin(bph) + 0.28 * tri + 0.14 * np.sin(2.0 * bph) + 0.04 * np.sin(3.0 * bph)
-    tone = band(tone, 60, 1200, s)
-    atk = 0.5 - 0.5 * np.cos(np.pi * np.minimum(1.0, bt / 0.008))
-    rel = np.minimum(1.0, np.maximum(0.0, (dur_blip - bt) / 0.018)) ** 1.3
+    tone = 0.62 * np.sin(bph) + 0.28 * tri + 0.16 * np.sin(2.0 * bph) + 0.05 * np.sin(3.0 * bph)
+    tone = band(tone, 180, 2800, s)
+    atk = 0.5 - 0.5 * np.cos(np.pi * np.minimum(1.0, bt / 0.006))
+    rel = np.minimum(1.0, np.maximum(0.0, (dur_blip - bt) / 0.016)) ** 1.25
     blip = tone * atk * np.exp(-bt / 0.032) * rel
-    write_pcm("boss_blip", norm(blip, 0.50), s)
+    write_pcm("boss_blip", norm(blip, 0.56), s)
+
+    # Steam train whistle for Milestone Boss Phase 2 enrage (<= 50% HP): dual-tone locomotive chord + steam hiss.
+    rng_tw = np.random.default_rng(701)
+    dur_tw = 0.85
+    tw_t = np.arange(n_of(dur_tw)) / s
+    vib = 1.0 + 0.008 * np.sin(2 * np.pi * 6.5 * tw_t)
+    bend = 0.96 + 0.04 * np.minimum(1.0, tw_t / 0.08)
+    tw_sig = np.zeros_like(tw_t)
+    for f0, g0 in ((698.46, 0.45), (830.61, 0.40), (1046.50, 0.35), (1396.91, 0.15)):
+        ph = 2 * np.pi * np.cumsum(f0 * bend * vib) / s
+        tw_sig += g0 * (np.sin(ph) + 0.22 * np.sin(2 * ph))
+    steam = band(rng_tw.normal(0, 1, len(tw_t)), 1400, 4800, s) * 0.22
+    gate = (1.0 - np.exp(-tw_t / 0.025)) * np.minimum(1.0, np.maximum(0.0, (dur_tw - tw_t) / 0.12))
+    # Two dramatic puffs: short blast then longer wail.
+    pulse = np.where((tw_t >= 0.19) & (tw_t < 0.25), np.exp(-(tw_t - 0.19) / 0.02), 1.0)
+    write_pcm("train_whistle", norm(reverb_tail((tw_sig + steam) * gate * pulse, 0.45, 0.16), 0.78), s)
+
+    # Bubbly splash sound for Lord Lemon's drain rising in Lemonade.
+    dur_bub = 0.72
+    bub = np.zeros(n_of(dur_bub))
+    rng_bub = np.random.default_rng(702)
+    for bi in range(11):
+        at = 0.02 + bi * 0.056 + rng_bub.uniform(-0.012, 0.012)
+        bf0 = rng_bub.uniform(360, 620) * (1.0 + bi * 0.04)
+        bdur = rng_bub.uniform(0.045, 0.072)
+        bn = n_of(bdur)
+        bt2 = np.arange(bn) / s
+        b_sw = np.sin(2 * np.pi * np.cumsum(np.geomspace(bf0, bf0 * 2.15, bn)) / s)
+        b_env = (1.0 - np.exp(-bt2 / 0.003)) * np.exp(-bt2 / (bdur * 0.45))
+        place(bub, b_sw * b_env, at, rng_bub.uniform(0.55, 1.0))
+    write_pcm("bubbles", norm(reverb_tail(bub, 0.35, 0.15), 0.72), s)
 
     # Original tracks: all slow, soft and major-leaning.
     menu = [[60, 64, 67, 71, 74], [57, 60, 64, 67, 71], [65, 69, 72, 76], [55, 59, 62, 67, 69]]

@@ -78,7 +78,7 @@ BOSS_TRACK("A Champion's Will", 460, "ATMANAN. Orchestral, CC BY 4.0.", "music_b
 BOSS_TRACK("Sour Circuit", 520, "Glitch Hop milestone boss battle.", "music_boss_glitch", 110, 4)
 BOSS_TRACK("Abyssal Core", 600, "Dubstep milestone boss drop.", "music_boss_dubstep", 140, 4)
 BOSS_TRACK("Core Meltdown", 680, "Drum & Bass milestone chase.", "music_boss_dnb", 174, 4)
-BOSS_TRACK("Slicer's Reckoning", 750, "Neurofunk DnB Room 50 finale.", "music_boss_neuro", 176, 4)
+BOSS_TRACK("Slicer's Reckoning", 750, "Neurofunk DnB milestone finale.", "music_boss_neuro", 176, 4)
 
 // Colours are 0xRRGGBB.
 SHOP_SPLAT("Ink Blot", 50, "Every fruit lands in black ink.", 0x201C30)
@@ -90,7 +90,7 @@ SHOP_SPLAT("Ghost Milk", 250, "A pale splash that barely shows.", 0xE8F0FF)
 
 SHOP_SKIN("Solid Gold", 650, "Every fruit cast in polished gold.", 100, 0xFFC84A, 210, 100, 85)
 SHOP_SKIN("Clear Glass", 550, "Blown glass with a hint of the fruit.", 60, 0xC8E8FF, 180, 60, 75)
-SHOP_SKIN("Holographic", 750, "Shiny transparent rainbow iridescence.", 48, 0xE0F4FF, 225, 68, 100)
+SHOP_SKIN("Holographic", 750, "Shiny transparent rainbow iridescence.", 78, 0xFFFFFF, 250, 78, 100)
 
 #undef SHOP_THEME
 #undef SHOP_TRAIL

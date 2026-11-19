@@ -90,6 +90,11 @@ void shopEquip(int tab, int i) {
 	if (!shopOwned(tab, i)) return;
 	const ShopTabInfo& t = kTabs[tab];
 	const u8 value = (u8)shopValue(tab, i);
+	if (tab == SHOP_MUSIC && trackBoss(kBaseTracks + i) >= 0) {
+		// Boss tracks equip to Boss Music instead of Menu/Game Music.
+		gSave.bossMusic = (u8)(2 + kBaseTracks + i);
+		return;
+	}
 	*t.slot = t.canTakeOff && *t.slot == value ? 0 : value;
 	if (tab == SHOP_MUSIC) gSave.gameTrack = *t.slot;  // a song from the Shop plays in the menus and in games
 }
@@ -101,9 +106,13 @@ bool trailUnlocked(int trail) { return trail == 0 || (trail < kTrailCount && sho
 void shopCheckSave() {
 	if (!boardUnlocked(gSave.board)) gSave.board = 0;
 	if (!trailUnlocked(gSave.trail)) gSave.trail = 0;
-	// Custom songs (past the game's tracks) are always the player's own.
-	if (gSave.menuTrack > 0 && gSave.menuTrack <= kTrackCount && !trackUnlocked(gSave.menuTrack - 1)) gSave.menuTrack = 0;
-	if (gSave.gameTrack > 0 && gSave.gameTrack <= kTrackCount && !trackUnlocked(gSave.gameTrack - 1)) gSave.gameTrack = 0;
+	// Built-in Boss Tracks only belong to Boss Music, never Menu/Game Music.
+	if (gSave.menuTrack > 0 && gSave.menuTrack <= kTrackCount && (!trackUnlocked(gSave.menuTrack - 1) || trackBoss(gSave.menuTrack - 1) >= 0)) gSave.menuTrack = 0;
+	if (gSave.gameTrack > 0 && gSave.gameTrack <= kTrackCount && (!trackUnlocked(gSave.gameTrack - 1) || trackBoss(gSave.gameTrack - 1) >= 0)) gSave.gameTrack = 0;
+	if (gSave.bossMusic >= 2 && gSave.bossMusic < 2 + kTrackCount) {
+		const int t = gSave.bossMusic - 2;
+		if (trackBoss(t) < 0 || !trackUnlocked(t)) gSave.bossMusic = 1;
+	}
 	if (gSave.splat > countOf(kSplats) || (gSave.splat > 0 && !shopOwned(SHOP_SPLATS, gSave.splat - 1))) gSave.splat = 0;
 	if (gSave.skin > countOf(kSkins) || (gSave.skin > 0 && !shopOwned(SHOP_SKINS, gSave.skin - 1))) gSave.skin = 0;
 }
@@ -112,9 +121,9 @@ static float sHoloPhase = 0.0f;
 void shopTick(float dt) { sHoloPhase += dt * 2.6f; }
 
 static void holoRgb(float* r, float* g, float* b) {
-	*r = 0.72f + 0.28f * sinf(sHoloPhase);
-	*g = 0.72f + 0.28f * sinf(sHoloPhase + 2.0944f);
-	*b = 0.72f + 0.28f * sinf(sHoloPhase + 4.1888f);
+	*r = 0.56f + 0.44f * sinf(sHoloPhase);
+	*g = 0.56f + 0.44f * sinf(sHoloPhase + 2.0944f);
+	*b = 0.56f + 0.44f * sinf(sHoloPhase + 4.1888f);
 }
 
 const m3d::Skin& shopSkinLook(int item) {
@@ -124,9 +133,9 @@ const m3d::Skin& shopSkinLook(int item) {
 		sHoloSkin = kSkinLooks[idx];
 		float r, g, b;
 		holoRgb(&r, &g, &b);
-		sHoloSkin.r = r * 1.15f;
-		sHoloSkin.g = g * 1.15f;
-		sHoloSkin.b = b * 1.15f;
+		sHoloSkin.r = r * 1.35f;
+		sHoloSkin.g = g * 1.35f;
+		sHoloSkin.b = b * 1.35f;
 		return sHoloSkin;
 	}
 	return kSkinLooks[idx];
@@ -187,6 +196,74 @@ int bossTrackPick(int boss, u32 roll) {
 		if (trackBoss(t) == eff && (t != last || bossTrackCount(eff) == 1)) pool[n++] = t;
 	if (n == 0) return -1;
 	const int t = pool[roll % n];
+	lastSlot = (u8)(t + 1);
+	return t;
+}
+
+static int bossTrackGroup(int boss) {
+	const int grp = boss >= 4 ? 4 : boss;
+	if (grp < 0 || grp >= 5) return -1;
+	return bossTrackCount(grp) > 0 ? grp : (boss % 2);
+}
+
+void bossUnlockAllTracks(int boss, u8* newCountOut) {
+	const int grp = bossTrackGroup(boss);
+	if (grp < 0) return;
+	for (int t = kBaseTracks; t < kTrackCount; t++) {
+		if (trackBoss(t) != grp) continue;
+		const int item = t - kBaseTracks;
+		if (item >= 0 && item < kMaxShopItems) {
+			const u32 bit = 1u << item;
+			if (!(gSave.bossTracksFound & bit)) {
+				gSave.bossTracksFound |= bit;
+				if (newCountOut) (*newCountOut)++;
+			}
+		}
+	}
+}
+
+int bossMusicResolve(int boss, u32 roll) {
+	if (gSave.bossMusic == 0) return -1;
+	if (gSave.bossMusic >= 2) {
+		const int chosen = gSave.bossMusic - 2;
+		if (chosen >= kTrackCount) return chosen;  // custom song: checked by audio::bossMusic / audio::trackCount
+		if (trackBoss(chosen) >= 0 && trackUnlocked(chosen)) return chosen;
+	}
+	const int grp = bossTrackGroup(boss);
+	if (grp < 0) return -1;
+	// Undiscovered boss track for this boss (until beaten & all its tracks unlocked in the Shop).
+	int undisc[kTrackCount], nu = 0;
+	for (int t = kBaseTracks; t < kTrackCount; t++) {
+		if (trackBoss(t) != grp) continue;
+		const int item = t - kBaseTracks;
+		if (!(gSave.bossTracksFound >> item & 1) && !trackUnlocked(t)) undisc[nu++] = t;
+	}
+	u8& lastSlot = grp < 4 ? gSave.bossTrackLast[grp] : gSave.bossTrackLastEx[grp - 4];
+	const int last = lastSlot - 1;
+	if (nu > 0) {
+		int avail[kTrackCount], na = 0;
+		for (int i = 0; i < nu; i++)
+			if (undisc[i] != last || nu == 1) avail[na++] = undisc[i];
+		const int t = avail[roll % na];
+		lastSlot = (u8)(t + 1);
+		return t;
+	}
+	// If this boss still hasn't been beaten, let an unlocked/already-found track for that boss group play if needed;
+	// once defeated, Auto only shuffles purchased boss tracks across all bosses (else keeps Game Music).
+	const bool bossBeatenBefore = boss >= 0 && boss < 16 && ((gSave.bossesBeaten >> boss) & 1);
+	if (!bossBeatenBefore) {
+		const int t = bossTrackPick(grp, roll);
+		if (t >= 0) return t;
+	}
+	int owned[kTrackCount], no = 0;
+	for (int t = kBaseTracks; t < kTrackCount; t++) {
+		if (trackBoss(t) >= 0 && shopOwned(SHOP_MUSIC, t - kBaseTracks)) owned[no++] = t;
+	}
+	if (no == 0) return -1;  // no purchased boss tracks yet: keep playing Game Music
+	int avail[kTrackCount], na = 0;
+	for (int i = 0; i < no; i++)
+		if (owned[i] != last || no == 1) avail[na++] = owned[i];
+	const int t = avail[roll % na];
 	lastSlot = (u8)(t + 1);
 	return t;
 }
