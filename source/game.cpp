@@ -1299,7 +1299,6 @@ void Game::hitBomb(Obj& o) {
 		audio::play(SFX_KNOCK, 0.95f, fieldPan(o.x), 1.05f);
 		emitSparks(o.x, o.y, rgba(255, 220, 110), juiceCount(16), 210);
 		addRing(o.x, o.y, rgba(255, 210, 90), 2.2f, 0.3f);
-		addPopup("RETURNED!", o.x, o.y - 18, rgba(255, 230, 120), 0.7f);
 		return;
 	}
 	if (shield) {
@@ -1308,7 +1307,6 @@ void Game::hitBomb(Obj& o) {
 		audio::play(SFX_KNOCK, 0.9f, fieldPan(o.x), 0.7f);
 		emitSparks(o.x, o.y, rgba(190, 170, 255), juiceCount(20), 200);
 		addRing(o.x, o.y, rgba(190, 170, 255), 2.4f, 0.35f);
-		addPopup("BLOCKED", o.x, o.y - 18, rgba(200, 180, 255), 0.7f);
 		return;
 	}
 	if (orchardLike() && orc.boss.on && !orc.boss.beaten && orc.boss.id == BOSS_KING && o.tag == 1) {
@@ -1470,7 +1468,6 @@ void Game::bounceJelly(Obj& o, const Blade& blade) {
 	o.rotv *= -1.3f;
 	o.hitCooldown = 0.3f;
 	audio::play(SFX_KNOCK, 0.7f, fieldPan(o.x), 1.6f);
-	addPopup("BOING", o.x, o.y - 20, rgba(255, 170, 220), 0.55f);
 	showCaption("Boing! Swipe faster.");
 }
 
@@ -1514,7 +1511,6 @@ void Game::trickEffect(const Obj& o, float dx, float dy) {
 				b->vx = (i - 1) * gRng.range(90, 130) + dy * 40;
 				b->vy = (gRng.range(-290, -210) - dx * 20) * kFieldK;
 			}
-			addPopup("BUNCH!", o.x, o.y - 20, rgba(255, 230, 120), 0.6f);
 			break;
 		case kPomegranate: {
 			const int seeds = sLightFrenzy ? 3 : 5;
@@ -1526,7 +1522,6 @@ void Game::trickEffect(const Obj& o, float dx, float dy) {
 				s->vx = o.vx * 0.3f + dx * 150 + cosf(a) * 90;
 				s->vy = o.vy * 0.3f + dy * 150 + sinf(a) * 90 - 120;
 			}
-			addPopup("SEEDS!", o.x, o.y - 20, rgba(255, 130, 150), 0.6f);
 			showCaption("Seeds! Catch them in one swipe.");
 			break;
 		}
@@ -1563,7 +1558,6 @@ void Game::trickEffect(const Obj& o, float dx, float dy) {
 				g->vx = side * gRng.range(50, 150) + dy * 40;
 				g->vy = (gRng.range(-280, -180) - dx * 20) * kFieldK;
 			}
-			addPopup("BURST!", o.x, o.y - 20, rgba(200, 150, 255), 0.6f);
 			break;
 		}
 		case kHoney:
@@ -1844,8 +1838,42 @@ void Game::endGame() {
 
 // ---------------------------------------------------------------- simulation
 void Game::updateObjects(float dt) {
+	const bool lemPool = orchardLike() && orc.boss.on && orc.boss.id == BOSS_LEMON && !orc.boss.beaten && orc.boss.lemonadeOn && orc.boss.lemLevel >= 0.45f;
+	const float lemSurfY = lemPool ? lemonadeSurfaceY(orc.boss) : (float)kFieldH;
 	for (auto& o : objs) {
 		if (!o.on) continue;
+		if (o.lemFloat) {
+			if (!lemPool) {
+				o.lemFloat = false;
+				o.lemTimer = 0;
+			} else {
+				const float prevT = o.lemTimer;
+				o.lemTimer -= dt;
+				o.x = clampf(o.x + o.vx * dt, o.radius + 8.0f, kFieldW - o.radius - 8.0f);
+				o.vx *= powf(0.18f, dt);
+				o.vy = 0;
+				o.y = lemSurfY - o.radius * 0.14f + sinf(orc.boss.t * 4.2f + o.x * 0.06f) * 2.5f;
+				o.rot += o.rotv * 0.35f * dt;
+				o.rx += o.rxv * 0.35f * dt;
+				o.ry += o.ryv * 0.35f * dt;
+				o.age += dt;
+				if (o.hitCooldown > 0) o.hitCooldown -= dt;
+				if (o.lemTimer > 0 && (int)ceilf(o.lemTimer) < (int)ceilf(prevT)) {
+					audio::play(SFX_CLICK, 0.72f, fieldPan(o.x), o.lemTimer > 1.0f ? 1.18f : 1.52f);
+				}
+				if (o.lemTimer <= 0) {
+					o.on = false;
+					o.lemFloat = false;
+					emitJuice(o.x, o.y, rgba(250, 232, 48), juiceCount(22), 0, -1);
+					addRing(o.x, o.y, rgba(255, 244, 90), 2.4f, 0.35f);
+					boom::start(o.x, o.y, 0.65f);
+					audio::play(SFX_BOOM, 0.75f, fieldPan(o.x), 1.3f);
+					shake = fmaxf(shake, 0.25f);
+					orcHurt(bossDamageBase(1), o.x, o.y, "SOUR");
+				}
+				continue;
+			}
+		}
 		o.vy += (o.kind == OBJ_BOMB && o.tag == 4 ? 0.2f : 1.0f) * gravity * dt;
 		o.x += o.vx * dt;
 		o.y += o.vy * dt;
@@ -1865,8 +1893,18 @@ void Game::updateObjects(float dt) {
 				o.hits = 1;
 				emitSparks(o.x, o.y, rgba(255, 190, 90), juiceCount(10), 120);
 				audio::play(SFX_KNOCK, 0.7f, fieldPan(o.x), 0.6f);
-				addPopup("TRICK!", o.x, o.y - 20, rgba(255, 140, 100), 0.55f);
 			}
+		}
+		if (lemPool && o.kind == OBJ_FRUIT && o.cutGen == 0 && o.vy > 0 && o.y >= lemSurfY - o.radius * 0.14f) {
+			o.lemFloat = true;
+			o.lemTimer = 3.0f;
+			o.y = lemSurfY - o.radius * 0.14f;
+			o.vy = 0;
+			o.vx *= 0.45f;
+			o.rotv *= 0.35f;
+			audio::play(SFX_CLICK, 0.72f, fieldPan(o.x), 0.95f);
+			emitSparks(o.x, lemSurfY, rgba(255, 248, 155), juiceCount(5), 95);
+			continue;
 		}
 		if (o.vy > 0 && o.y > kKillY) {
 			o.on = false;
@@ -2292,6 +2330,7 @@ void Game::drawField(const Blade& blade) const {
 	// Washes are a square as wide as kFillW, so they cover a tall field and any bars around it too.
 	if (freezeT > 0) gfx::rect(kFillX, kFillX, kFillW, kFillW, rgba(120, 200, 255, 46));
 	if (feverT > 0) gfx::rect(kFillX, kFillX, kFillW, kFillW,gSave.calmFx ? withAlpha(COL_ACCENT, 0.08f) : withAlpha(hueColor(elapsed * 0.25f), 0.13f + sinf(elapsed * 7) * 0.03f));
+	if (mode == MODE_BEAT) drawBeatLightShow();
 
 	for (const auto& s : splats) {
 		if (!s.on) continue;
@@ -2382,6 +2421,18 @@ void Game::drawField(const Blade& blade) const {
 		switch (o.kind) {
 			case OBJ_FRUIT:
 				if (o.hits == 1 && o.fruit == kCoconut) gfx::sprite(SHEET_SPRITES, sprites_crack_idx, o.x, o.y, 1, 1, o.rot);
+				if (o.lemFloat) {
+					int sec = (int)ceilf(o.lemTimer);
+					if (sec < 1) sec = 1;
+					if (sec > 3) sec = 3;
+					char cbuf[4];
+					snprintf(cbuf, sizeof cbuf, "%d", sec);
+					const float urgent = 1.0f - clampf(o.lemTimer / 3.0f, 0.0f, 1.0f);
+					const float pulse = 0.85f + 0.18f * sinf(elapsed * (7.0f + 8.0f * urgent));
+					const u32 col = sec == 1 ? rgba(255, 86, 70) : (sec == 2 ? rgba(255, 196, 66) : rgba(255, 246, 120));
+					gfx::sprite(SHEET_SPRITES, sprites_ring_idx, o.x, o.y, (o.radius / 22.0f) * pulse * 1.1f, (o.radius / 22.0f) * pulse * 1.1f, 0, withAlpha(col, 210));
+					gfx::text(cbuf, o.x, o.y - o.radius - 16.0f, 0.72f * pulse, col, ALIGN_CENTER);
+				}
 				break;
 			case OBJ_COIN:
 				if (!solid) drawCoin(o, 0, 0);

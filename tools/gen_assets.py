@@ -1835,31 +1835,45 @@ def boss_face_overlay(kind, pose):
 
 
 def spr_worm():
-    """Angry peeking worm for Aggro Apple."""
-    img = canvas(CELL)
+    """Angry peeking segmented worm oriented along +x for radial burrow emergence out of Aggro Apple."""
+    w, h = 44, 34
+    img = canvas(w, h)
     d = ImageDraw.Draw(img)
-    cx, cy = CELL / 2, CELL / 2
-    for i, (ox, oy, rr) in enumerate(((-8, 8, 7), (-3, 4, 8), (3, -1, 9), (8, -6, 10))):
-        col = (228, 126, 156, 255) if i < 3 else (246, 148, 174, 255)
-        el(d, cx + ox, cy + oy, rr, rr, col)
+    cx, cy = w / 2 - 2, h / 2
+    segs = ((-11, 2.0, 5.0), (-5, -1.6, 5.8), (1, 1.8, 6.4), (7, -1.0, 7.0), (13, 0.0, 8.2))
+    for i, (ox, oy, rr) in enumerate(segs):
+        col = (218, 102, 138, 255) if i % 2 == 0 and i < 4 else (248, 150, 178, 255)
+        el(d, cx + ox, cy + oy, rr, rr * 0.92, col)
     img = shade(img, light=(255, 224, 232, 95), dark=(95, 24, 48, 75))
     d = ImageDraw.Draw(img)
-    el(d, cx + 6, cy - 8, 2.5, 2.5, (255, 252, 240, 255))
-    el(d, cx + 11, cy - 7, 2.5, 2.5, (255, 252, 240, 255))
-    el(d, cx + 6.5, cy - 8, 1.3, 1.3, FACE_INK)
-    el(d, cx + 11.5, cy - 7, 1.3, 1.3, FACE_INK)
-    d.line([(cx + 3) * SS, (cy - 12) * SS, (cx + 12) * SS, (cy - 10) * SS], fill=FACE_INK, width=int(2.2 * SS))
-    return shrink(sticker(img, 1.6))
+    hx, hy = cx + 14.5, cy - 0.5
+    el(d, hx + 1.0, hy - 3.0, 2.3, 2.3, (255, 252, 240, 255))
+    el(d, hx + 1.0, hy + 2.8, 2.3, 2.3, (255, 252, 240, 255))
+    el(d, hx + 1.8, hy - 2.8, 1.2, 1.2, FACE_INK)
+    el(d, hx + 1.8, hy + 2.6, 1.2, 1.2, FACE_INK)
+    d.line([(hx - 1.5) * SS, (hy - 5.8) * SS, (hx + 2.2) * SS, (hy - 0.6) * SS], fill=FACE_INK, width=int(2.0 * SS))
+    d.line([(hx - 1.5) * SS, (hy + 5.6) * SS, (hx + 2.2) * SS, (hy + 0.4) * SS], fill=FACE_INK, width=int(2.0 * SS))
+    return shrink(sticker(img, 1.5))
 
 
-def spr_lem_floatie():
-    """Bright coral-and-cream striped inflatable swim ring for Lord Lemon's Lemonade squeeze."""
+def spr_worm_hole():
+    """Bruised bitten apple burrow pit for Aggro Apple's emerging worms."""
+    s = 30
+    img = canvas(s)
+    d = ImageDraw.Draw(img)
+    cx = cy = s / 2
+    el(d, cx, cy, 11.5, 9.6, (252, 226, 176, 255))
+    el(d, cx, cy, 9.6, 7.8, (148, 24, 38, 255))
+    el(d, cx + 0.4, cy + 0.5, 7.6, 6.0, (44, 10, 20, 255))
+    return shrink(img)
+
+
+def _lem_floatie_full():
     w, h = 76, 46
     ring = canvas(w, h)
     d = ImageDraw.Draw(ring)
     cx, cy = w / 2, h / 2 + 1
     d.ellipse([(cx - 32) * SS, (cy - 16) * SS, (cx + 32) * SS, (cy + 16) * SS], fill=(246, 108, 44, 255))
-    # Bold cream swim-ring stripes radiating from the ring centre.
     for ang_deg in (-55, 5, 65, 130, 195):
         a = math.radians(ang_deg)
         ca, sa = math.cos(a), math.sin(a)
@@ -1873,7 +1887,30 @@ def spr_lem_floatie():
     hole = Image.new("L", ring.size, 255)
     ImageDraw.Draw(hole).ellipse([(cx - 17) * SS, (cy - 8) * SS, (cx + 17) * SS, (cy + 7.5) * SS], fill=0)
     ring.putalpha(ImageChops.multiply(ring.getchannel("A"), hole))
-    return shrink(sticker(ring, 1.5))
+    return sticker(ring, 1.5), int(cy * SS)
+
+
+def spr_lem_floatie():
+    """Bright coral-and-cream striped inflatable swim ring for Lord Lemon's Lemonade squeeze."""
+    ring, _ = _lem_floatie_full()
+    return shrink(ring)
+
+
+def spr_lem_floatie_back():
+    """Back upper half of the swim ring rendered behind Lord Lemon so it wraps around his waist."""
+    ring, split_y = _lem_floatie_full()
+    arr = np.array(ring, dtype=np.float32)
+    arr[split_y:, :, 3] = 0
+    arr[:split_y, :, :3] *= 0.80
+    return shrink(Image.fromarray(arr.astype(np.uint8), "RGBA"))
+
+
+def spr_lem_floatie_front():
+    """Front lower half of the swim ring rendered in front of Lord Lemon's waist below his face."""
+    ring, split_y = _lem_floatie_full()
+    arr = np.array(ring, dtype=np.uint8)
+    arr[:max(0, split_y - 2), :, 3] = 0
+    return shrink(Image.fromarray(arr, "RGBA"))
 
 
 def spr_lem_drain():
@@ -1924,7 +1961,8 @@ def orchard_sprites():
         out.append((f"bface_{who}_dead", boss_face_overlay(who, "dead")))
     # 2.0c Extra cards, boss-track skull icon & Lord Lemon floatie/drain appended strictly at the tail.
     out += [("cd_" + CARD_ICONS[i], spr_card_icon(i)) for i in range(42, len(CARD_ICONS))]
-    out += [("ic_skull", spr_icon("skull")), ("lem_floatie", spr_lem_floatie()), ("lem_drain", spr_lem_drain())]
+    out += [("ic_skull", spr_icon("skull")), ("lem_floatie", spr_lem_floatie()), ("lem_drain", spr_lem_drain()),
+            ("lem_floatie_back", spr_lem_floatie_back()), ("lem_floatie_front", spr_lem_floatie_front()), ("boss_worm_hole", spr_worm_hole())]
     return out
 
 

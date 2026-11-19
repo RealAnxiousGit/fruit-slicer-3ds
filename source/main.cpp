@@ -23,6 +23,8 @@
 #if PORT_3DS
 #include <sys/stat.h>
 #include "bgtop0.h"
+// Extra headroom above ctrulib's 32 KB default for nested C++/Lab call stacks.
+extern "C" u32 __stacksize__ = 96 * 1024;
 #endif
 #include "logo.h"
 #include "port_api.h"

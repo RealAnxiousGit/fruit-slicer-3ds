@@ -23,11 +23,6 @@ namespace {
 // Tuned with the Lab's timed fights (labBossFight).
 int chainLength(const Boss& b) { return b.enraged ? 2 : (b.id >= BOSS_DURIAN ? 3 : 4); }
 
-float lemonadeSurfaceY(const Boss& b) {
-	const float halfY = kFieldTop + (kFieldH - kFieldTop) * 0.50f;
-	return lerpf((float)kFieldH, halfY, clampf(b.lemLevel, 0.0f, 1.0f));
-}
-
 float endlessRoomBoost(int room, bool endless) {
 	if (!endless || room <= 10) return 1.0f;
 	return clampf(1.0f + (room - 10) * 0.012f, 1.0f, 1.55f);
@@ -144,19 +139,14 @@ void Game::bossHitSlice(float x, float y, float dx, float dy) {
 		b.roarT = 1.15f;
 		b.chain = (u8)chainLength(b);
 		triggeredEnrage = true;
-		setCallout("PHASE 2! ENRAGED!", rgba(255, 90, 70), 0.95f);
 		audio::play(SFX_TRAIN_WHISTLE, 1.0f, fieldPan(x));
-		showCaption("Phase 2! The boss is enraged and its guard drops quicker!");
 	}
 	if (phase > b.phase) {
 		b.phase = (u8)phase;
 		if (!triggeredEnrage) {
 			b.roarT = 1.2f;
-			setCallout(phase >= 3 ? "IT'S FURIOUS!" : "IT'S ANGRY!", rgba(255, 140, 110));
 			audio::play(SFX_ROAR, 1.0f, fieldPan(x));
 		}
-	} else if (!triggeredEnrage) {
-		addPopup("SLICED!", x, y - b.radius - 14, rgba(255, 240, 160), 0.7f);
 	}
 }
 
@@ -186,6 +176,10 @@ void Game::bossStart(int id, bool royal) {
 	b.enterT = 1.6f;
 	b.nextAttack = 1.1f;
 	b.chain = (u8)chainLength(b);
+	b.lemCooldown = 0.0f;
+	b.thornCd = id == BOSS_DURIAN ? 4.4f : 0.0f;
+	b.thornExt = 0.0f;
+	b.thornStage = 0;
 	for (auto& s : orc.shots) s.on = false;
 	for (auto& w : b.worms) w = {};
 	orc.fightT = 0;
@@ -211,6 +205,10 @@ void Game::bossOpen(float seconds, bool laugh) {
 	Boss& b = orc.boss;
 	if (!b.on || b.beaten || b.dazeT > 0) return;
 	if (b.enraged && b.id >= kFirstMilestoneBoss) laugh = false;  // enraged milestone bosses don't laugh when exposed
+	if (b.id == BOSS_DURIAN && (b.thornStage == 1 || b.thornStage == 2)) {
+		b.thornStage = 3;
+		b.thornT = 0;
+	}
 	float t = seconds + 0.25f * orc.upgrade[CARD_BLADE];
 	if (orc.upgrade[CARD_GLASS]) t *= 2;
 	if (b.royal) t *= 0.75f;  // a Royal opens up for less time
@@ -218,11 +216,9 @@ void Game::bossOpen(float seconds, bool laugh) {
 	if (t > b.openT) b.openT = t;
 	b.guard = false;
 	if (wasUp) {
-		addPopup("OPEN!", b.x, b.y - b.radius - 16, rgba(255, 230, 120), 0.75f);
 		audio::play(SFX_OPEN, 0.9f, fieldPan(b.x));
 		static const float kPitch[BOSS_COUNT] = {1.25f, 0.80f, 1.02f, 1.38f, 0.78f, 1.42f, 0.92f};
 		if (laugh) audio::play(SFX_LAUGH, 0.8f, fieldPan(b.x), kPitch[b.id % BOSS_COUNT]);
-		showCaption("Its guard is down. Slice it!");
 	}
 }
 
@@ -248,7 +244,7 @@ void Game::bossNextAttack() {
 	Boss& b = orc.boss;
 	if (b.chain == 0) b.chain = (u8)(chainLength(b) > 2 ? chainLength(b) - 1 : 1);
 	b.finisher = --b.chain == 0;
-	u8 choices[4];
+	u8 choices[8];
 	int n = 0;
 	if (b.id == BOSS_MELON) {
 		if (!b.finisher && b.lastAttack != MEL_SEEDS) choices[n++] = MEL_SEEDS;
@@ -282,14 +278,13 @@ void Game::bossNextAttack() {
 		choices[n++] = DUR_SPIN;
 	} else if (b.id == BOSS_LEMON) {
 		b.attackCycle++;
-		if (!b.lemonadeOn && (b.attackCycle >= 2 || b.enraged) && b.lastAttack != LEM_LEMONADE) {
+		if (!b.lemonadeOn && b.lemCooldown <= 0 && b.attackCycle >= (b.enraged ? 3 : 5) && b.lastAttack != LEM_LEMONADE) {
 			choices[n++] = LEM_LEMONADE;
-			if (b.enraged) choices[n++] = LEM_LEMONADE;  // strongly prioritize Lemonade flood in Phase 2
-		} else {
-			if (!b.finisher) choices[n++] = LEM_ACID;
-			if (!b.finisher) choices[n++] = LEM_ZEST;
-			choices[n++] = LEM_BLITZ;
+			if (b.enraged) choices[n++] = LEM_LEMONADE;  // more frequent in Phase 2, rarer & balanced in Phase 1
 		}
+		if (!b.finisher) choices[n++] = LEM_ACID;
+		if (!b.finisher) choices[n++] = LEM_ZEST;
+		choices[n++] = LEM_BLITZ;
 	} else if (b.id == BOSS_APPLE) {
 		choices[n++] = APP_WORMS;
 		if (!b.finisher) choices[n++] = APP_BARRAGE;
@@ -321,30 +316,24 @@ void Game::bossNextAttack() {
 	switch (a) {
 		case MEL_SEEDS:
 			b.volley = 3 + b.phase;
-			addPopup("SEED SPIT", b.x, b.y - b.radius - 14, rgba(255, 200, 160), 0.55f);
 			break;
 		case MEL_FLOP:
 			b.volley = b.phase >= 3 ? 2 : 1;
-			addPopup("BELLY FLOP", b.x, b.y - b.radius - 14, rgba(255, 200, 160), 0.55f);
 			break;
 		case MEL_CHARGE:
 			b.volley = 0;
-			addPopup("ROLLING CHARGE", b.x, b.y - b.radius - 14, rgba(255, 170, 140), 0.55f);
 			showCaption("It's charging. Swipe it to block.");
 			break;
 		case KING_VOLLEY:
 			b.volley = 2 + b.phase;
-			addPopup("CANNON VOLLEY", b.x, b.y - b.radius - 14, rgba(255, 200, 160), 0.55f);
 			break;
 		case KING_LOB:
 			b.volley = 1;
-			addPopup("ROYAL LOB", b.x, b.y - b.radius - 14, rgba(255, 200, 160), 0.55f);
 			showCaption("Some of that fruit is a trick.");
 			break;
 		case KING_CROWN:
 			b.volley = 1;
 			b.attackCycle = 0;
-			addPopup("CROWN TOSS", b.x, b.y - b.radius - 14, rgba(255, 220, 120), 0.55f);
 			break;
 		case KING_FUSE:
 			b.fuseT = 5.2f - 0.45f * (gSave.difficulty >= DIFF_HARD);
@@ -360,77 +349,59 @@ void Game::bossNextAttack() {
 			break;
 		case PINE_DARTS:
 			b.volley = 4 + b.phase;
-			addPopup("SPIKY BARRAGE", b.x, b.y - b.radius - 14, rgba(255, 230, 120), 0.55f);
 			break;
 		case PINE_WHIRL:
 			b.volley = 2 + (b.phase >= 3);
-			addPopup("CROWN WHIRL", b.x, b.y - b.radius - 14, rgba(160, 236, 130), 0.55f);
 			break;
 		case PINE_SLAM:
 			b.volley = b.phase >= 3 ? 2 : 1;
-			addPopup("FORTRESS SLAM", b.x, b.y - b.radius - 14, rgba(255, 210, 110), 0.55f);
 			break;
 		case PINE_BOMB:
 			b.volley = 1;
-			addPopup("RETURN THE BOMB!", b.x, b.y - b.radius - 14, rgba(255, 190, 80), 0.55f);
 			showCaption("Slice the lobbed bomb back into The Pineapple Guard!");
 			break;
 		case CHILI_EMBERS:
 			b.volley = 4 + b.phase;
-			addPopup("EMBER VOLLEY", b.x, b.y - b.radius - 14, rgba(255, 160, 90), 0.55f);
 			break;
 		case CHILI_MIRAGE:
 			b.volley = 1;
-			addPopup("HEAT MIRAGE", b.x, b.y - b.radius - 14, rgba(255, 130, 100), 0.55f);
 			showCaption("Watch the shimmering decoys!");
 			break;
 		case CHILI_RUSH:
 			b.volley = 3;
-			addPopup("BLAZING RUSH", b.x, b.y - b.radius - 14, rgba(255, 140, 80), 0.55f);
 			break;
 		case DUR_THORNS:
 			b.volley = 5 + b.phase + (b.enraged ? 2 : 0);
-			addPopup(b.enraged ? "RAGING THORNS!" : "THORN VOLLEY", b.x, b.y - b.radius - 14, rgba(220, 200, 110), 0.55f);
 			break;
 		case DUR_SLAM:
 			b.volley = b.enraged ? 3 : 2;
-			addPopup(b.enraged ? "METEOR QUAKE!" : "DUST QUAKE", b.x, b.y - b.radius - 14, rgba(235, 195, 100), 0.55f);
 			break;
 		case DUR_SPIN:
 			b.volley = 3 + b.phase + (b.enraged ? 2 : 0);
-			addPopup(b.enraged ? "HYPER WHIRL!" : "SPIKE WHIRL", b.x, b.y - b.radius - 14, rgba(245, 215, 130), 0.55f);
 			break;
 		case LEM_ACID:
 			b.volley = 5 + b.phase + (b.enraged ? 2 : 0);
-			addPopup(b.enraged ? "DOUBLE SOUR!" : "SOUR BARRAGE", b.x, b.y - b.radius - 14, rgba(245, 240, 100), 0.55f);
 			break;
 		case LEM_ZEST:
 			b.volley = 3 + b.phase + (b.enraged ? 2 : 0);
-			addPopup(b.enraged ? "ZEST STORM!" : "ZEST CROSSFIRE", b.x, b.y - b.radius - 14, rgba(190, 245, 90), 0.55f);
 			break;
 		case LEM_BLITZ:
 			b.volley = 4 + (b.enraged ? 2 : 0);
-			addPopup(b.enraged ? "OVERDRIVE BLITZ!" : "CITRUS BLITZ", b.x, b.y - b.radius - 14, rgba(255, 240, 130), 0.55f);
 			break;
 		case LEM_LEMONADE:
 			b.volley = 1;
 			b.attackCycle = 0;
-			addPopup("LEMONADE FLOOD!", b.x, b.y - b.radius - 14, rgba(255, 240, 110), 0.62f);
 			audio::play(SFX_POP, 0.85f, fieldPan(b.x), 0.85f);
-			showCaption("Stay above the sour lemonade! Slice the drain to clear it.");
 			break;
 		case APP_WORMS:
 			b.volley = 1;
-			addPopup(b.enraged ? "WORM FRENZY!" : "SWAT THE WORMS!", b.x, b.y - b.radius - 14, rgba(255, 150, 175), 0.55f);
 			showCaption("Slice or tap peeking worms before they lunge!");
 			break;
 		case APP_BARRAGE:
 			b.volley = 6 + b.phase + (b.enraged ? 2 : 0);
-			addPopup(b.enraged ? "CRIMSON HAIL!" : "CORE VOLLEY", b.x, b.y - b.radius - 14, rgba(255, 120, 130), 0.55f);
 			break;
 		case APP_CRUSH:
 			b.volley = b.enraged ? 3 : 2;
-			addPopup(b.enraged ? "FURY CRUSH!" : "ORCHARD CRUSH", b.x, b.y - b.radius - 14, rgba(255, 110, 110), 0.55f);
 			break;
 		default: break;
 	}
@@ -554,7 +525,6 @@ void Game::bossAttack(float dt) {
 			b.fuseT -= dt * lerpf(1.0f, lv.attackSpeed, 0.55f);
 			if (b.fuseCuts >= 3) {
 				audio::fuse(false);
-				setCallout("SNUFFED!", rgba(170, 230, 255));
 				if (b.finisher) bossOpen(lv.openTime * 1.5f);
 				b.attack = ATK_NONE;
 			} else if (b.fuseT <= 0) {
@@ -825,7 +795,7 @@ void Game::bossAttack(float dt) {
 		case APP_WORMS: {
 			if (b.volley > 0) {
 				b.volley = 0;
-				static const float kHoles[4][2] = {{-0.56f, -0.34f}, {0.56f, -0.32f}, {-0.54f, 0.36f}, {0.54f, 0.36f}};
+				static const float kHoles[4][2] = {{-0.62f, -0.22f}, {0.62f, -0.20f}, {-0.56f, 0.42f}, {0.56f, 0.42f}};
 				const int cnt = (b.enraged || b.phase >= 3) ? 4 : 3;
 				const float life = clampf((b.enraged ? 2.75f : 3.2f) - 0.30f * (gSave.difficulty >= DIFF_HARD) - 0.12f * b.phase, 1.65f, 3.2f);
 				for (int i = 0; i < cnt; i++) {
@@ -996,6 +966,16 @@ static float clampBossVisX(float x, float radius) {
 	return clampf(x, m, kFieldW - m);
 }
 
+static void wormHeadPos(const Boss& b, const AppleWorm& w, float bx, float by, float* wx, float* wy, float* nxOut = nullptr, float* nyOut = nullptr) {
+	const float len = sqrtf(w.ox * w.ox + w.oy * w.oy) + 0.001f;
+	const float nx = w.ox / len, ny = w.oy / len;
+	const float ext = b.radius * (0.06f + 0.40f * w.emergeT);
+	*wx = bx + w.ox + nx * ext;
+	*wy = by + w.oy + ny * ext;
+	if (nxOut) *nxOut = nx;
+	if (nyOut) *nyOut = ny;
+}
+
 void Game::bossUpdate(float dt) {
 	Boss& b = orc.boss;
 	if (!b.on) return;
@@ -1077,6 +1057,48 @@ void Game::bossUpdate(float dt) {
 		return;
 	}
 	if (b.lemHurtCd > 0) b.lemHurtCd -= kDt;
+	if (b.lemCooldown > 0 && !b.lemonadeOn) b.lemCooldown -= kDt;
+	// Dusty Durian: periodically extends thorns sharply outward, holds hazard, and retracts.
+	if (b.id == BOSS_DURIAN && !b.beaten) {
+		if (b.dazeT > 0 || !b.guard) {
+			if (b.thornStage == 1 || b.thornStage == 2) b.thornStage = 3;
+		}
+		if (b.thornStage == 0) {
+			if (b.guard && b.dazeT <= 0 && b.attack != DUR_SPIN) {
+				b.thornCd -= dt;
+				if (b.thornCd <= 0) {
+					b.thornStage = 1;
+					b.thornT = 0;
+					audio::play(SFX_KNOCK, 0.7f, fieldPan(b.x), 1.4f);
+				}
+			}
+		} else if (b.thornStage == 1) {
+			b.thornT += dt;
+			if (b.thornT >= 0.35f) {
+				const float prev = b.thornExt;
+				b.thornExt = clampf((b.thornT - 0.35f) / 0.24f, 0.0f, 1.0f);
+				if (prev == 0.0f && b.thornExt > 0.0f) audio::play(SFX_SHING, 0.55f, fieldPan(b.x), 1.35f);
+				if (b.thornExt >= 1.0f) {
+					b.thornStage = 2;
+					b.thornT = 0;
+				}
+			}
+		} else if (b.thornStage == 2) {
+			b.thornExt = 1.0f;
+			b.thornT += dt;
+			if (b.thornT >= (b.enraged ? 1.45f : 1.25f)) {
+				b.thornStage = 3;
+				b.thornT = 0;
+			}
+		} else if (b.thornStage == 3) {
+			b.thornExt = fmaxf(0.0f, b.thornExt - dt * 2.8f);
+			if (b.thornExt <= 0.0f) {
+				b.thornStage = 0;
+				b.thornT = 0;
+				b.thornCd = b.enraged ? gRng.range(3.6f, 5.2f) : gRng.range(5.4f, 7.6f);
+			}
+		}
+	}
 	// Milestone Phase 2 steam jets shooting from both sides.
 	if (b.enraged && b.id >= kFirstMilestoneBoss && !gSave.calmFx) {
 		b.steamT -= kDt;
@@ -1111,7 +1133,6 @@ void Game::bossUpdate(float dt) {
 					b.drainY = (float)kFieldH + 14.0f;
 					b.drainRise = 0.0f;
 					audio::play(SFX_BUBBLES, 0.90f, fieldPan(b.drainX));
-					addPopup("SLICE THE DRAIN!", b.drainX, lemonadeSurfaceY(b) - 18.0f, rgba(255, 245, 130), 0.58f);
 				}
 			} else {
 				b.drainRise = fminf(1.0f, b.drainRise + dt * 1.15f);
@@ -1126,6 +1147,7 @@ void Game::bossUpdate(float dt) {
 				b.lemonadeOn = false;
 				b.lemStage = 0;
 				b.drainOn = false;
+				b.lemCooldown = b.enraged ? 4.8f : 11.5f;
 			}
 		}
 	}
@@ -1145,7 +1167,6 @@ void Game::bossUpdate(float dt) {
 				o.vy = gRng.range(160, 220) * kFieldK;
 				audio::play(SFX_CLANG, 0.95f, fieldPan(b.x), 1.15f);
 				emitSparks(b.x, b.y, rgba(255, 225, 110), juiceAmount(12), 180);
-				addPopup("PARRIED BACK!", b.x, b.y - b.radius - 14, rgba(255, 185, 95), 0.65f);
 			} else {
 				o.on = false;
 				boom::start(b.x, b.y);
@@ -1162,9 +1183,10 @@ void Game::bossUpdate(float dt) {
 			w.timer -= dt;
 			if (w.timer <= 0) {
 				w.on = false;
-				const float wx = b.x + w.ox, wy = b.y + w.oy;
+				float wx, wy, nx, ny;
+				wormHeadPos(b, w, b.x, b.y, &wx, &wy, &nx, &ny);
 				audio::play(SFX_CHUCKLE, 0.8f, fieldPan(wx), 1.45f);
-				addPopup("WORM LUNGE!", wx, wy - 16, rgba(255, 120, 140), 0.65f);
+				emitJuice(wx, wy, rgba(250, 145, 175), juiceAmount(10), nx, ny);
 				orcHurt(bossDamage(2), wx, wy, "WORM");
 			}
 		}
@@ -1186,7 +1208,6 @@ void Game::bossUpdate(float dt) {
 		if (b.openT <= 0 && b.crownOut <= 0) {
 			b.openT = 0;
 			b.guard = true;
-			addPopup("GUARD UP", b.x, b.y - b.radius - 14, rgba(150, 200, 255), 0.5f);
 		}
 	}
 	if (b.roarT > 0) {
@@ -1218,14 +1239,14 @@ void Game::bossTest(Blade& blade) {
 		const float wr = 20.0f * reach;
 		for (auto& w : b.worms) {
 			if (!w.on) continue;
-			const float wx = b.x + w.ox * (0.4f + 0.6f * w.emergeT), wy = b.y + w.oy * (0.4f + 0.6f * w.emergeT);
+			float wx, wy;
+			wormHeadPos(b, w, b.x, b.y, &wx, &wy);
 			const float dx = blade.x - wx, dy = blade.y - wy;
 			if ((blade.strokeStart && dx * dx + dy * dy <= wr * wr) || (!blade.strokeStart && segDist2(wx, wy, blade) <= wr * wr)) {
 				w.on = false;
 				b.deflectStroke = blade.strokeId;  // swatting a worm off the rim never triggers Deflected!
 				audio::play(SFX_POP, 0.85f, fieldPan(wx), 1.35f);
 				emitSparks(wx, wy, rgba(255, 150, 175), juiceAmount(8), 110);
-				addPopup("SWATTED!", wx, wy - 14, rgba(190, 245, 160), 0.55f);
 				orcGainXp(2);
 				sliced++;
 			}
@@ -1243,7 +1264,6 @@ void Game::bossTest(Blade& blade) {
 			b.deflectStroke = blade.strokeId;
 			audio::play(SFX_BUBBLES, 0.95f, fieldPan(b.drainX), 0.78f);
 			audio::play(SFX_OPEN, 0.75f, fieldPan(b.drainX), 1.15f);
-			addPopup("DRAINED!", b.drainX, b.drainY - 18, rgba(170, 245, 255), 0.75f);
 			emitSparks(b.drainX, b.drainY, rgba(255, 248, 160), juiceAmount(14), 170);
 		}
 	}
@@ -1268,12 +1288,8 @@ void Game::bossTest(Blade& blade) {
 		if (s.kind == SHOT_CROWN) {
 			b.crownOut = 0;
 			b.attack = ATK_NONE;
-			addPopup("CROWN KNOCKED!", s.x, s.y - 14, rgba(255, 220, 120), 0.6f);
 			audio::play(SFX_GOLD, 0.8f, fieldPan(s.x));
 			bossOpen(orchardLevel(gSave.difficulty).openTime);
-		} else if (s.kind == SHOT_CANNON || s.kind == SHOT_EMBER || s.kind == SHOT_THORN || s.kind == SHOT_ACID) {
-			addPopup(s.kind == SHOT_EMBER ? "SNUFFED!" : (s.kind == SHOT_ACID ? "NEUTRALIZED!" : "DEFUSED!"), s.x, s.y - 14, s.kind == SHOT_EMBER ? rgba(255, 200, 120) : rgba(140, 230, 255), 0.5f);
-			audio::play((Sfx)(SFX_JUICY0 + gRng.below(2)), 0.7f, fieldPan(s.x), 1.3f);
 		} else {
 			audio::play((Sfx)(SFX_JUICY0 + gRng.below(2)), 0.7f, fieldPan(s.x), 1.3f);
 		}
@@ -1301,6 +1317,20 @@ void Game::bossTest(Blade& blade) {
 			return;
 		}
 	}
+	// Dusty Durian extended thorns hazard: extends well past the core and hurts on contact.
+	if (b.id == BOSS_DURIAN && b.thornExt > 0.45f) {
+		const float thornR = b.radius * (0.98f + 0.54f * b.thornExt) * reach;
+		if (segDist2(b.x, b.y, blade) <= thornR * thornR) {
+			if (blade.strokeId == b.deflectStroke || b.deflectT > 0) return;
+			b.deflectStroke = blade.strokeId;
+			b.deflectT = 0.55f;
+			audio::play(SFX_CLANG, 0.9f, fieldPan(b.x), 1.35f);
+			emitSparks(blade.x, blade.y, rgba(242, 224, 128), juiceAmount(12), 165);
+			blade.speed *= 0.3f;
+			orcHurt(bossDamage(1), blade.x, blade.y, "THORNS");
+			return;
+		}
+	}
 	float scale = 1 - (b.squash < 0 ? b.squash * 0.8f : 0);
 	const float r = b.radius * scale * 0.92f * reach;
 	if (segDist2(b.x, b.y, blade) > r * r) return;
@@ -1310,7 +1340,6 @@ void Game::bossTest(Blade& blade) {
 		b.nextAttack = 2;
 		b.deflectStroke = blade.strokeId;
 		b.deflectT = 1.2f;
-		setCallout("BLOCKED!", rgba(170, 230, 255));
 		audio::play(SFX_CLANG, 1.0f, fieldPan(b.x), 0.8f);
 		if (b.finisher) bossOpen(orchardLevel(gSave.difficulty).openTime * 1.3f);
 		return;
@@ -1326,7 +1355,6 @@ void Game::bossTest(Blade& blade) {
 		blade.speed *= 0.3f;
 		const float parryChance = 1.0f - powf(0.90f, (float)orc.upgrade[CARD_PARRY]);
 		if (orc.lastStandT > 0 || (orc.upgrade[CARD_PARRY] > 0 && gRng.unit() < parryChance)) {
-			addPopup("PARRIED!", b.x, b.y - b.radius - 14, rgba(170, 230, 255), 0.6f);
 			return;
 		}
 		const int deflect = orchardLevel(gSave.difficulty).deflectDamage + (mode == MODE_ORCHARD && orc.room >= 40 ? 1 : 0);
@@ -1334,7 +1362,6 @@ void Game::bossTest(Blade& blade) {
 		return;
 	}
 	// A clean slice.
-	if (orc.cleaver && b.guard) addPopup("CLEAVED!", b.x, b.y - b.radius - 14, rgba(255, 230, 150), 0.6f);
 	orc.cleaver = false;
 	bossHitSlice(b.x, b.y, blade.x - blade.px, blade.y - blade.py);
 }
@@ -1408,11 +1435,9 @@ void Game::bossGiant(float dt) {
 		if (b.attackT >= 0.9f) {
 			b.attack = ATK_NONE;
 			if (g.launched) {
-				setCallout("STUNNED!", rgba(170, 230, 255));
 				bossOpen(orchardLevel(gSave.difficulty).openTime * 1.5f, false);
 			} else {
 				audio::play(SFX_LAUGH, 1.0f, fieldPan(b.x), 0.8f);
-				addPopup("HA HA HA!", b.x, b.y - b.radius - 14, rgba(255, 170, 120), 0.6f);
 			}
 			g.launched = false;
 		}
@@ -1439,7 +1464,6 @@ void Game::bossGiantTest(const Blade& blade, float reach) {
 		if (g.hits >= g.need) {
 			g.launched = true;
 			g.vy = -260 * kFieldK;
-			setCallout("LAUNCHED!", rgba(170, 230, 255));
 			audio::play(SFX_LAUNCH, 1.0f, fieldPan(g.x));
 			orcGainXp(6);
 		}
@@ -1522,7 +1546,7 @@ void Game::drawShots() const {
 			default: break;
 		}
 	}
-	// Lord Lemon's sour Lemonade pool & sliceable Drain plug.
+	// Lord Lemon's sour Lemonade pool & sliceable Drain plug (clean visuals without text overlay).
 	if (b.on && b.lemonadeOn && b.lemLevel > 0.01f) {
 		const float surfY = lemonadeSurfaceY(b);
 		const float bottomY = kFillX + kFillW;
@@ -1534,7 +1558,6 @@ void Game::drawShots() const {
 			const float wave = gSave.calmFx ? 0.0f : sinf(b.t * 4.0f + i * 0.65f) * 2.2f;
 			gfx::rect(kFillX + i * segW, surfY + wave - 2.0f, segW + 1.0f, 5.0f, rgba(255, 248, 156, 210));
 		}
-		gfx::text("SOUR LEMONADE! SLICE ABOVE", kFieldW * 0.5f, fminf((float)kFieldH - 18.0f, surfY + 8.0f), 0.30f, rgba(112, 74, 8, 220), ALIGN_CENTER);
 		if (b.drainOn) {
 			const float pulse = 0.85f + 0.15f * sinf(b.t * 8.0f);
 			gfx::sprite(SHEET_SPRITES, sprites_ring_idx, b.drainX, b.drainY, pulse * 0.9f, pulse * 0.9f, 0, rgba(160, 245, 255, 225));
@@ -1594,12 +1617,14 @@ void Game::drawBoss(bool solid) const {
 	const float wob = milestoneDead ? sinf(b.leaveT * 14.0f) * 0.16f : (b.dazeT > 0 ? sinf(b.t * 7) * 0.25f : sinf(b.t * 1.7f) * 0.06f);
 	const float bx = visX + (milestoneDead && !gSave.calmFx ? sinf(b.leaveT * 52.0f) * (2.2f + 4.0f * deadP) : 0.0f);
 	const float by = b.y + (milestoneDead && !gSave.calmFx ? cosf(b.leaveT * 43.0f) * (1.8f + 3.2f * deadP) : 0.0f);
-	// The guard: a cool ring while it's up, a warm one while it's open.
-	if (!b.beaten && b.enterT <= 0 && b.dazeT <= 0) {
+	const bool showGuard = b.guard && !b.beaten && b.enterT <= 0 && b.dazeT <= 0;
+	const bool lemonFloat = b.id == BOSS_LEMON && !b.beaten && (b.attack == LEM_LEMONADE || b.lemonadeOn);
+	const float floatY = by + b.radius * (drawing3D() ? 0.56f : 0.44f) * sy;
+	// 2D guard shield ring behind the boss (never any gold ring when open).
+	if (!drawing3D() && showGuard) {
 		const float ring = b.radius * 1.5f * (1 + grow) / 34;
 		const float pulse = 0.65f + 0.25f * sinf(b.t * 5);
-		if (b.guard) gfx::sprite(SHEET_SPRITES, sprites_ring_idx, bx, by, ring, ring, 0, rgba(140, 200, 255, (int)(200 * pulse * alpha)));
-		else gfx::sprite(SHEET_SPRITES, sprites_ring_idx, bx, by, ring * 1.08f, ring * 1.08f, 0, rgba(255, 220, 110, (int)(230 * pulse * alpha)));
+		gfx::sprite(SHEET_SPRITES, sprites_ring_idx, bx, by, ring, ring, 0, rgba(140, 200, 255, (int)(200 * pulse * alpha)));
 	}
 	// The pose: shocked X-eye death pose on milestone finales, dizzy when confused/beaten, laughing with guard down, gritting mid-attack.
 	const int pose = b.beaten || b.dazeT > 0 ? BOSS_POSE_DAZE : !b.guard ? BOSS_POSE_OPEN : b.attack != ATK_NONE ? BOSS_POSE_WIND : BOSS_POSE_GUARD;
@@ -1616,7 +1641,7 @@ void Game::drawBoss(bool solid) const {
 	const int bodyIdx = milestoneDead ? kDeadBodyIdx[bi - kFirstMilestoneBoss] : (kBossBodyIdx[bi] + pose);
 	const float art = b.radius / kArtDiv[bi];
 	if (drawing3D()) {
-		// The game's own 3D fruit, made big, with the pose's face laid over it.
+		// The game's own 3D fruit, made big, with attached 3D floatie/thorns/worms and pose face overlay.
 		m3d::begin(kFieldW, gfx::stereoPerZ(), true);
 		m3d::Skin skin = {hurt ? 0.6f : (angryRed ? 0.42f : (b.surgeT > 0 ? 0.25f : 0.0f)), 1.0f, angryRed ? 0.22f : 0.35f, (angryRed || b.surgeT > 0) ? 0.14f : 0.35f, alpha, 0.3f};
 		if (!hurt && b.surgeT <= 0 && !angryRed && milestoneDead) {
@@ -1628,23 +1653,86 @@ void Game::drawBoss(bool solid) const {
 		const float s = b.radius / kMeshDiv[bi];
 		m3d::Pose pose3 = {bx, by, 30, b.rx, b.t * 0.4f, wob, s * (1 + grow), 0, 0, 0};
 		m3d::draw(kBossMeshId[bi], m3d::PART_WHOLE, pose3);
+		if (b.id == BOSS_DURIAN && b.thornExt > 0.02f) {
+			m3d::Pose tpose = pose3;
+			tpose.scale = s * (1 + grow) * lerpf(0.60f, 1.04f, b.thornExt);
+			m3d::draw(m3d::MESH_DURIAN_THORNS, m3d::PART_WHOLE, tpose);
+		}
+		if (lemonFloat) {
+			m3d::Skin floatSkin = {0.0f, 1.0f, 1.0f, 1.0f, alpha, 0.42f};
+			m3d::setSkin(&floatSkin);
+			m3d::Pose fpose = {bx, floatY, 30, -0.32f, b.t * 0.4f, wob * 0.4f, b.radius * 1.15f * (1 + grow) / 22.8f, 0, 0, 0};
+			m3d::draw(m3d::MESH_FLOATIE, m3d::PART_WHOLE, fpose);
+		}
+		if (b.id == BOSS_APPLE && !b.beaten) {
+			m3d::Skin wormSkin = {hurt ? 0.5f : 0.0f, 1.0f, 0.4f, 0.4f, alpha, 0.35f};
+			m3d::setSkin(&wormSkin);
+			for (const auto& w : b.worms) {
+				if (!w.on) continue;
+				const float ang = atan2f(w.oy, w.ox);
+				const float wig = sinf(b.t * 10.0f + w.ox) * 0.14f;
+				m3d::Pose wpose = {bx + w.ox * 0.88f, by + w.oy * 0.88f, 30.0f + b.radius * 0.42f, 0.0f, -0.35f, ang + wig, (b.radius / 22.0f) * (0.28f + 0.65f * w.emergeT), 0, 0, 0};
+				m3d::draw(m3d::MESH_WORM, m3d::PART_WHOLE, wpose);
+			}
+		}
 		m3d::setSkin(nullptr);
 		m3d::end();
 		gfx::sprite(SHEET_SPRITES, faceIdx, bx, by, art * sx, art * sy, wob, tint);
+		if (showGuard) {
+			const float pulse = 0.72f + 0.28f * sinf(b.t * 5.0f);
+			m3d::begin(kFieldW, gfx::stereoPerZ(), true);
+			m3d::Skin shieldSkin = {0.35f, 0.36f, 0.86f, 1.0f, 0.32f * pulse * alpha, 0.90f};
+			m3d::setSkin(&shieldSkin);
+			m3d::Pose spose = {bx, by, 30, sinf(b.t * 0.9f) * 0.18f, b.t * 0.65f, 0, b.radius * 1.28f * (1 + grow) / 23.2f, 0, 0, 0};
+			m3d::draw(m3d::MESH_SHIELD, m3d::PART_WHOLE, spose);
+			m3d::setSkin(nullptr);
+			m3d::end();
+		}
 	} else {
+		if (b.id == BOSS_DURIAN && b.thornExt > 0.02f) {
+			const float rBase = b.radius * 0.72f * (1 + grow);
+			const float rTip = b.radius * (0.98f + 0.56f * b.thornExt) * (1 + grow);
+			const u32 c0 = withAlpha(angryRed ? rgba(255, 175, 110) : rgba(242, 224, 128), alpha);
+			const u32 c1 = withAlpha(angryRed ? rgba(195, 85, 55) : rgba(168, 148, 66), alpha);
+			for (int i = 0; i < 12; i++) {
+				const float a = wob + i * (6.283185f / 12.0f) + (b.attack == DUR_SPIN ? b.t * 4.0f : 0.0f);
+				const float ca = cosf(a), sa = sinf(a);
+				const float px = -sa * b.radius * 0.15f, py = ca * b.radius * 0.15f;
+				gfx::tri(bx + ca * rBase + px, by + sa * rBase + py, c1,
+				         bx + ca * rBase - px, by + sa * rBase - py, c0,
+				         bx + ca * rTip, by + sa * rTip, c0);
+			}
+		}
+		if (lemonFloat) {
+			gfx::sprite(SHEET_SPRITES, sprites_lem_floatie_back_idx, bx, floatY, art * 1.18f * sx, art * 1.18f * sy, wob * 0.35f, withAlpha(WHITE, alpha));
+		}
 		gfx::sprite(SHEET_SPRITES, bodyIdx, bx, by, art * sx, art * sy, wob, tint);
-	}
-	if (b.id == BOSS_LEMON && !b.beaten && (b.attack == LEM_LEMONADE || b.lemonadeOn)) {
-		gfx::sprite(SHEET_SPRITES, sprites_lem_floatie_idx, bx, by + b.radius * 0.30f * sy, art * 1.18f * sx, art * 1.18f * sy, wob * 0.35f, withAlpha(WHITE, alpha));
+		if (lemonFloat) {
+			gfx::sprite(SHEET_SPRITES, sprites_lem_floatie_front_idx, bx, floatY, art * 1.18f * sx, art * 1.18f * sy, wob * 0.35f, withAlpha(WHITE, alpha));
+		}
+		if (b.id == BOSS_APPLE && !b.beaten) {
+			for (const auto& w : b.worms) {
+				if (!w.on) continue;
+				const float hx = bx + w.ox, hy = by + w.oy;
+				const float ang = atan2f(w.oy, w.ox);
+				const float wig = sinf(b.t * 10.0f + w.ox) * 0.14f;
+				const float len = sqrtf(w.ox * w.ox + w.oy * w.oy) + 0.001f;
+				const float nx = w.ox / len, ny = w.oy / len;
+				const float wx = hx + nx * b.radius * (0.04f + 0.28f * w.emergeT);
+				const float wy = hy + ny * b.radius * (0.04f + 0.28f * w.emergeT);
+				const float wscX = (b.radius / 48.0f) * (0.45f + 0.55f * w.emergeT);
+				const float wscY = (ang > 1.5708f || ang < -1.5708f) ? -wscX : wscX;
+				gfx::sprite(SHEET_SPRITES, sprites_boss_worm_hole_idx, hx, hy, b.radius / 52.0f, b.radius / 52.0f, ang);
+				gfx::sprite(SHEET_SPRITES, sprites_boss_worm_idx, wx, wy, wscX, wscY, ang + wig);
+			}
+		}
 	}
 	if (b.id == BOSS_APPLE && !b.beaten) {
 		for (const auto& w : b.worms) {
-			if (!w.on) continue;
-			const float wx = visX + w.ox * (0.4f + 0.6f * w.emergeT), wy = b.y + w.oy * (0.4f + 0.6f * w.emergeT);
-			gfx::sprite(SHEET_SPRITES, sprites_boss_worm_idx, wx, wy, 0.72f * w.emergeT, 0.72f * w.emergeT, sinf(b.t * 9) * 0.15f);
-			if (w.timer < 1.2f) {
-				gfx::sprite(SHEET_SPRITES, sprites_ring_idx, wx, wy, 0.6f, 0.6f, 0, rgba(255, 110, 120, (u8)(180 + 70 * sinf(b.t * 16))));
-			}
+			if (!w.on || w.timer >= 1.2f) continue;
+			float wx, wy;
+			wormHeadPos(b, w, visX, b.y, &wx, &wy);
+			gfx::sprite(SHEET_SPRITES, sprites_ring_idx, wx, wy, 0.58f, 0.58f, 0, rgba(255, 110, 120, (u8)(180 + 70 * sinf(b.t * 16))));
 		}
 	}
 	// The King wears his crown; any Royal boss wears a golden crown too.

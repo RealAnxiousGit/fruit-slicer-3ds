@@ -20,6 +20,8 @@ struct Obj {
 	u8 cutGen;          // Cutting Board: 0 whole, 1 cut half, 2 quarter chunk
 	u8 cutPart;         // Cutting Board: 0 left piece, 1 right piece
 	bool on;
+	bool lemFloat;      // floating on Lord Lemon's sour lemonade surface
+	float lemTimer;     // seconds before floating fruit explodes in lemon juice
 };
 struct Half {
 	float x, y, vx, vy, rot, rotv;
@@ -186,6 +188,7 @@ struct Game {
 	float beatFirst;      // seconds into the track of the first beat of a bar: 0 for the game's own tracks
 	float beatLoop;       // seconds before a custom song starts again, once it has loaded
 	int beatPerLoop;      // throw slots in one play of a custom song; 0 for the game's tracks, which run on forever
+	float beatLightFade;  // smooth 0..1 fade for Beat Slice high-combo stage light show
 	// Orchard Blast (orchard.cpp, boss.cpp).
 	Orchard orc;
 	// Boss Rush, Recipe, Sharpshooter and Juggle (modes12.cpp).
@@ -254,6 +257,7 @@ struct Game {
 	float beatClock() const;   // songT moved by Beat Timing
 	float beatOffset() const;  // seconds from the nearest throw slot, negative when early
 	void drawBeatPulse() const;  // Beat Slice: the field's edges glow while a slice would count
+	void drawBeatLightShow() const;  // Beat Slice: tempo-synced high-combo spotlights behind the field
 
 	// Orchard Blast, for the menus (orchard.cpp).
 	bool orchardLike() const { return mode == MODE_ORCHARD || mode == MODE_BOSSRUSH; }  // HP, charms and bosses

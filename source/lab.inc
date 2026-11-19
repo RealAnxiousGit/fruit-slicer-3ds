@@ -1966,6 +1966,73 @@ static void labFinish(Input& in) {
 				sScreen = wasScr;
 				labCheck(openOk && invOk && pauseOk && resOk, "hudShouldHide hides corner charm overlay and mode HUD behind Pause, Result, and Inventory");
 			}
+			{
+				// Beat Slice high-combo stage light show: dormant below threshold, fades in on high streak/combo,
+				// advances tempo-synced beam rotation & hue per beat, and tones down under Calm Effects.
+				const u8 wasCalm = gSave.calmFx;
+				const u8 wasFx = gSave.effects;
+				Blade noBlade = {};
+				sGame.start(MODE_BEAT);
+				sGame.phase = PHASE_PLAY;
+				sGame.beatLen = 0.5f;
+				sGame.beatStepLen = 0.5f;
+				sGame.beatFirst = 0.0f;
+				sGame.beatLoop = 0.0f;
+				sGame.beatPerLoop = 0;
+				sGame.beatStreak = 2;
+				sGame.chain = 2;
+				for (int i = 0; i < 15; i++) sGame.update(noBlade);
+				labCheck(sGame.beatLightFade <= 0.01f, "Beat Slice light show stays dormant below high combo threshold");
+
+				bool blendRestored = true;
+				auto measureLightShow = [&](bool* outBlendOk = nullptr) -> u32 {
+#if PORT_TWO_SCREENS
+					gfx::beginFrame();
+					gfx::beginBottom();
+					const u32 c0 = gfx::drawCallsLive;
+					sGame.drawBeatLightShow();
+					if (outBlendOk) *outBlendOk = true;
+					const u32 drawn = gfx::drawCallsLive - c0;
+					gfx::endFrame();
+					return drawn;
+#else
+					gfx::beginField();
+					const u32 c0 = gfx::drawCallsLive;
+					sGame.drawBeatLightShow();
+					if (outBlendOk) *outBlendOk = !gfx::isAdditive();
+					gfx::beginField();
+					return gfx::drawCallsLive - c0;
+#endif
+				};
+				const u32 lowCalls = measureLightShow();
+
+				sGame.beatStreak = 14;
+				sGame.chain = 14;
+				for (int i = 0; i < 60; i++) {
+					sGame.beatStreak = 14;
+					sGame.chain = 14;
+					sGame.update(noBlade);
+				}
+				gSave.calmFx = 0;
+				gSave.effects = FX_FULL;
+				const u32 highCalls = measureLightShow(&blendRestored);
+
+				gSave.calmFx = 1;
+				const u32 calmCalls = measureLightShow();
+				gSave.calmFx = wasCalm;
+				gSave.effects = wasFx;
+
+				const float clockA = sGame.beatClock();
+				const u32 hueA = hueColor(clockA * 0.05f + floorf(clockA / sGame.beatLen) * 0.12f);
+				sGame.songT += sGame.beatLen;
+				const float clockB = sGame.beatClock();
+				const u32 hueB = hueColor(clockB * 0.05f + floorf(clockB / sGame.beatLen) * 0.12f);
+				char bmsg[96];
+				snprintf(bmsg, sizeof bmsg, "low=%u high=%u calm=%u fade=%.2f blend=%d hue=%d",
+				         (unsigned)lowCalls, (unsigned)highCalls, (unsigned)calmCalls, sGame.beatLightFade, (int)blendRestored, (int)(hueA != hueB));
+				labCheck(lowCalls == 0 && highCalls >= 1 && calmCalls <= highCalls && blendRestored && hueA != hueB && sGame.beatLightFade > 0.8f,
+				         "Beat Slice light show activates at high combo, shifts hue/beams with beat tempo, and honors Calm Effects", bmsg);
+			}
 		}
 		step = 1;
 #if PORT_3DS

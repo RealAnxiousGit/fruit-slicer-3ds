@@ -162,8 +162,18 @@ struct Boss {
 	float lemTimer;   // stage progress / wait until drain rises
 	float drainX, drainY, drainRise;  // floating drain plug coordinates and bubble bobbing
 	float lemHurtCd;  // brief i-frame cooldown between sour Lemonade hits
+	float lemCooldown;  // seconds before Lemonade can flood again
 	float steamT;     // Phase 2 bilateral steam puff accumulator
+	float thornExt;   // Dusty Durian: 0..1 thorn extension/retraction progress
+	float thornCd;    // cooldown until next thorn extension burst
+	float thornT;     // stage timer within thorn burst
+	u8 thornStage;    // 0 idle, 1 extending, 2 extended hazard, 3 retracting
 };
+
+inline float lemonadeSurfaceY(const Boss& b) {
+	const float halfY = kFieldTop + (kFieldH - kFieldTop) * 0.50f;
+	return lerpf((float)kFieldH, halfY, clampf(b.lemLevel, 0.0f, 1.0f));
+}
 
 // The run itself.
 static constexpr int kOrchardRooms = 10;

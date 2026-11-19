@@ -30,6 +30,7 @@ void Game::beatStart() {
 	beatStepLen = beatLen > 1.0f ? beatLen * 0.5f : beatLen;
 	songT = 0;
 	timeLeft = 60;
+	beatLightFade = 0;
 	audio::musicBeat(beatSong);
 }
 
@@ -75,6 +76,9 @@ void Game::beatUpdate() {
 		if (period > 0) err -= roundf(err / period) * period;
 		songT += fabsf(err) < 0.25f ? err * 0.1f : err;
 	}
+	const int beatCombo = beatStreak > chain ? beatStreak : chain;
+	const float target = phase == PHASE_PLAY ? clampf((beatCombo - 5) / 8.0f, 0.0f, 1.0f) : 0.0f;
+	beatLightFade = lerpf(beatLightFade, target, 1.0f - powf(0.015f, kDt));
 }
 
 // A slice during play: true if it was on the beat and scores.
@@ -94,6 +98,60 @@ bool Game::beatSlice(const Obj& o) {
 		addPopup(buf, o.x, o.y - 18, hueColor(beatHits * 0.07f), 0.7f);
 	}
 	return true;
+}
+
+// High-combo stage light show behind the field: smoothly rotates and shifts hue with the beat tempo.
+void Game::drawBeatLightShow() const {
+	if (mode != MODE_BEAT || beatLen <= 0 || beatLightFade <= 0.01f) return;
+	const float clock = beatClock();
+	const float q = beatPerLoop > 0 ? clock - floorf(clock / beatLoop) * beatLoop : clock;
+	const float beats = (q - beatFirst) / beatLen;
+	const float bFloor = floorf(beats);
+	const float frac = beats - bFloor;
+	const int barBeat = ((int)bFloor % 4 + 4) % 4;
+	const float pulse = powf(1.0f - frac, 2.0f);
+	const float barBoost = barBeat == 0 ? 1.28f : 1.0f;
+	const float calm = gSave.calmFx ? 0.36f : 1.0f;
+	const float alpha = beatLightFade * calm * (0.62f + 0.38f * pulse * barBoost);
+	const float hueBase = clock * 0.05f + bFloor * 0.12f + 0.06f * pulse;
+	const float speed = gSave.calmFx ? 0.35f : 1.0f;
+	const float spanY = kFieldH - kFieldTop;
+	const float w = (float)kFieldW;
+	struct Rig { float ax, bx, sweep, width, dir, phase; };
+	static const Rig kRigs[4] = {
+		{0.16f, 0.34f, 0.24f, 0.22f,  1.0f, 0.0f},
+		{0.38f, 0.56f, 0.26f, 0.25f, -1.0f, 1.3f},
+		{0.62f, 0.44f, 0.26f, 0.25f,  1.0f, 2.6f},
+		{0.84f, 0.66f, 0.24f, 0.22f, -1.0f, 4.1f},
+	};
+	auto emitBeams = [&](float coreMul, float alphaScale) {
+		for (int i = 0; i < 4; i++) {
+			const Rig& r = kRigs[i];
+			const float sway = sinf(beats * 0.785398f * r.dir * speed + r.phase) * r.sweep * speed;
+			const float ax = w * r.ax;
+			const float ay = kFieldTop - 6.0f;
+			const float tx = w * (r.bx + sway);
+			const float by = kFieldH + 14.0f;
+			const float bw = w * r.width * (0.85f + 0.25f * pulse) * coreMul;
+			const u32 col = hueColor(hueBase + i * 0.22f);
+			const u32 cTop = withAlpha(col, 0.24f * alpha * alphaScale);
+			const u32 cBot = withAlpha(col, 0.03f * alpha * alphaScale);
+			gfx::tri(ax, ay, cTop, tx - bw, by, cBot, tx + bw, by, cBot);
+		}
+	};
+	emitBeams(1.0f, 1.0f);
+#if !PORT_3DS
+	if (gfx::fullGpuFx() && !gSave.calmFx) {
+		gfx::setAdditive(true);
+		emitBeams(0.56f, 0.62f);
+		gfx::setAdditive(false);
+	}
+#endif
+	// Subtle wash pulse along the floor edge at peak bar downbeats.
+	if (barBeat == 0 && pulse > 0.15f && !gSave.calmFx) {
+		const u32 rim = withAlpha(hueColor(hueBase + 0.5f), 0.10f * alpha * pulse);
+		gfx::rect(kFillX, kFieldH - spanY * 0.18f, kFillW, spanY * 0.18f, rim);
+	}
 }
 
 // While a slice would count, the field's edges glow: the first beat of the bar in the accent colour.

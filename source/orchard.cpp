@@ -207,7 +207,9 @@ struct OrcRunSave {
 	Pending pending[Game::kMaxPending];
 	u32 sum;
 };
-static constexpr u32 kOrcSaveMagic = 0x4F524333u;
+static constexpr u32 kOrcSaveMagic = 0x4F524334u;
+// Shared main-thread scratch buffer so 3DS's 32 KB thread stack never holds ~6 KB OrcRunSave locals.
+static OrcRunSave sOrcSaveIo;
 
 static u32 orcSaveHash(const void* data, size_t n) {
 	const u8* p = (const u8*)data;
@@ -216,7 +218,7 @@ static u32 orcSaveHash(const void* data, size_t n) {
 	return h;
 }
 
-static bool orcReadSaveFile(OrcRunSave* out) {
+static const OrcRunSave* orcReadSaveFile() {
 	char file[256], temp[256];
 	port::dataPath(file, sizeof file, "orc_run.bin");
 	port::dataPath(temp, sizeof temp, "orc_run.tmp");
@@ -224,16 +226,15 @@ static bool orcReadSaveFile(OrcRunSave* out) {
 	for (const char* path : paths) {
 		FILE* f = fopen(path, "rb");
 		if (!f) continue;
-		OrcRunSave buf = {};
-		const bool readOk = fread(&buf, sizeof buf, 1, f) == 1;
+		memset(&sOrcSaveIo, 0, sizeof sOrcSaveIo);
+		const bool readOk = fread(&sOrcSaveIo, sizeof sOrcSaveIo, 1, f) == 1;
 		fclose(f);
-		if (!readOk || buf.magic != kOrcSaveMagic || buf.size != sizeof buf) continue;
-		if (buf.sum != orcSaveHash(&buf, offsetof(OrcRunSave, sum))) continue;
-		if (buf.orc.room < 1 || buf.orc.level < 1 || buf.orc.hp <= 0) continue;
-		*out = buf;
-		return true;
+		if (!readOk || sOrcSaveIo.magic != kOrcSaveMagic || sOrcSaveIo.size != sizeof sOrcSaveIo) continue;
+		if (sOrcSaveIo.sum != orcSaveHash(&sOrcSaveIo, offsetof(OrcRunSave, sum))) continue;
+		if (sOrcSaveIo.orc.room < 1 || sOrcSaveIo.orc.level < 1 || sOrcSaveIo.orc.hp <= 0) continue;
+		return &sOrcSaveIo;
 	}
-	return false;
+	return nullptr;
 }
 
 bool Game::orchardHasSave(int* savedRoomOut) {
@@ -241,9 +242,9 @@ bool Game::orchardHasSave(int* savedRoomOut) {
 	(void)savedRoomOut;
 	return false;
 #endif
-	OrcRunSave s = {};
-	if (!orcReadSaveFile(&s)) return false;
-	if (savedRoomOut) *savedRoomOut = s.orc.room;
+	const OrcRunSave* s = orcReadSaveFile();
+	if (!s) return false;
+	if (savedRoomOut) *savedRoomOut = s->orc.room;
 	return true;
 }
 
@@ -267,7 +268,8 @@ bool Game::orcSaveRun() const {
 	char file[256], temp[256];
 	port::dataPath(file, sizeof file, "orc_run.bin");
 	port::dataPath(temp, sizeof temp, "orc_run.tmp");
-	OrcRunSave s = {};
+	OrcRunSave& s = sOrcSaveIo;
+	memset(&s, 0, sizeof s);
 	s.magic = kOrcSaveMagic;
 	s.size = (u32)sizeof s;
 	s.spawnSeed = gSpawn.s ? gSpawn.s : (orc.runSeed ? orc.runSeed : 1u);
@@ -334,8 +336,9 @@ bool Game::orcLoadRun() {
 #ifdef BOSS_TEST_APP
 	return false;
 #endif
-	OrcRunSave s = {};
-	if (!orcReadSaveFile(&s)) return false;
+	const OrcRunSave* sp = orcReadSaveFile();
+	if (!sp) return false;
+	const OrcRunSave& s = *sp;
 	gSpawn.s = s.spawnSeed ? s.spawnSeed : 1u;
 	score = s.score;
 	bestCombo = (int)s.bestCombo;
@@ -767,17 +770,16 @@ bool Game::orcOnBeat() const {
 }
 
 void Game::orcHurt(int damage, float x, float y, const char* what) {
+	(void)what;
 	if (phase != PHASE_PLAY || damage <= 0) return;
 	char buf[32];
 	if (orc.invulnT > 0) {
-		addPopup("BLOCKED", x, y - 18, rgba(200, 220, 255), 0.7f);
 		return;
 	}
 	if (orc.peelShield) {
 		orc.peelShield = false;
 		audio::play(SFX_KNOCK, 0.9f, fieldPan(x), 0.7f);
 		addRing(x, y, rgba(190, 230, 140), 2.2f, 0.3f);
-		addPopup("PEEL BLOCKED", x, y - 18, rgba(200, 240, 160), 0.65f);
 		return;
 	}
 	int d = damage - orc.upgrade[CARD_ARMOR];
@@ -790,8 +792,8 @@ void Game::orcHurt(int damage, float x, float y, const char* what) {
 	strikePulse = 1;
 	audio::play(SFX_STRIKE, 0.9f, fieldPan(x));
 	PORT_VIBRATE(0.5f, 120);
-	snprintf(buf, sizeof buf, "%s -%d", what, d);
-	addPopup(buf, x, y - 18, rgba(255, 110, 100), 0.7f);
+	snprintf(buf, sizeof buf, "-%d", d);
+	addPopup(buf, x, y - 18, rgba(255, 110, 100), 0.72f);
 	showCaption("Hit! HP lost.");
 	if (orc.hp > 0) return;
 	if (orc.upgrade[CARD_SECONDWIND] && !orc.usedSecondWind) {
@@ -809,7 +811,6 @@ void Game::orcHurt(int damage, float x, float y, const char* what) {
 void Game::orcBomb(Obj& o) {
 	if (orc.upgrade[CARD_SHARPRIND] && orc.boss.on && orc.boss.dazeT <= 0 && !orc.boss.beaten) bossOpen(1.5f);
 	if (orc.boss.on && !orc.boss.beaten && (orc.boss.id == BOSS_KING || orc.boss.id == BOSS_CHILI) && o.tag == 1) {
-		addPopup("DEFUSED!", o.x, o.y - 18, rgba(200, 240, 170), 0.7f);
 		orcGainXp(1);
 		if (orc.upgrade[CARD_JUICE]) orc.hp = fminf(orc.maxHp, orc.hp + 0.25f);
 		sliced++;
@@ -817,11 +818,9 @@ void Game::orcBomb(Obj& o) {
 	}
 	if (orc.upgrade[CARD_BOMBSQUAD] && !orc.bombSquadUsed) {
 		orc.bombSquadUsed = true;
-		addPopup("BOMB SQUAD!", o.x, o.y - 18, rgba(200, 220, 255), 0.7f);
-		setCallout("BOOM! NO DAMAGE", rgba(200, 220, 255));
+		addRing(o.x, o.y, rgba(200, 220, 255), 2.4f, 0.35f);
 		return;
 	}
-	setCallout("BOOM!", rgba(255, 110, 90));
 	orcHurt(orchardLevel(gSave.difficulty).bombDamage, o.x, o.y, "BOMB");
 }
 
@@ -1950,10 +1949,10 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 		for (auto& o : objs)
 			if (o.on && o.kind == OBJ_BOMB && o.tag == 2) lob = &o;
 		check(queuedLob && lob != nullptr, "PINE_BOMB queues a reflectable tag=2 lobbed bomb", "");
-		addPopup("RETURN THE BOMB!", 0.0f, kFieldTop, rgba(255, 190, 80), 0.55f);
+		addPopup("COMBO 15 +5 XP", 0.0f, kFieldTop, rgba(255, 190, 80), 0.55f);
 		const Popup& lp = popups[(popupCursor + kMaxPopups - 1) % kMaxPopups];
-		const float lhw = gfx::textWidth("RETURN THE BOMB!", 0.55f) * 0.5f;
-		check(lp.on && lp.x - lhw >= 7.5f && lp.y >= kFieldTop + 24.0f, "Edge boss attack popups clamp cleanly inside the field and below the HUD", "");
+		const float lhw = gfx::textWidth("COMBO 15 +5 XP", 0.55f) * 0.5f;
+		check(lp.on && lp.x - lhw >= 7.5f && lp.y >= kFieldTop + 24.0f, "Edge popups clamp cleanly inside the field and below the HUD", "");
 		if (lob) {
 			hitBomb(*lob);
 			check(lob->tag == 4 && lob->vy < 0 && pb.guard, "Slicing a Pineapple lob bomb sends it upward (tag=4) toward the guarded boss", "");
@@ -2132,6 +2131,77 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 			for (int i = 0; i < 120 && lb.lemonadeOn; i++) bossUpdate(kDt);
 			check(enragedAtHalf && fasterChain && lemFilled && sourHurt && drainAppeared && !lb.lemonadeOn,
 			      "Milestone Phase 2 enrages at <=50% HP and Lord Lemon Lemonade fills, hurts below surface, surfaces Drain, and drains", "");
+
+			// Verify Lord Lemon cooldown balance, floating fruit 3s countdown -> lemon juice explosion, and reduced boss popup spam.
+			const float cdEnraged = lb.lemCooldown;
+			lb.enraged = false;
+			lb.lemonadeOn = true;
+			lb.lemStage = 3;
+			lb.lemLevel = 0.05f;
+			for (int i = 0; i < 20 && lb.lemonadeOn; i++) bossUpdate(kDt);
+			const float cdPhase1 = lb.lemCooldown;
+			check(cdPhase1 > cdEnraged && cdPhase1 >= 10.0f, "Lord Lemon Lemonade cooldown is longer in Phase 1 than enraged Phase 2", "");
+
+			lb.lemonadeOn = true;
+			lb.lemStage = 2;
+			lb.lemLevel = 1.0f;
+			for (auto& o2 : objs) o2 = {};
+			objs[0].on = true;
+			objs[0].kind = OBJ_FRUIT;
+			objs[0].fruit = 0;
+			objs[0].radius = 22.0f;
+			objs[0].x = kFieldW * 0.5f;
+			objs[0].y = lemonadeSurfaceY(lb) + 2.0f;
+			objs[0].vy = 90.0f;
+			updateObjects(kDt);
+			const bool floated = objs[0].on && objs[0].lemFloat && objs[0].lemTimer <= 3.0f && objs[0].lemTimer >= 2.8f;
+			const float hpPreExplode = orc.hp;
+			for (int i = 0; i < 190 && objs[0].on; i++) updateObjects(kDt);
+			const bool explodedHurt = !objs[0].on && orc.hp < hpPreExplode;
+			check(floated && explodedHurt, "Fruit touching active Lemonade floats for 3s then explodes in lemon juice dealing damage", "");
+
+			// Dusty Durian periodic extending/retracting thorns + hazard collision.
+			setup();
+			orc.hp = orc.maxHp = 50;
+			bossStart(BOSS_DURIAN);
+			Boss& db = orc.boss;
+			db.enterT = 0;
+			db.y = db.baseY;
+			db.thornCd = 0.02f;
+			db.nextAttack = 9.0f;
+			for (int i = 0; i < 90 && db.thornExt < 0.99f; i++) bossUpdate(kDt);
+			const bool thornsExtended = db.thornStage == 2 && db.thornExt >= 0.99f;
+			const float hpPreThorn = orc.hp;
+			const float edgeX = db.x + db.radius * 1.25f;
+			Blade thornBlade = swipe(edgeX - 8.0f, db.y, edgeX + 8.0f, db.y, 0x5A000001u);
+			bossTest(thornBlade);
+			const bool thornsHurt = orc.hp < hpPreThorn;
+			for (int i = 0; i < 150 && db.thornExt > 0.0f; i++) bossUpdate(kDt);
+			check(thornsExtended && thornsHurt && db.thornExt == 0.0f, "Dusty Durian extends thorns, deals damage on contact, and retracts cleanly", "");
+
+			// Distracting boss popups removed while numeric damage (-N) stays visible.
+			bool hasSpamPopup = false, hasDamagePopup = false;
+			for (const auto& pp : popups) {
+				if (!pp.on) continue;
+				if (strstr(pp.text, "OPEN") || strstr(pp.text, "SLICED") || strstr(pp.text, "DEFUSED") ||
+				    strstr(pp.text, "THORN") || strstr(pp.text, "SPIKE")) hasSpamPopup = true;
+				if (pp.text[0] == '-' && pp.text[1] >= '1' && pp.text[1] <= '9') hasDamagePopup = true;
+			}
+			check(!hasSpamPopup && hasDamagePopup, "Boss clutter popups are removed while concise numeric -HP damage popups stay visible", "");
+
+			// Aggro Apple worms emerge radially outward from burrow holes and swat cleanly.
+			setup();
+			bossStart(BOSS_APPLE);
+			Boss& ab = orc.boss;
+			ab.enterT = 0;
+			ab.y = ab.baseY;
+			ab.attack = APP_WORMS;
+			ab.volley = 1;
+			for (int i = 0; i < 30; i++) bossUpdate(kDt);
+			const float holeDist = hypotf(ab.worms[0].ox, ab.worms[0].oy);
+			const float headExt = ab.radius * (0.06f + 0.40f * ab.worms[0].emergeT);
+			const bool emergedOut = ab.worms[0].on && ab.worms[0].emergeT > 0.5f && (holeDist + headExt) > holeDist + 4.0f;
+			check(emergedOut, "Aggro Apple worms emerge radially outward from body burrow holes", "");
 		}
 
 		// Room 25 cutscene gate, save separation (Reset Scores keeps seenRoom50Cutscene; Reset Everything clears it), and Dev Skip.
@@ -2235,12 +2305,12 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 				if (p2.on) sawWave26 = true;
 		}
 		check(!orc.choosing && orc.room == 26 && sawWave26, "Fruit spawns normally in Room 26 after Milestone boss finale and deferred level-up", "");
-		addPopup("SOUR BARRAGE", kFieldW * 0.5f, kFieldTop, rgba(255, 230, 120), 0.7f);
+		addPopup("COMBO 10 +5", kFieldW * 0.5f, kFieldTop, rgba(255, 230, 120), 0.7f);
 		for (int i = 0; i < 40; i++) updateEffects(kDt);
 		bool popupSafe = true;
 		for (const auto& pp : popups)
 			if (pp.on && pp.y - 12.0f < kFieldTop + 2.0f) popupSafe = false;
-		check(popupSafe, "Floating boss attack popups stay clear below the HUD bar while rising", "");
+		check(popupSafe, "Floating popups stay clear below the HUD bar while rising", "");
 		boom::clear();
 
 		orcApplyDevSkip(48, 4);
@@ -2313,7 +2383,9 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 						if (f.id == BOSS_APPLE && f.dazeT <= 0) {
 							for (auto& w : f.worms) {
 								if (!w.on || w.emergeT < 0.4f) continue;
-								const float wx = f.x + w.ox * (0.4f + 0.6f * w.emergeT), wy = f.y + w.oy * (0.4f + 0.6f * w.emergeT);
+								const float len = sqrtf(w.ox * w.ox + w.oy * w.oy) + 0.001f;
+								const float ext = f.radius * (0.06f + 0.40f * w.emergeT);
+								const float wx = f.x + w.ox + (w.ox / len) * ext, wy = f.y + w.oy + (w.oy / len) * ext;
 								Blade sw = swipe(wx - 8, wy, wx + 8, wy, ++stroke);
 								bossTest(sw);
 							}

@@ -791,9 +791,81 @@ def bk_tense(freq, dur):
     return s * pulse * np.minimum(1, t / 0.04) * _gate(n, 0.08)
 
 
+def bk_kick_heavy():
+    """Aggressive clipped dubstep/DnB kick: sharp pitch slam + punchy transient click."""
+    n = int(0.30 * BOSS_RATE)
+    t = _t(n)
+    f = 48.0 + 195.0 * np.exp(-t / 0.022)
+    body = np.sin(2 * np.pi * np.cumsum(f) / BOSS_RATE) * np.exp(-t / 0.115)
+    click = band(np.random.default_rng(711).normal(0, 1, n), 1800, 7200, BOSS_RATE) * np.exp(-t / 0.004) * 0.55
+    return np.tanh((body * 1.25 + click) * 2.5)
+
+
+def bk_snare_heavy(seed=712):
+    """Hard-hitting modern EDM/DnB snare: punchy 205 Hz fundamental + crackling white noise."""
+    n = int(0.24 * BOSS_RATE)
+    t = _t(n)
+    noise = band(np.random.default_rng(seed).normal(0, 1, n), 1100, 8200, BOSS_RATE) * np.exp(-t / 0.082)
+    tone = (np.sin(2 * np.pi * (205.0 + 75.0 * np.exp(-t / 0.015)) * t) + 0.6 * np.sin(2 * np.pi * 412 * t)) * np.exp(-t / 0.048)
+    return np.tanh((noise * 1.35 + tone * 0.95) * 2.1)
+
+
+def bk_growl(freq, dur):
+    """Aggressive FM/wavefolded dubstep growl bass with sweeping formant bite & sub weight."""
+    n = int(dur * BOSS_RATE)
+    t = _t(n)
+    sub_f = freq * 0.5
+    while sub_f < 48:
+        sub_f *= 2
+    lfo = 0.25 + 0.75 * (0.5 - 0.5 * np.cos(2 * np.pi * 7.5 * t))
+    mod = (3.4 * lfo + 1.2 * np.exp(-t * 9.0)) * np.sin(2 * np.pi * sub_f * 2.0 * t)
+    mod += 1.6 * lfo * np.sin(2 * np.pi * sub_f * 3.0 * t)
+    car = np.sin(2 * np.pi * sub_f * t + mod) + 0.55 * np.sin(2 * np.pi * sub_f * 2.0 * t + 0.7 * mod)
+    fold = np.tanh(car * 2.8) + 0.35 * np.sin(car * 4.5)
+    sub = 0.75 * np.sin(2 * np.pi * sub_f * t)
+    s = np.tanh((fold * (0.45 + 0.55 * lfo) + sub) * 1.8) * 0.78
+    return s * np.minimum(1, t / 0.004) * _gate(n, 0.02)
+
+
+def bk_acid(freq, dur):
+    """Squelchy resonant 303/cyberpunk acid saw lead with sharp filter bite."""
+    n = int(dur * BOSS_RATE)
+    t = _t(n)
+    env = 0.28 + 0.72 * np.exp(-t / 0.09)
+    res_f = freq * (3.5 + 4.5 * np.exp(-t / 0.07))
+    s = _harm(freq, n, lambda h, tt: (1.0 / h) * (0.35 + 1.15 * np.exp(-abs(h * freq - res_f) / (freq * 1.4 + 80.0))))
+    s = np.tanh(s * 2.6 * env) * 0.68
+    return s * np.minimum(1, t / 0.003) * _gate(n, 0.02)
+
+
+def bk_glitch_heavy(freq, dur):
+    """Crushed staccato glitch-hop lead: aggressive FM bark + fast bitcrush stutter chops."""
+    n = int(dur * BOSS_RATE)
+    t = _t(n)
+    slide = 1.0 + 0.14 * np.exp(-t / 0.018)
+    ph = 2 * np.pi * freq * np.cumsum(slide) / BOSS_RATE
+    mod = np.sin(2.0 * ph) * (3.2 * np.exp(-t * 7.0) + 0.9)
+    s = np.sin(ph + mod) + 0.5 * _harm(freq * 1.5, n, lambda h, tt: 1.0 / h if h <= 5 else 0.0)
+    chop = np.where((np.sin(2 * np.pi * 24.0 * t) >= -0.15) | (t < 0.025), 1.0, 0.12)
+    s = np.tanh((np.round(s * 9.0) / 9.0) * 2.4) * chop * 0.72
+    return s * np.minimum(1, t / 0.003) * _gate(n, 0.018)
+
+
+def bk_reese_heavy(freq, dur):
+    """Ferocious Neurofunk detuned Reese wall: 7 wide oscillators + sweeping mid-band crunch."""
+    n = int(dur * BOSS_RATE)
+    t = _t(n)
+    s = sum(_harm(freq, n, lambda h, tt: (1.0 / h) * np.exp(-h * 0.045), detune=d)
+            for d in (0.982, 0.990, 0.996, 1.0, 1.005, 1.011, 1.019)) / 4.8
+    sw = 0.55 + 0.45 * np.sin(2 * np.pi * 4.5 * t)
+    s = np.tanh(s * (2.6 + 1.4 * sw)) * 0.80
+    return s * np.minimum(1, t / 0.006) * _gate(n, 0.02)
+
+
 VOICES = {
     "chip": bk_chip, "brass": bk_brass, "pluck": bk_pluck, "bell": bk_bell,
     "wobble": bk_wobble, "glitch": bk_glitch, "reese": bk_reese, "tense": bk_tense,
+    "growl": bk_growl, "acid": bk_acid, "glitch_heavy": bk_glitch_heavy, "reese_heavy": bk_reese_heavy,
 }
 
 
@@ -829,35 +901,39 @@ def compose_boss(bpm, sections, seed):
         np.add.at(buf, idx, sig * gain)
 
     kick, snare, clap = bk_kick(), bk_snare(), bk_clap()
+    hkick, hsnare = bk_kick_heavy(), bk_snare_heavy()
     hat, ohat, crash = bk_hat(), bk_hat(True), bk_crash()
     bar0 = 0
+    is_heavy = any(s.get("heavy") for s in sections)
     for sec in sections:
         pat = parse_drums(sec.get("drums", ""))
+        use_kick = hkick if sec.get("heavy") else kick
+        use_snare = hsnare if sec.get("heavy") else snare
         for b, chord in enumerate(sec["chords"]):
             t0 = (bar0 + b) * 4 * beat
             last = b == len(sec["chords"]) - 1
             if b == 0 and sec.get("crash", True):
-                put(drums, crash, t0, 0.45)
+                put(drums, crash, t0, 0.52 if sec.get("heavy") else 0.45)
             for s in range(16):
                 when = t0 + s * step
                 swing = sec.get("swing", 0) * step if s % 2 else 0
                 fill = last and sec.get("fill") and s >= 12
                 if pat.get("k", "")[s:s + 1] == "x":
-                    put(drums, kick, when, 0.8)
+                    put(drums, use_kick, when, 0.95 if sec.get("heavy") else 0.8)
                 if fill:
-                    put(drums, snare, when, 0.45 + 0.12 * (s - 12))
-                    put(drums, snare, when + step / 2, 0.35 + 0.1 * (s - 12))
+                    put(drums, use_snare, when, 0.55 + 0.12 * (s - 12))
+                    put(drums, use_snare, when + step / 2, 0.42 + 0.1 * (s - 12))
                     continue
                 c = pat.get("s", "")[s:s + 1]
                 if c in ("x", "g"):
-                    put(drums, snare, when + swing, 0.85 if c == "x" else 0.3)
+                    put(drums, use_snare, when + swing, (1.0 if sec.get("heavy") else 0.85) if c == "x" else (0.38 if sec.get("heavy") else 0.3))
                 if pat.get("c", "")[s:s + 1] == "x":
-                    put(drums, clap, when + swing, 0.7)
+                    put(drums, clap, when + swing, 0.78 if sec.get("heavy") else 0.7)
                 h = pat.get("h", "")[s:s + 1]
                 if h == "x":
-                    put(drums, hat, when + swing, 0.32 * (1.0 if s % 4 == 2 else 0.7) * rng.uniform(0.85, 1.0))
+                    put(drums, hat, when + swing, 0.36 * (1.0 if s % 4 == 2 else 0.7) * rng.uniform(0.85, 1.0))
                 elif h == "o":
-                    put(drums, ohat, when + swing, 0.3)
+                    put(drums, ohat, when + swing, 0.36)
                 tm = pat.get("t", "")[s:s + 1]
                 if tm in ("x", "y"):
                     put(drums, bk_timpani(mtof(36 + (chord[0] + (7 if tm == "y" else 0)) % 12)), when, 0.9)
@@ -876,7 +952,10 @@ def compose_boss(bpm, sections, seed):
                         m -= 12
                     while m < 33:
                         m += 12
-                    put(music, bk_bass(mtof(m), ln * step * 0.92), t0 + s * step + (sec.get("swing", 0) * step if s % 2 else 0), 0.4)
+                    bsig = bk_bass(mtof(m), ln * step * 0.92)
+                    if sec.get("heavy"):
+                        bsig = np.tanh(bsig * 2.2) * 0.9
+                    put(music, bsig, t0 + s * step + (sec.get("swing", 0) * step if s % 2 else 0), 0.48 if sec.get("heavy") else 0.4)
             # Pads hold the chord under the whole bar.
             if sec.get("pad", 0) > 0:
                 for i in range(3):
@@ -886,29 +965,33 @@ def compose_boss(bpm, sections, seed):
             for s in range(16):
                 if st[s:s + 1] == "x":
                     for i in range(3):
-                        put(music, bk_brass(mtof(chord_tone(chord, i) + 12), step * 1.6), t0 + s * step, 0.16)
+                        stab = bk_brass(mtof(chord_tone(chord, i) + 12), step * 1.6)
+                        if sec.get("heavy"):
+                            stab = np.tanh(stab * 2.0) * 0.95
+                        put(music, stab, t0 + s * step, 0.20 if sec.get("heavy") else 0.16)
             # Leads: a motif of one or more bars, with notes as (step, length in steps, chord tone).
             for voice, octave, gain, motif in sec.get("leads", ()):
                 for st0, ln, tone in motif[b % len(motif)]:
                     f = mtof(chord_tone(chord, tone) + 12 * octave)
-                    put(music, VOICES[voice](f, ln * step * 0.95), t0 + st0 * step, gain * 1.5)
+                    put(music, VOICES[voice](f, ln * step * 0.95), t0 + st0 * step, gain * 1.55)
             if last and sec.get("riser"):
-                r = riser(4 * beat, 300, 6000, seed + bar0)
+                r = riser(4 * beat, 300, 6800, seed + bar0)
                 r = np.interp(np.arange(int(len(r) * rate / SFX_RATE)) * SFX_RATE / rate, np.arange(len(r)), r)
-                put(music, r / (np.max(np.abs(r)) or 1), t0, 0.22)
+                put(music, r / (np.max(np.abs(r)) or 1), t0, 0.28 if is_heavy else 0.22)
         bar0 += len(sec["chords"])
 
-    # A short room on the music only, wrapping like everything else.
-    ir = np.random.default_rng(seed + 1).normal(0, 1, n) * np.exp(-np.arange(n) / (0.5 * rate))
+    # A short room on the music only, wrapping like everything else; tighter on heavy aggressive tracks.
+    ir = np.random.default_rng(seed + 1).normal(0, 1, n) * np.exp(-np.arange(n) / ((0.22 if is_heavy else 0.5) * rate))
     wet = np.fft.irfft(np.fft.rfft(music) * np.fft.rfft(ir), n)
     wet = wet / (np.max(np.abs(wet)) or 1) * (np.max(np.abs(music)) or 1)
-    out = music + wet * 0.18 + drums * 0.8
-    # Soften the very top, so it sits with the rest of the game's music.
+    out = music + wet * (0.06 if is_heavy else 0.18) + drums * (1.08 if is_heavy else 0.8)
+    # Soften the very top, keeping biting highs on heavy milestone tracks.
     X = np.fft.rfft(out)
     f = np.fft.rfftfreq(n, 1 / rate)
-    out = np.fft.irfft(X / np.sqrt(1 + (f / 7500.0) ** 4), n)
+    out = np.fft.irfft(X / np.sqrt(1 + (f / (8800.0 if is_heavy else 7500.0)) ** 4), n)
     out = out / (np.max(np.abs(out)) or 1)
-    return np.tanh(out * 1.4) / np.tanh(1.4)
+    drive = 2.05 if is_heavy else 1.4
+    return np.tanh(out * drive) / np.tanh(drive)
 
 
 def level_boss(x, rate=BOSS_RATE):
@@ -1051,79 +1134,99 @@ h ..x...x...x...x."""
 
 
 def track_boss_dubstep():
-    """Abyssal Core (Milestone Boss - Dubstep, 140 BPM, D minor): half-time crush + wobble growls."""
+    """Abyssal Core (Milestone Boss - Heavy Tearout Dubstep, 140 BPM, D minor): relentless FM growls & acid drops."""
     prog = [(50, m), (46, M), (48, m), (45, M)] * 2
-    drop = [[(0, 4, 0), (4, 2, 2), (6, 2, 3), (8, 4, 1), (12, 2, 2), (14, 2, 0)],
-            [(0, 3, 2), (3, 3, 1), (6, 2, 3), (8, 4, 0), (12, 4, 2)]]
-    intro_lead = [[(0, 6, 3), (8, 4, 2), (12, 4, 1)]]
-    half_time = """k x.........x.....
-s ........x.......
-h x.x.x.x.x.x.x.x.
-c ........x......."""
-    heavy = """k x..x......x..x..
+    prog_b = [(50, m), (51, M), (49, m), (45, M)] * 2
+    drop = [[(0, 4, 0), (4, 2, 3), (6, 2, 1), (8, 3, 2), (11, 1, 4), (12, 2, 3), (14, 2, 5)],
+            [(0, 2, 0), (2, 2, 4), (4, 2, 3), (6, 2, 5), (8, 4, 2), (12, 2, 4), (14, 2, 1)]]
+    scream = [[(0, 2, 3), (3, 1, 5), (4, 2, 6), (6, 2, 4), (8, 2, 5), (10, 2, 7), (12, 2, 5), (14, 2, 4)],
+              [(0, 4, 6), (4, 2, 5), (6, 2, 3), (8, 2, 4), (10, 2, 6), (12, 4, 7)]]
+    charge = """k x...x...x...x...
 s ........x.....g.
+h xxoxxxoxxxoxxxox
+c ....x.......x..."""
+    crush = """k x..x..x...x..x..
+s ........x....gg.
 c ........x.......
 h xxoxxxoxxxoxxxox"""
+    double_time = """k x.x.x.x...x.x.x.
+s ....x..g....x.gg
+c ....x.......x...
+h xxoxxxoxxxoxxxox"""
     return 140, [
-        dict(chords=prog, drums=half_time, bass="x-------x---f---", pad=0.25, leads=[("bell", 2, 0.14, intro_lead)], riser=True, fill=True),
-        dict(chords=prog, drums=heavy, bass="x.x...x.x.x.o.x.", leads=[("wobble", 0, 0.34, drop), ("brass", 1, 0.14, intro_lead)], stabs="x.......x.......", fill=True),
-        dict(chords=[(46, M), (48, m), (45, M), (45, M)] * 2, drums="t x...x...x...x...\nh ..x...x...x...x.", pad=0.3, bass="x-------x-------", riser=True, fill=True),
-        dict(chords=prog, drums=heavy, bass="x.x.o.x.x.x.f.x.", leads=[("wobble", 0, 0.36, drop), ("chip", 2, 0.14, drop)], stabs="x.....x.x.......", fill=True),
+        dict(chords=prog, drums=charge, bass="x.x.f.x.x.x.o.x.", leads=[("growl", 0, 0.34, drop), ("brass", 1, 0.18, drop)], stabs="x...x...x...x...", heavy=True, riser=True, fill=True),
+        dict(chords=prog, drums=crush, bass="x.x.o.x.x.x.f.x.", leads=[("growl", 0, 0.42, drop), ("acid", 1, 0.24, scream)], stabs="x.....x.x...x...", heavy=True, fill=True),
+        dict(chords=prog_b, drums=double_time, bass="x.o.f.x.x.o.f.x.", leads=[("growl", 0, 0.40, scream), ("glitch_heavy", 1, 0.24, drop), ("acid", 2, 0.16, scream)], stabs="x..x..x...x..x..", heavy=True, riser=True, fill=True),
+        dict(chords=prog, drums=crush, bass="x.x.f.x.o.x.f.x.", leads=[("growl", 0, 0.44, scream), ("reese_heavy", 0, 0.26, drop), ("acid", 1, 0.26, scream)], stabs="x...x...x.x.x...", heavy=True, fill=True),
     ]
 
 
 def track_boss_glitch():
-    """Sour Circuit (Milestone Boss - Glitch Hop, 110 BPM, F minor): swung chops & crunchy stabs."""
+    """Sour Circuit (Milestone Boss - Aggressive Electro Glitch Hop, 110 BPM, F minor): biting FM chops & hard breaks."""
     prog = [(41, m), (49, M), (44, M), (48, M)] * 2
-    glitch_motif = [[(0, 2, 0), (2, 1, 3), (3, 1, 2), (4, 3, 4), (7, 1, 3), (8, 2, 2), (10, 2, 1), (12, 2, 3), (14, 2, 4)],
-                    [(0, 2, 2), (3, 1, 4), (4, 2, 5), (6, 2, 3), (8, 2, 2), (11, 1, 1), (12, 4, 2)]]
-    drums = """k x..x..x...x.....
-s ....x..g....x.gg
-h xx.xxxo.xx.xxxo.
+    prog_b = [(41, m), (46, m), (49, M), (48, M)] * 2
+    glitch_motif = [[(0, 2, 0), (2, 1, 3), (3, 1, 5), (4, 2, 4), (6, 2, 6), (8, 2, 2), (10, 1, 4), (11, 1, 5), (12, 2, 3), (14, 2, 6)],
+                    [(0, 2, 2), (2, 2, 5), (4, 2, 6), (6, 2, 4), (8, 2, 3), (10, 1, 5), (11, 1, 7), (12, 4, 4)]]
+    drums = """k x..x..x...x.x.x.
+s ....x..g....x.gx
+h xx.xxxoxxx.xxxox
 m ............1231"""
+    drums_b = """k x..x.x..x.x.x.x.
+s ....x.gg....x.gx
+c ....x.......x...
+h xxoxxxoxxxoxxxox
+m ........12312312"""
     return 110, [
-        dict(chords=prog, drums=drums, bass="x..o..x.x..f..x.", swing=0.22, leads=[("glitch", 1, 0.28, glitch_motif)], stabs="x.....x...x.....", fill=True),
-        dict(chords=prog, drums=drums, bass="x.xo.fx.x.of.xx.", swing=0.22, leads=[("glitch", 1, 0.30, glitch_motif), ("wobble", 0, 0.18, glitch_motif)], stabs="x..x..x...x...x.", fill=True),
-        dict(chords=[(49, M), (44, M), (41, m), (48, M)] * 2, drums="k x.......x.......\nh x.x.x.x.x.x.x.x.", bass="x-------x-------", pad=0.26, leads=[("pluck", 2, 0.18, glitch_motif)], riser=True, fill=True),
-        dict(chords=prog, drums=drums, bass="x.xo.fx.x.of.xx.", swing=0.22, leads=[("glitch", 1, 0.32, glitch_motif), ("brass", 1, 0.16, glitch_motif)], stabs="x..x..x...x...x.", fill=True),
+        dict(chords=prog, drums=drums, bass="x.xo.fx.x.x.of.x.", swing=0.22, leads=[("glitch_heavy", 1, 0.34, glitch_motif), ("growl", 0, 0.28, glitch_motif)], stabs="x..x..x...x...x.", heavy=True, fill=True),
+        dict(chords=prog, drums=drums_b, bass="x.xof.x.x.xof.xx.", swing=0.22, leads=[("glitch_heavy", 1, 0.36, glitch_motif), ("acid", 2, 0.22, glitch_motif), ("growl", 0, 0.30, glitch_motif)], stabs="x..x..x..x..x.x.", heavy=True, riser=True, fill=True),
+        dict(chords=prog_b, drums=drums, bass="x.o.f.x.x.o.f.x.", swing=0.22, leads=[("acid", 1, 0.30, glitch_motif), ("brass", 1, 0.22, glitch_motif)], stabs="x...x...x.x.x...", heavy=True, fill=True),
+        dict(chords=prog, drums=drums_b, bass="x.xof.x.o.f.x.xx.", swing=0.22, leads=[("glitch_heavy", 1, 0.38, glitch_motif), ("growl", 0, 0.34, glitch_motif), ("reese_heavy", 0, 0.24, glitch_motif)], stabs="x..x.x..x..x.x..", heavy=True, fill=True),
     ]
 
 
 def track_boss_dnb():
-    """Core Meltdown (Milestone Boss - Drum & Bass, 174 BPM, E minor): relentless two-step breakbeat."""
+    """Core Meltdown (Milestone Boss - Aggressive Techstep Drum & Bass, 174 BPM, E minor): tearing high-speed breaks."""
     prog = [(40, m), (48, M), (45, m), (47, M)] * 2
-    arp = [[(0, 1, 0), (1, 1, 1), (2, 1, 2), (3, 1, 3), (4, 2, 4), (6, 2, 2), (8, 1, 3), (9, 1, 2), (10, 2, 1), (12, 2, 2), (14, 2, 4)],
-           [(0, 2, 3), (2, 2, 2), (4, 2, 4), (6, 2, 5), (8, 4, 3), (12, 2, 2), (14, 2, 1)]]
-    dnb = """k x.........x.....
-s ....x.......x...
+    prog_b = [(40, m), (41, M), (45, m), (47, M)] * 2
+    arp = [[(0, 2, 0), (2, 1, 3), (3, 1, 5), (4, 2, 4), (6, 2, 6), (8, 2, 3), (10, 2, 5), (12, 2, 6), (14, 2, 7)],
+           [(0, 2, 5), (2, 2, 3), (4, 2, 6), (6, 2, 7), (8, 2, 4), (10, 2, 5), (12, 2, 6), (14, 2, 4)]]
+    dnb = """k x.......x.x.....
+s ....x..g..g.x.gg
+c ....x.......x...
 h xxoxxxoxxxoxxxox"""
-    dnb_b = """k x.......x.x.....
-s ....x..g....x.gg
+    dnb_b = """k x..x....x.x.....
+s ....x.gg....x.gx
+c ....x.......x...
 h xxoxxxoxxxoxxxox
-m ............1122"""
+m ............1123"""
     return 174, [
-        dict(chords=prog, drums=dnb, bass="x-----x---f---x-", pad=0.22, leads=[("reese", 0, 0.24, arp)], fill=True),
-        dict(chords=prog, drums=dnb_b, bass="x.x.o.x.x.x.f.x.", leads=[("reese", 0, 0.28, arp), ("chip", 2, 0.15, arp)], stabs="x.........x.....", fill=True),
-        dict(chords=[(48, M), (45, m), (40, m), (47, M)] * 2, drums="t x...x...x...x...\nh x.x.x.x.x.x.x.x.", bass="x-------x-------", pad=0.28, riser=True, fill=True),
-        dict(chords=prog, drums=dnb_b, bass="x.x.o.x.x.f.o.x.", leads=[("reese", 0, 0.30, arp), ("brass", 1, 0.16, arp)], stabs="x.....x...x.....", fill=True),
+        dict(chords=prog, drums=dnb, bass="x.x.f.x.x.o.f.x.", leads=[("reese_heavy", 0, 0.34, arp), ("acid", 1, 0.22, arp)], stabs="x.....x...x.....", heavy=True, fill=True),
+        dict(chords=prog, drums=dnb_b, bass="x.o.f.x.x.x.f.o.", leads=[("reese_heavy", 0, 0.36, arp), ("acid", 2, 0.24, arp), ("brass", 1, 0.20, arp)], stabs="x...x...x...x...", heavy=True, riser=True, fill=True),
+        dict(chords=prog_b, drums=dnb, bass="x.f.o.x.x.f.x.o.", leads=[("growl", 0, 0.34, arp), ("glitch_heavy", 2, 0.22, arp)], stabs="x..x..x...x..x..", heavy=True, fill=True),
+        dict(chords=prog, drums=dnb_b, bass="x.x.o.f.x.o.f.x.", leads=[("reese_heavy", 0, 0.38, arp), ("acid", 1, 0.26, arp), ("growl", 0, 0.24, arp)], stabs="x...x.x.x...x.x.", heavy=True, fill=True),
     ]
 
 
 def track_boss_neuro():
-    """Slicer's Reckoning (Milestone Boss - Neurofunk DnB, 176 BPM, C minor): fierce Room 50 finale."""
+    """Slicer's Reckoning (Milestone Boss - Ferocious Neurofunk DnB, 176 BPM, C minor): relentless finale assault."""
     prog = [(48, m), (46, M), (44, M), (43, M)] * 2
-    fury = [[(0, 2, 3), (2, 1, 4), (3, 1, 5), (4, 2, 3), (6, 2, 2), (8, 2, 4), (10, 2, 5), (12, 2, 6), (14, 2, 5)],
-            [(0, 2, 5), (2, 2, 4), (4, 2, 3), (6, 2, 1), (8, 4, 2), (12, 4, 3)]]
-    neuro_drums = """k x.......x.x.....
-s ....x..g....x.gg
+    prog_b = [(48, m), (49, M), (46, m), (43, M)] * 2
+    fury = [[(0, 2, 3), (2, 1, 5), (3, 1, 6), (4, 2, 4), (6, 2, 7), (8, 2, 5), (10, 1, 6), (11, 1, 8), (12, 2, 6), (14, 2, 7)],
+            [(0, 2, 6), (2, 2, 4), (4, 2, 5), (6, 2, 7), (8, 2, 3), (10, 2, 5), (12, 2, 6), (14, 2, 8)]]
+    neuro_drums = """k x..x....x.x.....
+s ....x.gg....x.gg
+c ....x.......x...
+h xxoxxxoxxxoxxxox"""
+    neuro_rush = """k x.x...x.x.x.x...
+s ....x.gg..g.x.gg
 c ....x.......x...
 h xxoxxxoxxxoxxxox
-t x.........x....."""
+m ............3211"""
     return 176, [
-        dict(chords=prog, drums=neuro_drums, bass="x-o-f-x-x-o-f-x-", leads=[("reese", 0, 0.28, fury)], stabs="x.......x.......", fill=True),
-        dict(chords=prog, drums=neuro_drums, bass="x.o.f.x.x.o.f.x.", leads=[("reese", 0, 0.30, fury), ("wobble", 0, 0.22, fury), ("brass", 1, 0.18, fury)], stabs="x.....x.x.....x.", fill=True),
-        dict(chords=[(44, M), (41, m), (48, m), (43, M)] * 2, drums="t x.x.x.x.x.x.x.x.\nh xxoxxxoxxxoxxxox", bass="x---x---x---x---", pad=0.3, riser=True, fill=True),
-        dict(chords=prog, drums=neuro_drums, bass="x.o.f.x.x.o.f.x.", leads=[("reese", 0, 0.32, fury), ("glitch", 2, 0.18, fury), ("brass", 1, 0.20, fury)], stabs="x...x...x...x...", fill=True),
+        dict(chords=prog, drums=neuro_drums, bass="x.o.f.x.x.o.f.x.", leads=[("reese_heavy", 0, 0.36, fury), ("growl", 0, 0.24, fury)], stabs="x...x...x...x...", heavy=True, fill=True),
+        dict(chords=prog, drums=neuro_rush, bass="x.o.f.x.o.f.x.o.", leads=[("reese_heavy", 0, 0.38, fury), ("acid", 1, 0.26, fury), ("brass", 1, 0.22, fury)], stabs="x.....x.x.....x.", heavy=True, riser=True, fill=True),
+        dict(chords=prog_b, drums=neuro_drums, bass="x.f.o.x.x.f.o.x.", leads=[("growl", 0, 0.36, fury), ("glitch_heavy", 2, 0.24, fury), ("acid", 1, 0.22, fury)], stabs="x..x..x.x..x..x.", heavy=True, fill=True),
+        dict(chords=prog, drums=neuro_rush, bass="x.o.f.x.x.o.f.x.", leads=[("reese_heavy", 0, 0.40, fury), ("growl", 0, 0.28, fury), ("acid", 2, 0.26, fury)], stabs="x.x.x.x.x.x.x.x.", heavy=True, fill=True),
     ]
 
 
