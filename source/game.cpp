@@ -79,6 +79,15 @@ static constexpr int kFruitKinds = sizeof(kFruit) / sizeof(kFruit[0]);
 static_assert(kFruitKinds <= kMaxFruitKinds, "the Fruit Journal needs a count for every fruit");
 static_assert(kFruitKinds == progress::kNamedFruit, "every fruit needs a name in progress.cpp");
 
+// Outer visual half-extent in field pixels across both 2D stickers and 3D models.
+static const float kFruitHitRadius[kFruitKinds] = {
+    28.0f, 26.0f, 29.0f, 28.0f, 26.0f, 28.0f, 25.0f, 27.0f, 27.0f, 32.0f, 25.0f,
+    32.0f, 30.0f, 32.0f, 28.0f, 29.0f, 31.0f, 18.0f, 28.0f, 27.0f, 32.0f, 32.0f, 29.0f, 31.0f,
+};
+static inline float fruitHitRadius(int fruit) {
+	return (fruit >= 0 && fruit < kFruitKinds) ? kFruitHitRadius[fruit] : 27.0f;
+}
+
 // Trick fruit start after the first half minute, about one fruit in twenty. Zen never throws the spiky one.
 // Arcade's power-ups, picked evenly.
 static const ObjKind kPowers[] = {OBJ_FREEZE, OBJ_DOUBLE, OBJ_FRENZY, OBJ_MAGNET, OBJ_WIDE, OBJ_SHIELD, OBJ_TIME};
@@ -369,7 +378,7 @@ void Game::launch(const Pending& p) {
 		o.ry = gRng.range(0, 6.28f);
 		o.rxv = gRng.range(-1.6f, 1.6f);
 		o.ryv = gRng.range(-2.4f, 2.4f);
-		o.radius = p.kind == OBJ_BOMB ? 19 : (p.kind == OBJ_COIN ? 18 : (p.kind == OBJ_FRUIT && p.fruit == kGrape ? 13 : 23) * fruitSize());
+		o.radius = p.kind == OBJ_BOMB ? 19 : (p.kind == OBJ_COIN ? 18 : (p.kind == OBJ_GOLD ? 26.0f : fruitHitRadius(o.fruit)) * fruitSize());
 		if (p.kind == OBJ_COIN) {
 			o.rotv = (p.vx >= 0 ? 1.0f : -1.0f) * gRng.range(6.5f, 8.5f);  // end over end, as a flipped coin
 			audio::play(SFX_COIN, 0.75f, fieldPan(p.x), gRng.range(0.96f, 1.06f));
@@ -1067,7 +1076,7 @@ void Game::addHalves(const Obj& o, const FruitDef& def, const Blade& blade, floa
 					g.ry = o.ry;
 					g.rxv = o.rxv;
 					g.ryv = o.ryv;
-					g.radius = fmaxf(12.0f, o.radius * 0.72f);
+					g.radius = fmaxf(15.0f * fruitSize(), o.radius * (o.cutGen == 0 ? 0.90f : 0.68f));
 					g.hits = 1;
 					g.hitCooldown = 0.14f;
 					g.loose = true;
@@ -1506,7 +1515,7 @@ void Game::trickEffect(const Obj& o, float dx, float dy) {
 		case kBunch:
 			// It breaks into single bananas, each worth a bonus.
 			for (int i = 0; i < kBunchPieces; i++) {
-				Obj* b = spawnPiece(o, OBJ_FRUIT, kBanana, 21);
+				Obj* b = spawnPiece(o, OBJ_FRUIT, kBanana, fruitHitRadius(kBanana));
 				if (!b) break;
 				b->vx = (i - 1) * gRng.range(90, 130) + dy * 40;
 				b->vy = (gRng.range(-290, -210) - dx * 20) * kFieldK;
@@ -1515,7 +1524,7 @@ void Game::trickEffect(const Obj& o, float dx, float dy) {
 		case kPomegranate: {
 			const int seeds = sLightFrenzy ? 3 : 5;
 			for (int i = 0; i < seeds; i++) {
-				Obj* s = spawnPiece(o, OBJ_SEED, 0, 11);
+				Obj* s = spawnPiece(o, OBJ_SEED, 0, 15);
 				if (!s) break;
 				s->hitCooldown = 0.03f;
 				const float a = i * 6.2832f / seeds + gRng.range(-0.3f, 0.3f);
@@ -1619,6 +1628,7 @@ void Game::testSlices(Blade& blade) {
 		juggleTest(blade);  // knocks, not cuts
 		return;
 	}
+	const float rawSpeed = blade.speed;
 	if (orchardLike()) {
 		bossTest(blade);
 		if (phase != PHASE_PLAY) return;
@@ -1629,7 +1639,7 @@ void Game::testSlices(Blade& blade) {
 	for (auto& o : objs) {
 		if (!o.on || o.kind == OBJ_BOMB || o.hitCooldown > 0) continue;
 		if (hitTest(o, blade, o.radius * (0.7f + slider(gSave.forgiveness) * 0.006f) * kCutReach * (gSave.sliceAssist ? 1.3f : 1.0f) * (wideT > 0 ? 1.6f : 1.0f) * (orchardLike() ? orcReach() : 1.0f))) {
-			if (o.kind == OBJ_FRUIT && o.fruit == kJelly && blade.speed < kJellySpeed) {
+			if (o.kind == OBJ_FRUIT && o.fruit == kJelly && rawSpeed < kJellySpeed) {
 				bounceJelly(o, blade);
 				continue;
 			}
@@ -1852,7 +1862,7 @@ void Game::updateObjects(float dt) {
 				o.x = clampf(o.x + o.vx * dt, o.radius + 8.0f, kFieldW - o.radius - 8.0f);
 				o.vx *= powf(0.18f, dt);
 				o.vy = 0;
-				o.y = lemSurfY - o.radius * 0.14f + sinf(orc.boss.t * 4.2f + o.x * 0.06f) * 2.5f;
+				o.y = lemSurfY - o.radius * 0.34f + sinf(orc.boss.t * 4.2f + o.x * 0.06f) * 2.5f;
 				o.rot += o.rotv * 0.35f * dt;
 				o.rx += o.rxv * 0.35f * dt;
 				o.ry += o.ryv * 0.35f * dt;
@@ -1895,10 +1905,10 @@ void Game::updateObjects(float dt) {
 				audio::play(SFX_KNOCK, 0.7f, fieldPan(o.x), 0.6f);
 			}
 		}
-		if (lemPool && o.kind == OBJ_FRUIT && o.cutGen == 0 && o.vy > 0 && o.y >= lemSurfY - o.radius * 0.14f) {
+		if (lemPool && o.kind == OBJ_FRUIT && o.cutGen == 0 && o.vy > 0 && o.y >= lemSurfY - o.radius * 0.34f) {
 			o.lemFloat = true;
 			o.lemTimer = 3.0f;
-			o.y = lemSurfY - o.radius * 0.14f;
+			o.y = lemSurfY - o.radius * 0.34f;
 			o.vy = 0;
 			o.vx *= 0.45f;
 			o.rotv *= 0.35f;
@@ -2238,7 +2248,7 @@ void Game::drawObjects3D(bool top, float ox, float oy) const {
 			m3d::Pose pose = {o.x + ox, o.y + oy, kFruitZ, o.age * o.rotv, 0, sinf(o.age * 1.7f) * 0.2f, 0.82f, 0, 0, 0};
 			m3d::draw(m3d::MESH_COIN, m3d::PART_WHOLE, pose);
 		} else if (o.kind == OBJ_SEED) {
-			m3d::Pose pose = {o.x + ox, o.y + oy, kFruitZ, o.rx, o.ry, o.rot, 0.9f, 0, 0, 0};
+			m3d::Pose pose = {o.x + ox, o.y + oy, kFruitZ, o.rx, o.ry, o.rot, 0.58f, 0, 0, 0};
 			m3d::draw(m3d::MESH_SEED, m3d::PART_WHOLE, pose);
 		}
 	}

@@ -152,7 +152,7 @@ static const OrchardLevel kLevels[DIFF_COUNT] = {
 	{12, 7, 1.45f, 1.32f, 1.34f, 1.40f, 4, 1.15f},  // Insane: demanding but skill-beatable
 };
 const OrchardLevel& orchardLevel(int diff) { return kLevels[diff % DIFF_COUNT]; }
-int orchardXpFor(int level) { return 6 + 4 * level; }
+int orchardXpFor(int level) { return 8 + 4 * level + 3 * level * level; }
 
 // What each room throws. Rooms 5 and 10 are boss rooms.
 struct RoomPlan {
@@ -1542,7 +1542,7 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 	// XP and level-ups.
 	setup();
 	const int need = orcXpNeed();
-	check(need == 10, "Level 2 needs 10 XP on Normal", "");
+	check(need == 14, "Level 2 needs 14 XP on Normal", "");
 	orcGainXp((float)need);
 	check(orc.level == 2 && orc.levelsWaiting == 1, "Enough XP gains a level", "");
 	Blade idle;
@@ -2541,6 +2541,139 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 			}
 		}
 		check(finiteOk, "Finite-HP skilled runs survive and beat Big Melon, Bomb King, and Milestone Boss on Normal & Insane", "");
+	}
+
+	// Regression checks for v2.0.0 hitbox parity, full boss rotations + upright recovery, and progressive XP curve.
+	{
+		// 1. Progressive XP curve: higher levels strictly require progressively more XP, and Room 1 slicing paces sensibly.
+		gSave.difficulty = DIFF_NORMAL;
+		setup();
+		bool monoOk = true;
+		int prevNeed = orcXpNeed();
+		int prevDelta = 0;
+		for (int lv = 2; lv <= 12; lv++) {
+			orc.level = lv;
+			const int curNeed = orcXpNeed();
+			const int delta = curNeed - prevNeed;
+			if (curNeed <= prevNeed || delta <= prevDelta) monoOk = false;
+			prevDelta = delta;
+			prevNeed = curNeed;
+		}
+		setup();
+		for (int i = 0; i < 20; i++) {
+			Obj fo = {};
+			fo.on = true;
+			fo.kind = OBJ_FRUIT;
+			fo.fruit = 0;
+			orcSliced(fo);
+		}
+		check(monoOk && orc.level == 2 && orc.xp < orcXpNeed(),
+		      "Orchard XP scaling accelerates across levels and prevents rapid multi-leveling from basic fruit", "");
+
+		// 2. Boss 3D rotation completion & upright recovery (PINE_WHIRL, MEL_CHARGE, DUR_SPIN).
+		bool rotOk = true;
+		setup();
+		bossStart(BOSS_PINEAPPLE);
+		orc.boss.enterT = 0;
+		orc.boss.y = orc.boss.baseY;
+		orc.boss.attack = PINE_WHIRL;
+		orc.boss.lastAttack = PINE_WHIRL;
+		orc.boss.attackT = 0;
+		orc.boss.volley = 2;
+		orc.boss.volleyT = 0;
+		float maxPineRx = 0.0f;
+		for (int i = 0; i < 300 && orc.boss.attack == PINE_WHIRL; i++) {
+			bossUpdate(kDt);
+			if (orc.boss.rx > maxPineRx) maxPineRx = orc.boss.rx;
+		}
+		if (orc.boss.attack != ATK_NONE || fabsf(orc.boss.rx) > 0.01f || maxPineRx < 6.0f) rotOk = false;
+
+		setup();
+		bossStart(BOSS_MELON);
+		orc.boss.enterT = 0;
+		orc.boss.y = orc.boss.baseY;
+		orc.boss.attack = MEL_CHARGE;
+		orc.boss.attackT = 0;
+		for (int i = 0; i < 180 && orc.boss.attack == MEL_CHARGE; i++) bossUpdate(kDt);
+		if (orc.boss.attack != ATK_NONE || fabsf(orc.boss.rx) > 0.01f) rotOk = false;
+		// Interrupted spin / charge must recover upright instead of freezing with stem forward or inverted.
+		orc.boss.rx = 2.4f;
+		orc.boss.dazeT = 1.0f;
+		for (int i = 0; i < 40; i++) bossUpdate(kDt);
+		if (fabsf(orc.boss.rx) > 0.01f) rotOk = false;
+
+		setup();
+		bossStart(BOSS_DURIAN);
+		orc.boss.enterT = 0;
+		orc.boss.y = orc.boss.baseY;
+		orc.boss.attack = DUR_SPIN;
+		orc.boss.attackT = 0;
+		orc.boss.volley = 3;
+		orc.boss.volleyT = 0;
+		for (int i = 0; i < 360 && orc.boss.attack == DUR_SPIN; i++) bossUpdate(kDt);
+		if (orc.boss.attack != ATK_NONE || fabsf(orc.boss.rx) > 0.01f) rotOk = false;
+		check(rotOk, "Boss spin attacks complete full rotations and recover cleanly upright with rx == 0", "");
+
+		// 3. Visual hitbox parity for elongated fruits, pomegranate seeds, boss shots, and Lemonade floating fruit.
+		bool hitOk = true;
+		setup();
+		queue(0, 120, 0, -240, OBJ_FRUIT, 9);   // kPineapple (index 9)
+		queue(0, 220, 0, -240, OBJ_FRUIT, kPomegranate);
+		for (int i = 0; i < 2; i++) {
+			launch(pending[i]);
+			pending[i].on = false;
+		}
+		objs[0].hitCooldown = 0;
+		objs[1].hitCooldown = 0;
+		const float pinEdgeX = objs[0].x + 28.0f;
+		Blade pinCut = swipe(pinEdgeX, objs[0].y - 36, pinEdgeX, objs[0].y + 36, 0x67000001u);
+		testSlices(pinCut);
+		if (objs[0].on) hitOk = false;
+		Blade pomCut = swipe(objs[1].x - 24, objs[1].y, objs[1].x + 24, objs[1].y, 0x67000002u);
+		testSlices(pomCut);
+		Obj* seedObj = nullptr;
+		for (auto& o2 : objs)
+			if (o2.on && o2.kind == OBJ_SEED) {
+				seedObj = &o2;
+				break;
+			}
+		if (!seedObj) {
+			hitOk = false;
+		} else {
+			seedObj->hitCooldown = 0;
+			const float sx = seedObj->x + 13.0f;
+			Blade seedCut = swipe(sx, seedObj->y - 24, sx, seedObj->y + 24, 0x67000003u);
+			testSlices(seedCut);
+			if (seedObj->on) hitOk = false;
+		}
+
+		setup();
+		bossStart(BOSS_LEMON);
+		orc.boss.enterT = 0;
+		orc.boss.lemonadeOn = true;
+		orc.boss.lemStage = 2;
+		orc.boss.lemLevel = 1.0f;
+		queue(0, 90, 0, 80, OBJ_FRUIT, 0);
+		launch(pending[0]);
+		pending[0].on = false;
+		objs[0].y = lemonadeSurfaceY(orc.boss);
+		objs[0].vy = 60.0f;
+		objs[0].hitCooldown = 0;
+		updateObjects(kDt);
+		const float surfY = lemonadeSurfaceY(orc.boss);
+		const float hpPre = orc.hp;
+		const float fy = objs[0].y;
+		Blade lemCut = swipe(objs[0].x - 30, fminf(fy, surfY - 4.0f), objs[0].x + 30, fminf(fy, surfY - 4.0f), 0x67000004u);
+		lemCut.strokeStart = false;
+		testSlices(lemCut);
+		if (objs[0].on || orc.hp < hpPre) hitOk = false;
+
+		bossFire(SHOT_SEED, 280, 140, 0, 40);
+		orc.shots[0].age = 0.5f;
+		Blade shotCut = swipe(297.0f, 120.0f, 297.0f, 160.0f, 0x67000005u);
+		bossTest(shotCut);
+		if (orc.shots[0].on) hitOk = false;
+		check(hitOk, "3D/2D outer fruit silhouettes, pomegranate seeds, boss shots, and floating fruit slice reliably", "");
 	}
 
 	gSave.difficulty = diffWas;

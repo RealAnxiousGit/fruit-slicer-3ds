@@ -466,10 +466,11 @@ void Game::bossAttack(float dt) {
 		case MEL_CHARGE: {
 			const float t = b.attackT;
 			b.x = lerpf(b.x, kFieldW * 0.5f, 1 - powf(0.02f, dt));
-			b.rx += dt * 9;
+			b.rx = clampf(t / 1.8f, 0.0f, 1.0f) * (6.2831853f * 2.0f);
 			if (t >= 0.5f && t - step < 0.5f) audio::play(SFX_WHOOSH, 1.0f, fieldPan(b.x), 0.6f);  // the roll comes at you
 			if (t > 0.5f) b.squash = -clampf((t - 0.5f) / 1.3f, 0, 1);  // negative squash: it grows toward the screen
 			if (t >= 1.8f) {
+				b.rx = 0.0f;
 				b.squash = 0;
 				shake = 0.8f;
 				orcHurt(bossDamage(3), b.x, b.y, "CHARGE");
@@ -555,7 +556,8 @@ void Game::bossAttack(float dt) {
 		case PINE_WHIRL: {
 			const float sweep = kFieldW * 0.5f + sinf(b.attackT * 5.2f) * kFieldW * 0.34f;
 			b.x = lerpf(b.x, sweep, 1 - powf(0.01f, dt));
-			b.rx += dt * 7;
+			const float prevRx = b.rx;
+			b.rx += dt * 8.5f;
 			if (b.volley > 0 && b.volleyT <= 0) {
 				for (int s = -1; s <= 1; s += 2) {
 					bossFire(SHOT_SPIKE, b.x + s * b.radius * 0.6f, b.y + 10, s * 65.0f * acrossScale(), 110 * kFieldK * lv.bossSpeed);
@@ -564,7 +566,11 @@ void Game::bossAttack(float dt) {
 				b.volley--;
 				b.volleyT = 0.55f;
 			}
-			if (b.volley <= 0 && b.volleyT < -0.45f) b.attack = ATK_NONE;
+			const int prevTurn = (int)(prevRx / 6.2831853f), curTurn = (int)(b.rx / 6.2831853f);
+			if (b.volley <= 0 && b.volleyT < -0.45f && (curTurn > prevTurn || fmodf(b.rx, 6.2831853f) < 0.08f)) {
+				b.rx = 0.0f;
+				b.attack = ATK_NONE;
+			}
 			break;
 		}
 		case PINE_SLAM: {
@@ -690,14 +696,17 @@ void Game::bossAttack(float dt) {
 		case DUR_SPIN: {
 			const float sweep = kFieldW * 0.5f + sinf(b.attackT * (b.enraged ? 8.2f : 5.8f) * spdScale) * kFieldW * 0.36f;
 			b.x = lerpf(b.x, sweep, 1 - powf(0.005f, dt));
-			b.rx += dt * (b.enraged ? 15 : 11);
+			const float prevRx = b.rx;
+			b.rx += dt * (b.enraged ? 15.0f : 11.0f);
 			if (b.volley > 0 && b.volleyT <= 0) {
 				bossFire(SHOT_THORN, b.x, b.y + b.radius * 0.6f, gRng.range(-55, 55) * acrossScale(), 112 * kFieldK * spdScale);
 				audio::play(SFX_SWISH1, 0.65f, fieldPan(b.x), 0.9f);
 				b.volley--;
 				b.volleyT = b.enraged ? 0.26f : 0.36f;
 			}
-			if (b.volley <= 0 && b.volleyT < -0.45f) {
+			const int prevTurn = (int)(prevRx / 6.2831853f), curTurn = (int)(b.rx / 6.2831853f);
+			if (b.volley <= 0 && b.volleyT < -0.45f && (curTurn > prevTurn || fmodf(b.rx, 6.2831853f) < 0.08f)) {
+				b.rx = 0.0f;
 				if (b.finisher) bossOpen(lv.openTime);
 				b.attack = ATK_NONE;
 			}
@@ -998,6 +1007,22 @@ void Game::bossUpdate(float dt) {
 	if (b.hurtT > 0) b.hurtT -= kDt;
 	if (b.deflectT > 0) b.deflectT -= kDt;
 	b.squash *= powf(0.02f, kDt);
+	// Always recover/settle upright (b.rx == 0) whenever a rolling/spinning attack stops or is interrupted.
+	{
+		constexpr float kTau = 6.2831853f;
+		const bool spinning = !b.beaten && b.dazeT <= 0 && (b.attack == MEL_CHARGE || b.attack == PINE_WHIRL || b.attack == DUR_SPIN);
+		if (!spinning && b.rx != 0.0f) {
+			b.rx = fmodf(b.rx, kTau);
+			if (b.rx < 0.0f) b.rx += kTau;
+			if (b.rx >= kTau * 0.5f) {
+				b.rx += kDt * 12.0f;
+				if (b.rx >= kTau) b.rx = 0.0f;
+			} else {
+				b.rx -= kDt * 12.0f;
+				if (b.rx <= 0.0f) b.rx = 0.0f;
+			}
+		}
+	}
 	if (b.beaten) {
 		b.leaveT += kDt;
 		if (b.lemonadeOn) {
@@ -1276,7 +1301,7 @@ void Game::bossTest(Blade& blade) {
 	// Shots first: they're small and quick.
 	for (auto& s : orc.shots) {
 		if (!s.on || s.stroke == blade.strokeId) continue;
-		const float r = (s.kind == SHOT_CANNON ? 15.0f : (s.kind == SHOT_CROWN ? 22.0f : 11.0f)) * reach + 4;
+		const float r = (s.kind == SHOT_CANNON ? 17.0f : (s.kind == SHOT_CROWN ? 22.0f : 15.0f)) * reach + 4;
 		if (segDist2(s.x, s.y, blade) > r * r) continue;
 		s.stroke = blade.strokeId;
 		if (--s.hits > 0) {
@@ -1499,10 +1524,10 @@ void Game::drawShots() const {
 			if (!s.on || s.kind == SHOT_CROWN) continue;
 			const float ang = atan2f(s.vy, s.vx) + 1.5708f;
 			if (s.kind == SHOT_SEED) {
-				m3d::Pose pose = {s.x, s.y, 26, s.age * 3.0f, s.rot * 0.7f, ang, 1.05f, 0, 0, 0};
+				m3d::Pose pose = {s.x, s.y, 26, s.age * 3.0f, s.rot * 0.7f, ang, 0.66f, 0, 0, 0};
 				m3d::draw(m3d::MESH_SEED, m3d::PART_WHOLE, pose);
 			} else if (s.kind == SHOT_SPLASH) {
-				m3d::Pose pose = {s.x, s.y, 26, s.age * 2.5f, s.rot * 0.8f, ang, 1.15f, 0, 0, 0};
+				m3d::Pose pose = {s.x, s.y, 26, s.age * 2.5f, s.rot * 0.8f, ang, 0.72f, 0, 0, 0};
 				m3d::draw(m3d::MESH_SPLASH, m3d::PART_WHOLE, pose);
 			} else if (s.kind == SHOT_CANNON) {
 				m3d::Skin skin = {s.hits == 1 ? 0.45f : 0.0f, 1.0f, 0.35f, 0.25f, 1.0f, 0.35f};
@@ -1511,18 +1536,18 @@ void Game::drawShots() const {
 				m3d::draw(m3d::MESH_BOMB, m3d::PART_WHOLE, pose);
 				m3d::setSkin(nullptr);
 			} else if (s.kind == SHOT_SPIKE || s.kind == SHOT_THORN) {
-				m3d::Pose pose = {s.x, s.y, 26, s.age * 4.0f, s.rot * 1.2f, ang, s.kind == SHOT_THORN ? 0.62f : 0.55f, 0, 0, 0};
+				m3d::Pose pose = {s.x, s.y, 26, s.age * 4.0f, s.rot * 1.2f, ang, s.kind == SHOT_THORN ? 0.56f : 0.52f, 0, 0, 0};
 				m3d::draw(m3d::MESH_SPIKY, m3d::PART_WHOLE, pose);
 			} else if (s.kind == SHOT_ACID) {
 				m3d::Skin skin = {0.5f, 0.82f, 1.0f, 0.18f, 1.0f, 0.45f};
 				m3d::setSkin(&skin);
-				m3d::Pose pose = {s.x, s.y, 26, s.age * 3.0f, s.rot, ang, 0.62f, 0, 0, 0};
+				m3d::Pose pose = {s.x, s.y, 26, s.age * 3.0f, s.rot, ang, 0.52f, 0, 0, 0};
 				m3d::draw(m3d::MESH_LEMON, m3d::PART_WHOLE, pose);
 				m3d::setSkin(nullptr);
 			} else if (s.kind == SHOT_EMBER) {
 				m3d::Skin skin = {0.55f, 1.0f, 0.55f, 0.15f, 1.0f, 0.5f};
 				m3d::setSkin(&skin);
-				m3d::Pose pose = {s.x, s.y, 26, s.age * 3.5f, s.rot, s.rot * 0.8f, 0.65f, 0, 0, 0};
+				m3d::Pose pose = {s.x, s.y, 26, s.age * 3.5f, s.rot, s.rot * 0.8f, 0.36f, 0, 0, 0};
 				m3d::draw(m3d::MESH_SUNBURST, m3d::PART_WHOLE, pose);
 				m3d::setSkin(nullptr);
 			}
@@ -1533,7 +1558,7 @@ void Game::drawShots() const {
 		if (!s.on) continue;
 		if (in3D && (s.kind == SHOT_SEED || s.kind == SHOT_SPLASH || s.kind == SHOT_CANNON || s.kind == SHOT_SPIKE || s.kind == SHOT_THORN || s.kind == SHOT_ACID || s.kind == SHOT_EMBER)) continue;
 		switch (s.kind) {
-			case SHOT_SEED: gfx::sprite(SHEET_SPRITES, sprites_drop_idx, s.x, s.y, 0.9f, 1.2f, atan2f(s.vy, s.vx) - 1.5708f, rgba(70, 40, 30)); break;
+			case SHOT_SEED: gfx::sprite(SHEET_SPRITES, sprites_drop_idx, s.x, s.y, 1.15f, 1.45f, atan2f(s.vy, s.vx) - 1.5708f, rgba(70, 40, 30)); break;
 			case SHOT_SPLASH: gfx::sprite(SHEET_SPRITES, sprites_drop_idx, s.x, s.y, 1.5f, 1.5f, s.rot * 0.3f, rgba(255, 80, 110)); break;
 			case SHOT_CANNON:
 				gfx::sprite(SHEET_FRUIT, fruit_bomb_idx, s.x, s.y, 0.8f, 0.8f, s.rot, s.hits > 1 ? rgba(120, 120, 130) : rgba(200, 120, 110));
