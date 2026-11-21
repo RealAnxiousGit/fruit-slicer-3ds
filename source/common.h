@@ -218,6 +218,21 @@ extern InputMode gInputMode;
 inline bool touchUiActive() { return !PORT_3DS && gInputMode == INPUT_TOUCH; }
 inline bool padUiActive() { return !PORT_3DS && gInputMode == INPUT_PAD; }
 
+inline const char* inputHowToPause() {
+	if (PORT_3DS || padUiActive()) return PORT_3DS ? PORT_HOWTO_PAUSE : "START pauses. B goes back.";
+	if (touchUiActive()) return "The pause sign stops the game.";
+	return "Escape pauses and goes back.";
+}
+inline const char* inputPracticeSkip() {
+	if (PORT_3DS || padUiActive()) return PORT_3DS ? PORT_PRACTICE_SKIP : "START to skip the lessons";
+	if (touchUiActive()) return "Pause to skip the lessons";
+	return "Escape to skip the lessons";
+}
+inline const char* inputConfirmText() {
+	if (PORT_3DS || touchUiActive()) return "Tap again to confirm";
+	return "Press again to confirm";
+}
+
 struct Input {
 	u32 down, held, repeat;
 	bool touching;

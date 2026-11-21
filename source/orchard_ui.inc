@@ -98,7 +98,7 @@ static OrcCardLayout orcCardLayout(int n, bool withReroll = true) {
 	if (L.twoRows) {
 		L.cardH = clampf((availH - L.rowGap) * 0.5f, 108.0f, 150.0f);
 	} else {
-		L.cardH = clampf(availH, 104.0f, 170.0f);
+		L.cardH = clampf(availH, 104.0f, (PORT_TWO_SCREENS && !withReroll) ? 160.0f : 170.0f);
 	}
 	const float cardsTotalH = L.twoRows ? (L.cardH * 2.0f + L.rowGap) : L.cardH;
 	const float rerollGap = kFieldH >= 285.0f ? 10.0f : 6.0f;
@@ -765,7 +765,7 @@ static void drawOrchardMenus() {
 			r.y += rSlide;
 			const int cost = sGame.orcRerollPrice();
 			const bool canAfford = sGame.orcCanReroll();
-			const char* rKey = touchUiActive() ? "" : ((PORT_3DS || padUiActive() || gStickInUse) ? " [X]" : " [R]");
+			const char* rKey = touchUiActive() ? "" : ((PORT_3DS || padUiActive() || gStickInUse) ? " (X)" : " (R)");
 			if (o.rerolls > 0) snprintf(buf, sizeof buf, "Reroll (%d)%s", o.rerolls, rKey);
 			else snprintf(buf, sizeof buf, "Reroll (%dc)%s", cost, rKey);
 			drawSign(r, buf, o.focus == o.offerCount, false, 0.40f);
@@ -803,12 +803,12 @@ static void drawRushPick() {
 		const RushBuildInfo& b = kRushBuilds[i];
 		drawPlank(x, y, w, h, sGame.m12.rushFocus == i, false);
 		const float is = PORT_3DS ? 0.72f : 0.76f;
-		gfx::sprite(SHEET_SPRITES, cardIcon(kIcon[i]), x + w * 0.5f, y + 23, is, is);
-		orcFit(b.name, x + w * 0.5f, y + 43, PORT_3DS ? 0.45f : 0.44f, w - 8, COL_CREAM);
+		gfx::sprite(SHEET_SPRITES, cardIcon(kIcon[i]), x + w * 0.5f, y + 22, is, is);
+		orcFit(b.name, x + w * 0.5f, y + 41, PORT_3DS ? 0.45f : 0.44f, w - 8, COL_CREAM);
 		snprintf(desc, sizeof desc, "%s %s", b.line1, b.line2);
-		orcWrap(desc, x + w * 0.5f, y + 66, PORT_3DS ? 0.34f : 0.31f, w - 8, PORT_3DS ? 13.4f : 13.0f, COL_CREAM, 5);
+		orcWrap(desc, x + w * 0.5f, y + 62, PORT_3DS ? 0.36f : 0.32f, w - 8, 13.0f, COL_CREAM, 6);
 	}
-	orcFit("No level ups in a Boss Rush.", kFieldW * 0.5f, CL.cardTop + CL.cardH + 9.0f, PORT_3DS ? 0.33f : 0.3f, kFieldW - 20, COL_DIM);
+	orcFit("No level ups in a Boss Rush.", kFieldW * 0.5f, CL.cardTop + CL.cardH + (PORT_TWO_SCREENS ? 20.0f : 12.0f), PORT_3DS ? 0.36f : 0.34f, kFieldW - 20, rgba(235, 225, 200));
 }
 
 static bool updateRushPick(const Input& in, bool wasTouching) {

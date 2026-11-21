@@ -202,5 +202,5 @@ void Game::drawPractice() const {
 		if (tw > w - 36 * s) ts *= (w - 36 * s) / tw;
 		gfx::text(line, kFieldW * 0.5f, y + (18 + i * 16) * s, ts, COL_CREAM, ALIGN_CENTER);
 	}
-	gfx::text(PORT_PRACTICE_SKIP, kFieldW * 0.5f, y + h + 2, 0.28f * s, withAlpha(COL_CREAM, 0.7f), ALIGN_CENTER);
+	gfx::text(inputPracticeSkip(), kFieldW * 0.5f, y + h + 2, 0.28f * s, withAlpha(COL_CREAM, 0.7f), ALIGN_CENTER);
 }

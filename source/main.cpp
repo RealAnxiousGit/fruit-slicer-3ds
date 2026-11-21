@@ -5923,7 +5923,7 @@ static void drawRows() {
 		float ty = y + kRowH * 0.5f - 8;
 		u32 labelColor = rowDisabled(r) ? COL_DIM : COL_CREAM;
 		if (r.kind == ROW_ACTION && r.action != ACT_SP_MSG) {
-			const char* label = sArmed == i ? PORT_CONFIRM_TEXT : r.label;
+			const char* label = sArmed == i ? inputConfirmText() : r.label;
 			const int player = passRowPlayer(r);
 			const u32 color = rowDisabled(r) ? COL_DIM : (player >= 0 ? passColor(player) : (sArmed == i ? COL_ACCENT : COL_CREAM));
 			gfx::text(label, 160, ty - 1, 0.42f, color, ALIGN_CENTER);
@@ -6108,14 +6108,14 @@ static void drawBottomContent(Screen screen) {
 			drawCredits();
 			break;
 		case SCREEN_HOWTO: {
-			static const char* const kLines[] = {
+			const char* const kLines[] = {
 				"Swipe through fruit. Miss the bombs.",
 				"Each slice fills the Fruit Frenzy meter.",
 				"It never stops draining, so keep slicing.",
 				"If it runs dry, your combo resets.",
 				"Fill it for Frenzy: double points!",
 				"One long swipe scores a big bonus.",
-				PORT_HOWTO_PAUSE,
+				inputHowToPause(),
 			};
 			drawMenuBack();
 			drawHeader("How to Play");
@@ -6141,8 +6141,8 @@ static void drawBottomContent(Screen screen) {
 			sGame.drawField(sBlade);
 			drawOrchardMenus();
 #if defined(DEV_TOOLS) && defined(BOSS_TEST_APP)
-			gfx::text(gSave.artStyle == ART_3D ? "[SELECT] 3D MODELS" : "[SELECT] 2D STICKERS",
-			          kFieldW * 0.5f, kFieldH - 11.0f, 0.25f, withAlpha(COL_CREAM, 0.65f), ALIGN_CENTER);
+			gfx::text(gSave.artStyle == ART_3D ? "SELECT: 3D MODELS" : "SELECT: 2D STICKERS",
+			          kFieldW * 0.5f, kFieldH - 11.0f, 0.28f, withAlpha(COL_CREAM, 0.72f), ALIGN_CENTER);
 #endif
 			break;
 #endif
@@ -7245,8 +7245,8 @@ static void drawFrame() {
 		drawStickPoint();
 		if (sScreen == SCREEN_GAME) drawOrchardMenus();
 #if defined(DEV_TOOLS) && defined(BOSS_TEST_APP)
-		if (sScreen == SCREEN_GAME) {
-			gfx::text(gSave.artStyle == ART_3D ? "[TAB] 3D MODELS" : "[TAB] 2D STICKERS",
+		if (sScreen == SCREEN_GAME && !touchUiActive()) {
+			gfx::text(gSave.artStyle == ART_3D ? "TAB: 3D MODELS" : "TAB: 2D STICKERS",
 			          kFieldW * 0.5f, kFieldH - 11.0f, 0.25f, withAlpha(COL_CREAM, 0.65f), ALIGN_CENTER);
 		}
 #endif
@@ -7547,32 +7547,6 @@ bool app::frame(Input& in, int steps) {
 
 #if defined(DEV_TOOLS) && defined(BOSS_TEST_APP)
 #if PORT_3DS
-		{
-			static int sWalkMode = -1;
-			static int sWalkFrame = 0;
-			if (sWalkMode < 0) {
-				char wp[256];
-				port::dataPath(wp, sizeof wp, "shot_walk.txt");
-				FILE* wf = fopen(wp, "rb");
-				if (wf) { fclose(wf); sWalkMode = 1; } else { sWalkMode = 0; }
-			}
-			if (sWalkMode == 1 && sScreen != SCREEN_LOADING) {
-				sWalkFrame++;
-				if (sWalkFrame == 2) {
-					sBossTestBoss = BOSS_DURIAN;
-					sFocus[SCREEN_BOSS_TEST] = 12;
-					sFade = 0;
-				} else if (sWalkFrame == 110) {
-					startBossTestDialogue();
-					sGame.orc.dialogueChars = 99.0f;
-					sFade = 0;
-				} else if (sWalkFrame == 220) {
-					sGame.start(MODE_BOSSRUSH);
-					sOrcOpenT = 1.0f;
-					sFade = 0;
-				}
-			}
-		}
 		if (in.down & KEY_SELECT) {
 #else
 		if (in.down & KEY_TAB) {

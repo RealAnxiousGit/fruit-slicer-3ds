@@ -55,7 +55,7 @@ ifneq ($(strip $(AUTOTEST)),)
 CFLAGS	+=	-DAUTOTEST
 endif
 CFLAGS	+=	$(TESTDEFS)
-ifneq ($(strip $(DEV)),)
+ifneq ($(filter-out 0,$(strip $(DEV))),)
 CFLAGS	+=	-DDEV_TOOLS
 endif
 
