@@ -161,9 +161,9 @@ static void drawOrcCard(int card, float x, float y, float w, float h, bool focus
 	char buf[128];
 	const float cx = x + w * 0.5f, maxW = w - 8;
 	snprintf(buf, sizeof buf, "%s %s", rarityName(info.rarity), cardKindName(info.kind));
-	float ty = orcWrap(buf, cx, y + 34, 0.30f, maxW, 10.5f, rc, 2);
+	float ty = orcWrap(buf, cx, y + 34, PORT_3DS ? 0.32f : 0.30f, maxW, 10.5f, rc, 2);
 	ty += 2;
-	orcFit(info.name, cx, ty, 0.39f, maxW, COL_CREAM);
+	orcFit(info.name, cx, ty, PORT_3DS ? 0.41f : 0.39f, maxW, COL_CREAM);
 	ty += 15;
 
 	// Build and measure footer FIRST so description text can never collide with footer lines.
@@ -187,7 +187,7 @@ static void drawOrcCard(int card, float x, float y, float w, float h, bool focus
 	}
 
 	const float footMaxW = fmaxf(48.0f, w - 18.0f);  // clear corner rivets on the bottom edge of narrow cards
-	float footScale = 0.27f, footStep = 10.0f;
+	float footScale = PORT_3DS ? 0.285f : 0.27f, footStep = 10.0f;
 	float footY = y + h - 7.0f;
 	if (foot[0]) {
 		float tw = gfx::textWidth(foot, footScale);
@@ -213,10 +213,10 @@ static void drawOrcCard(int card, float x, float y, float w, float h, bool focus
 
 	// Auto-fit description strictly above footY with at least a 4px gap.
 	snprintf(buf, sizeof buf, "%s%s%s", info.line1, info.line2[0] ? " " : "", info.line2);
-	float descScale = 0.31f, descStep = 11.2f;
+	float descScale = PORT_3DS ? 0.33f : 0.31f, descStep = 11.2f;
 	const float descBudget = fmaxf(14.0f, footY - 4.0f - ty);
-	while (descScale > 0.205f) {
-		descStep = descScale * 36.0f;
+	while (descScale > (PORT_3DS ? 0.22f : 0.205f)) {
+		descStep = descScale * (PORT_3DS ? 35.0f : 36.0f);
 		const int linesNeeded = orcCountWrapLines(buf, maxW, descScale, 6);
 		if (linesNeeded * descStep <= descBudget) break;
 		descScale -= 0.015f;
@@ -356,7 +356,7 @@ struct OrcInvDetails {
 static OrcInvDetails orcInvDetailsLayout() {
 	const OrcInvLayout L = orcInvLayout();
 	if (PORT_3DS || (!L.runCol && !L.stacked))
-		return {kFieldH - 70.0f, kFieldH - 59.0f, 0.25f, 0.23f, 9.0f, 0.22f, false};
+		return {kFieldH - 70.0f, kFieldH - 59.0f, PORT_3DS ? 0.27f : 0.25f, PORT_3DS ? 0.25f : 0.23f, 9.0f, PORT_3DS ? 0.24f : 0.22f, false};
 	return {kFieldH - 63.0f, kFieldH - 54.0f, 0.25f, 0.22f, 8.0f, 0.21f, true};
 }
 static float orcInvDetailsBottom(int card) {
@@ -397,8 +397,8 @@ static void orcBar(float x, float y, float w, float h, float k, u32 color) {
 }
 
 static const char* orcSlotKey(int s) {
-	if (PORT_3DS) return s == 0 ? "L" : "R";
-	if (gStickInUse) return s == 0 ? "LB" : "RB";
+	if (PORT_3DS || padUiActive() || gStickInUse) return s == 0 ? "L" : "R";
+	if (touchUiActive()) return "";
 	return s == 0 ? "Q" : "E";
 }
 
@@ -765,8 +765,9 @@ static void drawOrchardMenus() {
 			r.y += rSlide;
 			const int cost = sGame.orcRerollPrice();
 			const bool canAfford = sGame.orcCanReroll();
-			if (o.rerolls > 0) snprintf(buf, sizeof buf, "Reroll (%d)", o.rerolls);
-			else snprintf(buf, sizeof buf, "Reroll (%dc)", cost);
+			const char* rKey = touchUiActive() ? "" : ((PORT_3DS || padUiActive() || gStickInUse) ? " [X]" : " [R]");
+			if (o.rerolls > 0) snprintf(buf, sizeof buf, "Reroll (%d)%s", o.rerolls, rKey);
+			else snprintf(buf, sizeof buf, "Reroll (%dc)%s", cost, rKey);
 			drawSign(r, buf, o.focus == o.offerCount, false, 0.40f);
 			if (!canAfford) {
 				orcFit("Need more run coins", r.x + r.w * 0.5f, r.y + r.h + 2.0f, 0.24f, kFieldW - 16.0f, rgba(255, 130, 120));
@@ -802,12 +803,12 @@ static void drawRushPick() {
 		const RushBuildInfo& b = kRushBuilds[i];
 		drawPlank(x, y, w, h, sGame.m12.rushFocus == i, false);
 		const float is = PORT_3DS ? 0.72f : 0.76f;
-		gfx::sprite(SHEET_SPRITES, cardIcon(kIcon[i]), x + w * 0.5f, y + 24, is, is);
-		orcFit(b.name, x + w * 0.5f, y + 44, 0.44f, w - 10, COL_CREAM);
+		gfx::sprite(SHEET_SPRITES, cardIcon(kIcon[i]), x + w * 0.5f, y + 23, is, is);
+		orcFit(b.name, x + w * 0.5f, y + 43, PORT_3DS ? 0.45f : 0.44f, w - 8, COL_CREAM);
 		snprintf(desc, sizeof desc, "%s %s", b.line1, b.line2);
-		orcWrap(desc, x + w * 0.5f, y + 70, 0.31f, w - 10, 13.0f, COL_CREAM, 5);
+		orcWrap(desc, x + w * 0.5f, y + 66, PORT_3DS ? 0.34f : 0.31f, w - 8, PORT_3DS ? 13.4f : 13.0f, COL_CREAM, 5);
 	}
-	orcFit("No level ups in a Boss Rush.", kFieldW * 0.5f, CL.cardTop + CL.cardH + 10.0f, 0.3f, kFieldW - 20, COL_DIM);
+	orcFit("No level ups in a Boss Rush.", kFieldW * 0.5f, CL.cardTop + CL.cardH + 9.0f, PORT_3DS ? 0.33f : 0.3f, kFieldW - 20, COL_DIM);
 }
 
 static bool updateRushPick(const Input& in, bool wasTouching) {
@@ -924,25 +925,25 @@ static Room50CutsceneBox room50CutsceneBox(const char* line = nullptr) {
 		return sCachedBox;
 	}
 	Room50CutsceneBox B;
-	const float padX = (PORT_3DS || kFieldW < 340.0f) ? 12.0f : 24.0f;
+	const float padX = (PORT_3DS || kFieldW < 340.0f) ? 10.0f : 24.0f;
 	B.w = fminf(kFieldW - padX * 2.0f, 440.0f);
 	const bool narrow = B.w < 320.0f;
-	B.textScale = PORT_3DS ? 0.30f : (narrow ? 0.30f : 0.34f);
-	B.step = PORT_3DS ? 11.5f : (narrow ? 11.5f : 13.5f);
-	B.maxW = B.w - 36.0f;
+	B.textScale = PORT_3DS ? 0.34f : (narrow ? 0.31f : 0.34f);
+	B.step = PORT_3DS ? 12.2f : (narrow ? 11.8f : 13.5f);
+	B.maxW = B.w - 32.0f;
 	B.maxLines = narrow ? 8 : 6;
 	if (line) {
-		while (B.textScale > 0.24f && orcCountWrapLines(line, B.maxW, B.textScale, 8) > (narrow ? 7 : 5)) {
+		while (B.textScale > (PORT_3DS ? 0.27f : 0.24f) && orcCountWrapLines(line, B.maxW, B.textScale, 8) > (narrow ? 7 : 5)) {
 			B.textScale -= 0.02f;
-			B.step -= 0.8f;
+			B.step -= 0.7f;
 		}
 	}
 	const int linesNeeded = line ? orcCountWrapLines(line, B.maxW, B.textScale, B.maxLines) : 5;
 	const float minH = PORT_3DS ? 50.0f : (narrow ? 50.0f : 54.0f);
-	const float topPad = PORT_3DS ? 12.0f : 14.0f;
+	const float topPad = PORT_3DS ? 11.0f : 14.0f;
 	B.h = fmaxf(minH, topPad + linesNeeded * B.step + 24.0f);
 	B.x = (kFieldW - B.w) * 0.5f;
-	B.y = kFieldH - B.h - (PORT_3DS ? 10.0f : 16.0f);
+	B.y = kFieldH - B.h - (PORT_3DS ? 8.0f : 16.0f);
 	B.textY = B.y + topPad;
 	B.promptY = B.y + B.h - 17.0f;
 	if (line) {
@@ -969,8 +970,13 @@ static void drawRoom50Cutscene() {
 	drawPlank(B.x, B.y, B.w, B.h, false, false);
 	gfx::rect(B.x + 4, B.y + 4, B.w - 8, 2, rgba(255, 110, 95, 180));
 	orcWrap(sub, kFieldW * 0.5f, B.textY, B.textScale, B.maxW, B.step, COL_CREAM, B.maxLines);
-	if (shown >= total && !o.dialogueWaitRelease && (((int)(sTime * 4.0f)) & 1) == 0) {
-		orcFit("PRESS TO CONTINUE...", B.x + B.w - 18.0f, B.promptY, PORT_3DS ? 0.25f : 0.28f, B.maxW, COL_ACCENT, ALIGN_RIGHT);
+	if (shown >= total && !o.dialogueWaitRelease) {
+		const float bob = gSave.calmFx ? 0.0f : sinf(sTime * 7.5f) * 1.4f;
+		const float ax = B.x + B.w - 15.0f;
+		const float ay = B.promptY + 2.5f + bob;
+		const u32 sh = rgba(16, 10, 8, 220);
+		gfx::tri(ax - 5.8f, ay - 0.8f, sh, ax + 5.8f, ay - 0.8f, sh, ax, ay + 6.4f, sh);
+		gfx::tri(ax - 4.5f, ay, COL_ACCENT, ax + 4.5f, ay, COL_ACCENT, ax, ay + 5.0f, COL_ACCENT);
 	}
 }
 
@@ -1223,11 +1229,12 @@ static bool updateDevSkip(const Input& in, bool wasTouching) {
 	};
 	if (tapped(in, wasTouching, b[1].x, b[1].y, b[1].w, b[1].h)) { audio::click(); o.devField = 1; startTyping(1, o.devRoomTarget); return true; }
 	if (tapped(in, wasTouching, b[4].x, b[4].y, b[4].w, b[4].h)) { audio::click(); o.devField = 4; startTyping(2, o.devLevelTarget); return true; }
-	if (tapped(in, wasTouching, b[6].x, b[6].y, b[6].w, b[6].h) || ((in.down & KEY_A) && o.devField == 6)) {
+	if (tapped(in, wasTouching, b[6].x, b[6].y, b[6].w, b[6].h) || ((in.down & KEY_A) && o.devField == 6) || (in.down & KEY_START)) {
 		audio::click();
 		sDevHoldBtn = -1;
 		sDevTouchBtn = -1;
 		sDevHold.reset();
+		if (o.devRoomTarget >= 25 && o.devRoomTarget % 25 == 0) gSave.seenRoom50Cutscene = 0;
 		sGame.orcApplyDevSkip(o.devRoomTarget, o.devLevelTarget);
 		return true;
 	}
@@ -1346,7 +1353,11 @@ static bool updateOrchardMenus(const Input& in, bool wasTouching) {
 	}
 	sOrcOpenT = 0;
 	// Select (Tab or I on a keyboard) opens and closes the Inventory in Orchard Blast.
+#if PORT_3DS && defined(DEV_TOOLS) && defined(BOSS_TEST_APP)
+	if (sGame.mode == MODE_ORCHARD && (in.down & KEY_Y)) {
+#else
 	if (sGame.mode == MODE_ORCHARD && (in.down & KEY_SELECT)) {
+#endif
 		audio::click();
 		if (sOrcInv) {
 			sOrcInv = false;
@@ -1401,7 +1412,8 @@ static bool updateOrchardMenus(const Input& in, bool wasTouching) {
 }
 
 #if defined(DEV_TOOLS) && defined(BOSS_TEST_APP)
-static const Button kBossTestBtns[14] = {
+static constexpr int kBossTestBtnCount = 15;
+static const Button kBossTestBtns[kBossTestBtnCount] = {
 	{10, 29, 146, 23, nullptr},       // 0: Mode (Orchard / Boss Rush)
 	{164, 29, 146, 23, nullptr},      // 1: Tier (Regular / Royal)
 	{10, 56, 126, 23, nullptr},       // 2: Difficulty (Easy..Insane)
@@ -1413,9 +1425,10 @@ static const Button kBossTestBtns[14] = {
 	{10, 156, 96, 46, "Durian"},      // 8: BOSS_DURIAN
 	{112, 156, 96, 46, "Lemon"},      // 9: BOSS_LEMON
 	{214, 156, 96, 46, "Apple"},      // 10: BOSS_APPLE
-	{10, 208, 198, 26, "Fight"},      // 11: Fight selected
-	{216, 208, 94, 26, "Quit"},       // 12: Quit
-	{208, 5, 102, 20, nullptr},       // 13: Art 2D/3D [TAB]
+	{10, 208, 130, 26, "Fight"},      // 11: Fight selected
+	{144, 208, 104, 26, "Dialogue"},  // 12: Test Dialogue cutscene
+	{252, 208, 58, 26, "Quit"},       // 13: Quit
+	{208, 5, 102, 20, nullptr},       // 14: Art 2D/3D [TAB / SELECT]
 };
 
 static const char* const kBossTestNames[BOSS_COUNT] = {
@@ -1436,17 +1449,26 @@ static const char* const kBossTestPresetDesc[5] = {
 	"Full Charms: +10 HP, Blade 3, CutBoard + Lifesteal + Harvest"
 };
 
+static bool sBossTestDialogue = false;
+
 static void startBossTestFight() {
 	sCardNoteT = 0;
 	sResultBoard = false;
 	sLbTypingName = false;
 	sOrcInv = false;
 	gBossTestDone = false;
-	sGame.bossTestLaunch(sBossTestBoss, sBossTestUseRush, sBossTestRoyal, sBossTestDiff, sBossTestPreset);
+	sGame.bossTestLaunch(sBossTestBoss, sBossTestUseRush, sBossTestRoyal, sBossTestDiff, sBossTestPreset, sBossTestDialogue);
+	sBossTestDialogue = false;
 	sBlade.reset();
 	gfx::setShake(0, 0);
 	sScreen = SCREEN_GAME;
 	sPressed = -1;
+}
+
+static void startBossTestDialogue() {
+	sBossTestDialogue = true;
+	if (sBossTestBoss < kFirstMilestoneBoss) sBossTestBoss = BOSS_DURIAN;
+	startBossTestFight();
 }
 
 static void drawBossTestTop() {
@@ -1477,7 +1499,9 @@ static void drawBossTestTop() {
 	}
 	orcFit(buf, 200, 132, 0.30f, 336, rgba(170, 220, 255));
 	orcFit(kBossTestPresetDesc[sBossTestPreset], 200, 151, 0.29f, 336, COL_DIM);
-	orcFit(gSave.artStyle == ART_3D ? "ART: 3D MODELS  (PRESS TAB TO SWITCH)" : "ART: 2D STICKERS  (PRESS TAB TO SWITCH)",
+	orcFit(gSave.artStyle == ART_3D
+	           ? (PORT_3DS ? "ART: 3D MODELS  (SELECT TO SWITCH)" : "ART: 3D MODELS  (PRESS TAB TO SWITCH)")
+	           : (PORT_3DS ? "ART: 2D STICKERS  (SELECT TO SWITCH)" : "ART: 2D STICKERS  (PRESS TAB TO SWITCH)"),
 	       200, 173, 0.31f, 336, rgba(160, 235, 190));
 	orcFit("SAVES ISOLATED - BEATING BOSS CLOSES APP", 200, 196, 0.29f, 336, rgba(255, 220, 140));
 }
@@ -1496,9 +1520,10 @@ static void drawBossTestBottom() {
 	const int f = sFocus[SCREEN_BOSS_TEST];
 	gfx::text("BOSS TEST", 104, 5, 0.48f, COL_CREAM, ALIGN_CENTER);
 	{
-		const Button& ab = kBossTestBtns[13];
-		drawPlank(ab.x, ab.y, ab.w, ab.h, f == 13, sPressed == 13);
-		orcFit(gSave.artStyle == ART_3D ? "TAB: 3D" : "TAB: 2D", ab.x + ab.w * 0.5f, ab.y + 4.5f, 0.28f, ab.w - 10.0f, f == 13 ? COL_ACCENT : rgba(160, 235, 190));
+		const Button& ab = kBossTestBtns[14];
+		drawPlank(ab.x, ab.y, ab.w, ab.h, f == 14, sPressed == 14);
+		orcFit(gSave.artStyle == ART_3D ? (PORT_3DS ? "SEL: 3D" : "TAB: 3D") : (PORT_3DS ? "SEL: 2D" : "TAB: 2D"),
+		       ab.x + ab.w * 0.5f, ab.y + 4.5f, 0.28f, ab.w - 10.0f, f == 14 ? COL_ACCENT : rgba(160, 235, 190));
 	}
 	drawBossTestSelector(kBossTestBtns[0], sBossTestUseRush ? "MODE: RUSH" : "MODE: ORCHARD", f == 0, sPressed == 0, 0.27f);
 	drawBossTestSelector(kBossTestBtns[1], sBossTestRoyal ? "TIER: ROYAL" : "TIER: REGULAR", f == 1, sPressed == 1, 0.27f);
@@ -1529,18 +1554,21 @@ static void drawBossTestBottom() {
 		const Button& fb = kBossTestBtns[11];
 		snprintf(buf, sizeof buf, "FIGHT %s", kBossTestShort[sBossTestBoss]);
 		drawPlank(fb.x, fb.y, fb.w, fb.h, f == 11, sPressed == 11);
-		orcFit(buf, fb.x + fb.w * 0.5f, fb.y + 7.0f, 0.28f, fb.w - 14.0f, f == 11 ? COL_ACCENT : COL_CREAM);
-		const Button& qb = kBossTestBtns[12];
-		drawPlank(qb.x, qb.y, qb.w, qb.h, f == 12, sPressed == 12);
-		orcFit("QUIT", qb.x + qb.w * 0.5f, qb.y + 7.0f, 0.28f, qb.w - 14.0f, f == 12 ? COL_ACCENT : rgba(255, 160, 150));
+		orcFit(buf, fb.x + fb.w * 0.5f, fb.y + 7.0f, 0.27f, fb.w - 10.0f, f == 11 ? COL_ACCENT : COL_CREAM);
+		const Button& db = kBossTestBtns[12];
+		drawPlank(db.x, db.y, db.w, db.h, f == 12, sPressed == 12);
+		orcFit("TEST DIALOGUE", db.x + db.w * 0.5f, db.y + 7.5f, 0.25f, db.w - 10.0f, f == 12 ? COL_ACCENT : rgba(175, 225, 255));
+		const Button& qb = kBossTestBtns[13];
+		drawPlank(qb.x, qb.y, qb.w, qb.h, f == 13, sPressed == 13);
+		orcFit("QUIT", qb.x + qb.w * 0.5f, qb.y + 7.0f, 0.27f, qb.w - 10.0f, f == 13 ? COL_ACCENT : rgba(255, 160, 150));
 	}
 }
 
 static void updateBossTest(const Input& in, bool wasTouching) {
 	int& f = sFocus[SCREEN_BOSS_TEST];
-	if (f < 0 || f >= 14) f = 4;
+	if (f < 0 || f >= kBossTestBtnCount) f = 4;
 	const int prevF = f;
-	int t = menuInput(kBossTestBtns, 14, SCREEN_BOSS_TEST, in, wasTouching, 0);
+	int t = menuInput(kBossTestBtns, kBossTestBtnCount, SCREEN_BOSS_TEST, in, wasTouching, 0);
 	if (f != prevF && f >= 4 && f <= 10) sBossTestBoss = f - 4;
 	if (f >= 4 && f <= 10) sBossTestBoss = f - 4;
 	if (in.down & KEY_L) {
@@ -1565,12 +1593,16 @@ static void updateBossTest(const Input& in, bool wasTouching) {
 	else if (t == 3) sBossTestPreset = (sBossTestPreset + 1) % 5;
 	else if (t >= 4 && t <= 10) {
 		sBossTestBoss = t - 4;
+		sBossTestDialogue = false;
 		fadeThen(startBossTestFight);
 	} else if (t == 11) {
+		sBossTestDialogue = false;
 		fadeThen(startBossTestFight);
 	} else if (t == 12) {
-		sLeaving = true;
+		fadeThen(startBossTestDialogue);
 	} else if (t == 13) {
+		sLeaving = true;
+	} else if (t == 14) {
 		gSave.artStyle = gSave.artStyle == ART_3D ? ART_2D : ART_3D;
 	}
 }

@@ -118,12 +118,13 @@ void shopCheckSave() {
 }
 
 static float sHoloPhase = 0.0f;
-void shopTick(float dt) { sHoloPhase += dt * 2.6f; }
+void shopTick(float dt) { sHoloPhase += dt * 2.8f; }
+float shopHoloPhase() { return sHoloPhase; }
 
 static void holoRgb(float* r, float* g, float* b) {
-	*r = 0.56f + 0.44f * sinf(sHoloPhase);
-	*g = 0.56f + 0.44f * sinf(sHoloPhase + 2.0944f);
-	*b = 0.56f + 0.44f * sinf(sHoloPhase + 4.1888f);
+	*r = 0.58f + 0.42f * sinf(sHoloPhase);
+	*g = 0.58f + 0.42f * sinf(sHoloPhase + 2.0944f);
+	*b = 0.58f + 0.42f * sinf(sHoloPhase + 4.1888f);
 }
 
 const m3d::Skin& shopSkinLook(int item) {
@@ -133,9 +134,9 @@ const m3d::Skin& shopSkinLook(int item) {
 		sHoloSkin = kSkinLooks[idx];
 		float r, g, b;
 		holoRgb(&r, &g, &b);
-		sHoloSkin.r = r * 1.35f;
-		sHoloSkin.g = g * 1.35f;
-		sHoloSkin.b = b * 1.35f;
+		sHoloSkin.r = r * 1.25f;
+		sHoloSkin.g = g * 1.25f;
+		sHoloSkin.b = b * 1.25f;
 		return sHoloSkin;
 	}
 	return kSkinLooks[idx];
@@ -146,7 +147,7 @@ u32 shopSkinTint(int item) {
 	if (idx == 2) {
 		float r, g, b;
 		holoRgb(&r, &g, &b);
-		return rgba((u8)(r * 255), (u8)(g * 255), (u8)(b * 255), (u8)(kSkinLooks[idx].alpha * 255));
+		return rgba((u8)(r * 255), (u8)(g * 255), (u8)(b * 255), 255);
 	}
 	const u32 c = kSkinColours[idx];
 	return rgba((u8)(c >> 16), (u8)(c >> 8), (u8)c, (u8)(shopSkinLook(item).alpha * 255));

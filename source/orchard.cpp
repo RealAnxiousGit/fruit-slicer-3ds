@@ -387,7 +387,10 @@ bool Game::orcLoadRun() {
 		waveTimer = 999.0f;
 		bool royal = false;
 		const int bid = orchardBossForRoom(orc.room, orc.runSeed, orc.bossOrder, &royal);
-		if (orc.room == 25 && !gSave.seenRoom50Cutscene && !passName) {
+#if defined(DEV_TOOLS) && !defined(AUTOTEST)
+		if (orc.room >= 25 && orc.room % 25 == 0) gSave.seenRoom50Cutscene = 0;
+#endif
+		if (orc.room >= 25 && orc.room % 25 == 0 && !gSave.seenRoom50Cutscene && !passName) {
 			orcBeginRoom50Cutscene(bid);
 		} else {
 			bossStart(bid, royal);
@@ -433,6 +436,7 @@ void Game::orcStart() {
 		orc.savedRoom = 0;
 #if defined(DEV_TOOLS) && !defined(AUTOTEST)
 		if (!passName) {
+			gSave.seenRoom50Cutscene = 0;
 			orc.devPrompt = true;
 			orc.devField = 1;
 			orc.devRoomTarget = 1;
@@ -476,7 +480,7 @@ void Game::orcStartBossAfterCutscene() {
 		saveWrite();
 	}
 	const int bid = orc.pendingMilestoneBoss < BOSS_COUNT ? orc.pendingMilestoneBoss : BOSS_DURIAN;
-	const bool royal = orc.room >= 100;
+	const bool royal = mode != MODE_BOSSRUSH && orc.room >= 50;
 	bossStart(bid, royal);
 }
 
@@ -522,7 +526,10 @@ void Game::orcApplyDevSkip(int targetRoom, int targetLevel) {
 	if (orc.bossRoom) {
 		bool royal = false;
 		const int bid = orchardBossForRoom(orc.room, orc.runSeed, orc.bossOrder, &royal);
-		if (orc.room == 25 && !gSave.seenRoom50Cutscene && !passName) {
+#if defined(DEV_TOOLS) && !defined(AUTOTEST)
+		if (orc.room >= 25 && orc.room % 25 == 0) gSave.seenRoom50Cutscene = 0;
+#endif
+		if (orc.room >= 25 && orc.room % 25 == 0 && !gSave.seenRoom50Cutscene && !passName) {
 			orcBeginRoom50Cutscene(bid);
 		} else {
 			bossStart(bid, royal);
@@ -537,7 +544,7 @@ void Game::orcApplyDevSkip(int targetRoom, int targetLevel) {
 }
 
 #ifdef BOSS_TEST_APP
-void Game::bossTestLaunch(int bossId, bool useRush, bool royal, int diff, int preset) {
+void Game::bossTestLaunch(int bossId, bool useRush, bool royal, int diff, int preset, bool withCutscene) {
 	if (bossId < 0 || bossId >= BOSS_COUNT) bossId = BOSS_MELON;
 	if (diff < 0 || diff >= DIFF_COUNT) diff = DIFF_NORMAL;
 	gSave.difficulty = (u8)diff;
@@ -617,7 +624,12 @@ void Game::bossTestLaunch(int bossId, bool useRush, bool royal, int diff, int pr
 	phase = PHASE_PLAY;
 	phaseT = 0;
 	gSpawn.s = 0xB0557E57u ^ (u32)(bossId * 97 + royal * 13);
-	bossStart(bossId, royal);
+	if (withCutscene) {
+		gSave.seenRoom50Cutscene = 0;
+		orcBeginRoom50Cutscene(bossId);
+	} else {
+		bossStart(bossId, royal);
+	}
 }
 #endif
 
@@ -859,7 +871,7 @@ void Game::orcNextRoom() {
 		bool royal = false;
 		const int bid = orchardBossForRoom(orc.room, orc.runSeed, orc.bossOrder, &royal);
 		for (auto& p : pending) p = {};
-		if (orc.room == 25 && !gSave.seenRoom50Cutscene && !passName) {
+		if (orc.room >= 25 && orc.room % 25 == 0 && !gSave.seenRoom50Cutscene && !passName) {
 			orcBeginRoom50Cutscene(bid);
 		} else {
 			bossStart(bid, royal);
@@ -1236,9 +1248,9 @@ void Game::drawOrchardField() const {
 void Game::drawOrchardHud(float x, float y, float w, float u) const {
 	char buf[40];
 	const Boss& b = orc.boss;
-	const float titleScale = (PORT_3DS ? 0.36f : 0.30f) * u;
-	const float hpScale = (PORT_3DS ? 0.30f : 0.24f) * u;
-	const float lvScale = (PORT_3DS ? 0.30f : 0.24f) * u;
+	const float titleScale = (PORT_3DS ? 0.40f : 0.30f) * u;
+	const float hpScale = (PORT_3DS ? 0.33f : 0.24f) * u;
+	const float lvScale = (PORT_3DS ? 0.33f : 0.24f) * u;
 	const float yOff = PORT_3DS ? y : (y + 2.5f * u);
 	float titleW = 0, pipsW = 0;
 	// The room, or the boss and the slices it still needs.
@@ -1323,8 +1335,10 @@ void Game::drawOrchardOverlay() const {
 				gfx::rect(x, y + h - 3, w * clampf(orc.slotOn[s] / (info.lasts > 0 ? info.lasts : 1), 0, 1), 3, rgba(150, 230, 255));
 			}
 		}
-		const char* key = PORT_3DS ? (s == 0 ? "L" : "R") : (gStickInUse ? (s == 0 ? "LB" : "RB") : (s == 0 ? "Q" : "E"));
-		gfx::text(key, x + 4, y + 3, 0.28f, COL_DIM);
+		if (!touchUiActive()) {
+			const char* key = (PORT_3DS || padUiActive() || gStickInUse) ? (s == 0 ? "L" : "R") : (s == 0 ? "Q" : "E");
+			gfx::text(key, x + 4, y + 3, 0.28f, COL_DIM);
+		}
 	}
 	if (!orc.choosing && orc.resumeT > 0 && !gHudPaused) {
 		snprintf(buf, sizeof buf, "%d", (int)ceilf(orc.resumeT));

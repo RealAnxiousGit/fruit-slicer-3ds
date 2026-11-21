@@ -14,6 +14,28 @@
 static int sLabPass, sLabFail;
 static FILE* sLabFile;
 static void updateFrame(const Input& in, bool wasTouching);
+static void drawFrame();
+#if !PORT_3DS
+namespace gfx {
+void requestShot(const char* path);
+}
+static void labSnapV2f(const char* name) {
+	const char* dir = getenv("FRUIT_SLICER_V2F_SHOTS");
+	if (!dir || !*dir) return;
+	const bool wasSliding = sSliding;
+	const float wasFade = sFade;
+	sSliding = false;
+	sFade = 0;
+	char path[300];
+	snprintf(path, sizeof path, "%s/%s.png", dir, name);
+	gfx::requestShot(path);
+	drawFrame();
+	sSliding = wasSliding;
+	sFade = wasFade;
+}
+#else
+static void labSnapV2f(const char*) {}
+#endif
 #if PORT_ULTRA
 namespace gfx {
 bool ultraLoaded();  // port/render.cpp: the 4K sheets are what's loaded
@@ -136,10 +158,10 @@ static void labField() {
 #if !PORT_TWO_SCREENS
 	float w, h;
 	gfx::fieldFor(16.0f / 9, &w, &h);
-	bool wide = w == 427 && h == 240;
+	bool wide = fabsf(w - 426.67f) < 1.0f && h == 240;
 	gfx::fieldFor(21.0f / 9, &w, &h);
-	wide &= w == 427 && h == 240;
-	labCheck(wide, "a wide window keeps the 427 x 240 field");
+	wide &= w > 540.0f && h == 240;
+	labCheck(wide, "a 16:9 window uses 427 x 240 and an ultrawide window expands the stage width smoothly");
 	gfx::fieldFor(4.0f / 3, &w, &h);
 	labCheck(w == 427 && fabsf(h - 320) < 0.5f, "a 4:3 window gets a taller field");
 	gfx::fieldFor(9.0f / 16, &w, &h);
@@ -1142,24 +1164,62 @@ static void labV2Fixes() {
 		labCheck(fitsAll && guidesUpdated, "Guides fit inside plank with updated Endless room-start save & 5-boss Boss Rush text");
 	}
 
-	// 3. Holographic Shop Skin: shiny + translucent + rainbow color rotation via shopTick.
+	// 3. Shop Skins: Solid Gold is opaque metallic, Clear Glass is translucent, and Holographic is an animated shining overlay over the fruit.
 	{
 		const u32 extrasWas = gSave.ownedExtras, coinsWas = gSave.coins;
 		const u8 skinWas = gSave.skin;
 		gSave.coins = 5000;
-		const int holoIdx = 2;
-		const bool hasHolo = shopCount(SHOP_SKINS) >= 3 && strcmp(shopItem(SHOP_SKINS, holoIdx).name, "Holographic") == 0;
-		if (hasHolo) {
+		const int goldIdx = 0, glassIdx = 1, holoIdx = 2;
+		const bool hasSkins = shopCount(SHOP_SKINS) >= 3 &&
+		                      strcmp(shopItem(SHOP_SKINS, goldIdx).name, "Solid Gold") == 0 &&
+		                      strcmp(shopItem(SHOP_SKINS, glassIdx).name, "Clear Glass") == 0 &&
+		                      strcmp(shopItem(SHOP_SKINS, holoIdx).name, "Holographic") == 0;
+		if (hasSkins) {
+			const m3d::Skin& goldSk = shopSkinLook(goldIdx);
+			const m3d::Skin& glassSk = shopSkinLook(glassIdx);
+			shopBuy(SHOP_SKINS, goldIdx);
+			shopBuy(SHOP_SKINS, glassIdx);
 			shopBuy(SHOP_SKINS, holoIdx);
+			const Screen scrWas = sScreen;
+			const u8 artWas = gSave.artStyle;
+			gSave.artStyle = ART_3D;
+			m3d::sync();
+			sScreen = SCREEN_GAME;
+			sGame.start(MODE_CLASSIC);
+			sGame.phase = PHASE_PLAY;
+			for (auto& o : sGame.objs) o = {};
+			for (int fi = 0; fi < 3; fi++) {
+				Obj& o = sGame.objs[fi];
+				o.on = true;
+				o.kind = fi == 2 ? OBJ_GOLD : OBJ_FRUIT;
+				o.fruit = fi == 0 ? 0 : 3;
+				o.x = 130.0f + fi * 80.0f;
+				o.y = 140.0f;
+				o.radius = 28.0f;
+				o.rot = 0.25f * fi;
+			}
+			shopEquip(SHOP_SKINS, goldIdx);
+			labSnapV2f("v2f_skin_gold_3d");
+			shopEquip(SHOP_SKINS, glassIdx);
+			labSnapV2f("v2f_skin_glass_3d");
 			shopEquip(SHOP_SKINS, holoIdx);
 			const m3d::Skin* sk = shopWornSkin();
+			const float phaseA = shopHoloPhase();
 			const u32 tintA = shopWornSkinTint();
 			shopTick(0.42f);
+			const float phaseB = shopHoloPhase();
 			const u32 tintB = shopWornSkinTint();
-			labCheck(sk && sk->shine >= 0.99f && sk->alpha < 1.0f && tintA != tintB,
-			         "Holographic skin is shiny, translucent, and shifts rainbow hues over time");
+			labSnapV2f("v2f_skin_holo_3d");
+			for (auto& o : sGame.objs) o = {};
+			sScreen = scrWas;
+			gSave.artStyle = artWas;
+			m3d::sync();
+			labCheck(goldSk.alpha >= 0.99f && goldSk.mix >= 0.99f && goldSk.shine >= 0.90f &&
+			             glassSk.alpha < 0.70f &&
+			             sk && sk->shine >= 0.99f && sk->alpha >= 0.99f && sk->mix < 0.60f && phaseB > phaseA && tintA != tintB,
+			         "Solid Gold is opaque metallic, Clear Glass stays translucent, and Holographic animates an opaque shining rainbow overlay");
 		} else {
-			labCheck(false, "Holographic skin exists in Shop Skins tab");
+			labCheck(false, "Solid Gold, Clear Glass, and Holographic skins exist in Shop Skins tab");
 		}
 		gSave.ownedExtras = extrasWas;
 		gSave.coins = coinsWas;
@@ -1194,8 +1254,23 @@ static void labV2Fixes() {
 		sGame.orc.dialogueWaitRelease = false;
 		cin.down = KEY_A;
 		updateRoom50Cutscene(cin, false);
-		labCheck(latched && heldDidNotSkip && tensionAt5Plus && !sGame.orc.cutscene && sGame.orc.boss.on && gSave.seenRoom50Cutscene == 1,
-		         "Room 25 cutscene fast-forwards, latches release, starts tensionMusic at line 5, and enters Milestone Boss after line 10");
+		const bool orcFinished = !sGame.orc.cutscene && sGame.orc.boss.on && gSave.seenRoom50Cutscene == 1;
+
+		// Dev Skip to Milestone room (25 or 50) resets seenRoom50Cutscene=0 and triggers the cutscene even if already seen.
+		sGame.start(MODE_ORCHARD);
+		sGame.orc.devPrompt = true;
+		sGame.orc.devField = 6;
+		sGame.orc.devRoomTarget = 25;
+		sGame.orc.devLevelTarget = 1;
+		cin = {};
+		cin.down = KEY_START;
+		updateDevSkip(cin, false);
+		const bool devSkipCutscene = !sGame.orc.devPrompt && sGame.orc.cutscene && sGame.orc.pendingMilestoneBoss >= BOSS_DURIAN;
+		sGame.orcStartBossAfterCutscene();
+		const bool devSkipBossStarted = !sGame.orc.cutscene && sGame.orc.boss.on && sGame.orc.boss.id >= BOSS_DURIAN && gSave.seenRoom50Cutscene == 1;
+
+		labCheck(latched && heldDidNotSkip && tensionAt5Plus && orcFinished && devSkipCutscene && devSkipBossStarted,
+		         "Room 25 first-encounter cutscene fast-forwards, latches release, starts tensionMusic at line 5, enters Milestone Boss after line 10, and Dev Skip to Room 25 replays it");
 		audio::tensionMusic(false);
 		audio::bossMusicEnd();
 		audio::music(MUSIC_MENU);
@@ -1899,23 +1974,54 @@ static void labFinish(Input& in) {
 			{
 				const Screen wasScr = sScreen;
 				const bool wasInv = sOrcInv;
+				const InputMode wasMode = gInputMode;
 				sScreen = SCREEN_GAME;
 				sGame.start(MODE_ORCHARD);
 				sGame.orc.devPrompt = true;
 				sOrcInv = false;
+				gInputMode = INPUT_TOUCH;
 				Input tapInv{};
 				tapInv.touching = true;
 				tapInv.tx = (int)(kInvSign.x + 18);
 				tapInv.ty = (int)(kInvSign.y + 18);
 				updateFrame(tapInv, false);
-				labCheck(!sOrcInv, "Mobile Inventory button ignores taps while Orchard modal holds play");
+				const bool ignoredWhileHeld = !sOrcInv;
+
+				// Dynamic input detection: Touch opens on-screen Inventory button and hides keyboard slot keys;
+				// Keyboard+Mouse shows Q/E and ignores on-screen touch button; Controller shows L/R.
 				sGame.orc.devPrompt = false;
+				sGame.orc.resumePrompt = false;
+				sGame.orc.cutscene = false;
+				sGame.orc.choosing = false;
+				sGame.phase = PHASE_PLAY;
+				gInputMode = INPUT_KEYMOUSE;
+				gStickInUse = false;
+				const bool kmPrompts = strcmp(orcSlotKey(0), "Q") == 0 && strcmp(orcSlotKey(1), "E") == 0 && !touchUiActive();
+				updateFrame(tapInv, false);
+				const bool kmHidesTouchBtn = !sOrcInv;
+
+				gInputMode = INPUT_PAD;
+				gStickInUse = true;
+				const bool padPrompts = strcmp(orcSlotKey(0), "L") == 0 && strcmp(orcSlotKey(1), "R") == 0 && padUiActive() && !touchUiActive();
+				labSnapV2f("v2f_input_pad");
+
+				gInputMode = INPUT_TOUCH;
+				gStickInUse = false;
+				const bool touchPrompts = orcSlotKey(0)[0] == 0 && orcSlotKey(1)[0] == 0 && touchUiActive();
+				labSnapV2f("v2f_input_touch");
+				updateFrame(tapInv, false);
+				const bool touchOpensInv = sOrcInv;
+
+				labCheck(ignoredWhileHeld && kmPrompts && kmHidesTouchBtn && padPrompts && touchPrompts && touchOpensInv,
+				         "Unified Universal port dynamically switches Touch buttons, Q/E keyboard prompts, and L/R controller prompts");
 				sOrcInv = wasInv;
 				sScreen = wasScr;
+				gInputMode = wasMode;
+				gStickInUse = false;
 			}
 #endif
 			labCheck(PORT_QUIT_BOMB == (!PORT_WEB), "Quit Game bomb stays disabled only on Web/WASM");
-			labCheck(PORT_PAUSE_BUTTON == (PORT_ANDROID || PORT_WEB), "Mobile Pause and Inventory overlay stays enabled on Android and Web");
+			labCheck(PORT_PAUSE_BUTTON == 1 && PORT_MOUSE == 1, "Unified Universal port keeps touch overlay and mouse/keyboard active across all builds");
 			{
 				const float wasW2 = gFieldW, wasH2 = gFieldH;
 				sGame.start(MODE_ORCHARD);

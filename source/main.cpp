@@ -563,7 +563,7 @@ static int sPauseConfirmFocus = 1;
 static bool hit(const Button& b, int x, int y) {
 #if PORT_PAUSE_BUTTON
 	// The way out is small for a fingertip, so it answers a little beyond its edges.
-	if (b.x == kBack.x && b.y == kBack.y && b.w == kBack.w && b.h == kBack.h) return x >= 0 && x < b.x + b.w + 12 && y >= 0 && y < b.y + b.h + 2;
+	if (touchUiActive() && b.x == kBack.x && b.y == kBack.y && b.w == kBack.w && b.h == kBack.h) return x >= 0 && x < b.x + b.w + 12 && y >= 0 && y < b.y + b.h + 2;
 #endif
 	return x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h;
 }
@@ -659,8 +659,10 @@ static void drawMenuFruit(int f, float x, float y, float size, float spin, float
 	float s = size / 48.0f;
 	if (gSave.artStyle == ART_3D && m3d::ready()) {
 		m3d::begin(320, gfx::stereoPerZ());
+		if (m.mesh == m3d::MESH_GOLD) m3d::setSkin(&shopSkinLook(0));
 		m3d::Pose pose = {x, y, 0, 0.25f, spin, rot, s, 0, 0, 0};
 		m3d::draw(m.mesh, (m3d::Part)part, pose);
+		m3d::setSkin(nullptr);
 		m3d::end();
 	} else {
 		gfx::sprite(SHEET_FRUIT, part == 0 ? m.whole : (part == 1 ? m.left : m.right), x, y, s, s, rot);
@@ -1067,8 +1069,8 @@ static void startCut(const Button* btns, int i, Screen screen, float ang) {
 static int sliceButtons(const Button* btns, int n, Screen screen, const Input& in, bool wasTouching, int& focus) {
 	static float lastX, lastY, length;
 	static int downOn = -1;
-	static bool done, mouse;
-	if (in.hovering) mouse = true;
+	static bool done;
+	const bool mouse = !PORT_3DS && !touchUiActive();
 	const float minSwipe = gSave.sliceAssist ? 12.0f : 30.0f;
 	if (in.touching) {
 		if (!wasTouching) {
@@ -3722,12 +3724,12 @@ static void drawStats() {
 	for (int i = 0; i < kRows; i++) {
 		// The Orchard Blast rows sit under their own heading.
 		const float y = yBase + i * rowStep + (i >= 6 ? headGap : 0);
-		if (i == 6) gfx::text("ORCHARD BLAST", 160, y - headGap - 1, 0.32f, COL_ACCENT, ALIGN_CENTER);
-		float sv = 0.33f, w = gfx::textWidth(value[i], sv);
+		if (i == 6) gfx::text("ORCHARD BLAST", 160, y - headGap - 1, 0.33f, COL_ACCENT, ALIGN_CENTER);
+		float sv = 0.34f, w = gfx::textWidth(value[i], sv);
 		if (w > 130) sv *= 130 / w;
 		const float valW = gfx::textWidth(value[i], sv);
 		const float nameMax = 296 - valW - 24 - 8;
-		float nl = 0.30f, nw = gfx::textWidth(kNames[i], nl);
+		float nl = 0.32f, nw = gfx::textWidth(kNames[i], nl);
 		if (nw > nameMax) nl *= nameMax / nw;
 		gfx::text(kNames[i], 24, y + 1, nl, COL_DIM);
 		gfx::text(value[i], 296, y, sv, COL_CREAM, ALIGN_RIGHT);
@@ -4590,7 +4592,7 @@ static void updateGuides(const Input& in, bool wasTouching) {
 
 // Draws a labelled callout tag inside the top-screen screenshot preview, with an optional pointer line.
 static void drawGuideCallout(float x, float y, const char* text, u32 col = COL_ACCENT, float tx = -1, float ty = -1) {
-	float s = 0.31f, w = gfx::textWidth(text, s) + 12;
+	float s = PORT_3DS ? 0.33f : 0.31f, w = gfx::textWidth(text, s) + 12;
 	if (w > 348) {
 		s = 336.0f / gfx::textWidth(text, 1.0f);
 		w = gfx::textWidth(text, s) + 12;
@@ -4879,7 +4881,7 @@ static void drawGuidesBottom() {
 	struct WrapLine { char text[160]; float y; };
 	WrapLine out[8];
 	int outN = 0;
-	const float sc = 0.31f, maxW = 264.0f, step = 10.8f;
+	const float sc = PORT_3DS ? 0.33f : 0.31f, maxW = 264.0f, step = PORT_3DS ? 11.2f : 10.8f;
 	float ly = 104.0f;
 	for (int i = 0; i < 4; i++) {
 		if (!lines[i] || !lines[i][0]) continue;
@@ -6138,6 +6140,10 @@ static void drawBottomContent(Screen screen) {
 		case SCREEN_GAME:
 			sGame.drawField(sBlade);
 			drawOrchardMenus();
+#if defined(DEV_TOOLS) && defined(BOSS_TEST_APP)
+			gfx::text(gSave.artStyle == ART_3D ? "[SELECT] 3D MODELS" : "[SELECT] 2D STICKERS",
+			          kFieldW * 0.5f, kFieldH - 11.0f, 0.25f, withAlpha(COL_CREAM, 0.65f), ALIGN_CENTER);
+#endif
 			break;
 #endif
 		case SCREEN_PAUSE: {
@@ -6936,12 +6942,12 @@ static void updateFrame(const Input& in, bool wasTouching) {
 		}
 		case SCREEN_GAME:
 #if PORT_PAUSE_BUTTON
-			if (in.touching && !wasTouching && hit(kPauseSign, in.tx, in.ty)) {
+			if (touchUiActive() && in.touching && !wasTouching && hit(kPauseSign, in.tx, in.ty)) {
 				audio::click();
 				pauseGame();
 				break;
 			}
-			if (in.touching && !wasTouching && sGame.mode == MODE_ORCHARD && !sGame.orchardHeld() && hit(kInvSign, in.tx, in.ty)) {
+			if (touchUiActive() && in.touching && !wasTouching && sGame.mode == MODE_ORCHARD && !sGame.orchardHeld() && hit(kInvSign, in.tx, in.ty)) {
 				audio::click();
 				if (sOrcInv) {
 					sOrcInv = false;
@@ -6959,7 +6965,9 @@ static void updateFrame(const Input& in, bool wasTouching) {
 #endif
 			{
 				const bool wasInv = sOrcInv;
+				const bool wasDevPrompt = sGame.orc.devPrompt;
 				const bool orcTook = updateOrchardMenus(in, wasTouching);
+				if (wasDevPrompt && (in.down & KEY_START)) break;
 				if (sOrcInv || wasInv) {
 					if (sOrcInv && (in.down & KEY_START)) {
 						sOrcInv = false;
@@ -6969,7 +6977,7 @@ static void updateFrame(const Input& in, bool wasTouching) {
 				}
 				Input bin = in;
 #if PORT_PAUSE_BUTTON
-				if (hit(kPauseSign, in.tx, in.ty) || (sGame.mode == MODE_ORCHARD && !sGame.orchardHeld() && hit(kInvSign, in.tx, in.ty))) bin.touching = false;
+				if (touchUiActive() && (hit(kPauseSign, in.tx, in.ty) || (sGame.mode == MODE_ORCHARD && !sGame.orchardHeld() && hit(kInvSign, in.tx, in.ty)))) bin.touching = false;
 #endif
 				if (orcTook || sOrcSlotTouch) bin.touching = false;
 				sBlade.update(sGame.bladeInput(bin));
@@ -7243,7 +7251,7 @@ static void drawFrame() {
 		}
 #endif
 #if PORT_PAUSE_BUTTON
-		if (sScreen == SCREEN_GAME) {
+		if (sScreen == SCREEN_GAME && touchUiActive()) {
 			// Half see-through, so fruit passing behind it stays easy to see.
 			gfx::sign(sprites_plank_idx, kPauseSign.x + 3, kPauseSign.y + 3, 30, 30, withAlpha(COL_PLANK, 0.55f));
 			gfx::rect(kPauseSign.x + 12, kPauseSign.y + 10, 4, 16, withAlpha(COL_CREAM, 0.55f));
@@ -7538,13 +7546,26 @@ bool app::frame(Input& in, int steps) {
 #endif
 
 #if defined(DEV_TOOLS) && defined(BOSS_TEST_APP)
+#if PORT_3DS
+		if (in.down & KEY_SELECT) {
+#else
 		if (in.down & KEY_TAB) {
+#endif
 			gSave.artStyle = gSave.artStyle == ART_3D ? ART_2D : ART_3D;
 			audio::play(SFX_CLICK, 0.7f);
 		}
 #endif
+		if (!PORT_3DS) {
+			if (in.mode) {
+				gInputMode = (InputMode)(in.mode - 1);
+			} else if (fabsf(in.stickX) > 0.25f || fabsf(in.stickY) > 0.25f || in.stickSlice) {
+				gInputMode = INPUT_PAD;
+			} else if (in.hovering || in.wheel != 0) {
+				gInputMode = INPUT_KEYMOUSE;
+			}
+		}
 		stickBlade(in);
-		gStickInUse = sPointShow > 0;
+		gStickInUse = sPointShow > 0 || padUiActive();
 		updateFrame(in, sWasTouching);
 #if defined(DEV_TOOLS) && defined(BOSS_TEST_APP)
 		if (gBossTestDone) return false;

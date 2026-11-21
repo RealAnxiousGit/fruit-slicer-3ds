@@ -16,8 +16,8 @@ endif
 TOPDIR ?= $(CURDIR)
 include $(DEVKITARM)/3ds_rules
 
-TARGET		:=	FruitSlicer3DS
-BUILD		:=	build
+TARGET		?=	FruitSlicer3DS
+BUILD		?=	build
 SOURCES		:=	source port
 DATA		:=	data
 INCLUDES	:=	source port
@@ -25,8 +25,17 @@ GRAPHICS	:=	gfx
 GFXBUILD	:=	romfs/gfx
 ROMFS		:=	romfs
 
+ifneq ($(strip $(BOSS_TEST)),)
+TARGET		:=	OrchardBlastBossTest
+BUILD		:=	build_bosstest
+DEV			:=	1
+TESTDEFS	+=	-DBOSS_TEST_APP
+APP_TITLE		:=	Fruit Slicer Boss Test
+APP_DESCRIPTION	:=	Orchard Blast Boss Test
+else
 APP_TITLE		:=	Fruit Slicer
 APP_DESCRIPTION	:=	Fruit Slicer
+endif
 APP_AUTHOR		:=	RealAnxiousGit
 ICON			:=	meta/icon.png
 
@@ -107,7 +116,7 @@ $(ROMFS_SHADER): port/fruit.v.pica | $(GFXBUILD)
 	@picasso -o $@ $<
 
 clean:
-	@rm -rf $(BUILD) $(GFXBUILD) $(TARGET).3dsx $(TARGET).smdh $(TARGET).elf $(TARGET).cia meta/banner.bnr meta/icon.icn
+	@rm -rf $(BUILD) build_bosstest $(GFXBUILD) $(TARGET).3dsx $(TARGET).smdh $(TARGET).elf $(TARGET).cia OrchardBlastBossTest.3dsx OrchardBlastBossTest.smdh OrchardBlastBossTest.elf meta/banner.bnr meta/icon.icn
 
 meta/banner.bnr: meta/banner.png meta/banner.wav
 	bannertool makebanner -i meta/banner.png -a meta/banner.wav -o $@

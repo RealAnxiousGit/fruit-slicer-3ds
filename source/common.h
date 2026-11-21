@@ -213,6 +213,11 @@ extern bool gIsNew3ds;
 extern bool gHas3dScreen;
 
 // One frame of player input, from the hardware or the AUTOTEST bot.
+enum InputMode : u8 { INPUT_KEYMOUSE = 0, INPUT_TOUCH = 1, INPUT_PAD = 2 };
+extern InputMode gInputMode;
+inline bool touchUiActive() { return !PORT_3DS && gInputMode == INPUT_TOUCH; }
+inline bool padUiActive() { return !PORT_3DS && gInputMode == INPUT_PAD; }
+
 struct Input {
 	u32 down, held, repeat;
 	bool touching;
@@ -221,6 +226,7 @@ struct Input {
 	int wheel;      // mouse wheel notches this frame, up is positive
 	float stickX, stickY;  // a stick (or two added up), -1 to 1, down is positive
 	bool stickSlice;       // the slice button: right trigger, or A, L or R on a 3DS
+	u8 mode;               // 0 keep current, 1+InputMode sets gInputMode explicitly
 };
 
 // Sound pans with position on the field.

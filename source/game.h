@@ -208,7 +208,7 @@ struct Game {
 	void start(Mode m);
 	void orcApplyRushPreset(int build);
 #ifdef BOSS_TEST_APP
-	void bossTestLaunch(int bossId, bool useRush, bool royal, int diff, int preset);
+	void bossTestLaunch(int bossId, bool useRush, bool royal, int diff, int preset, bool withCutscene = false);
 	void bossPreview(int bossId, bool royal, float x, float y, float radius, float t, float screenW) const;
 #endif
 	void startStreetPassChallenge(int tagIdx, const char* rivalName, u32 targetScore);

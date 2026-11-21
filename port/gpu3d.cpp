@@ -5,6 +5,7 @@
 #include "model3d_internal.h"
 #include "port_api.h"
 #include "render.h"
+#include "shop.h"
 
 namespace m3dport {
 using m3d::PartData;
@@ -85,7 +86,8 @@ void setSkin(const m3d::Skin* skin) {
 	static constexpr float kPlainShine = 0.32f;
 	C3D_FVUnifSet(GPU_VERTEX_SHADER, sLocShade, 0.62f, 0.5f, skin ? skin->shine : kPlainShine, skin ? skin->alpha : 1);
 	C3D_FVUnifSet(GPU_VERTEX_SHADER, sLocSkin, skin ? skin->r : 1, skin ? skin->g : 1, skin ? skin->b : 1, skin ? skin->mix : 0);
-	C3D_FVUnifSet(GPU_VERTEX_SHADER, sLocHolo, (skin && skin->shine >= 0.99f) ? 1.0f : 0.0f, 0, 0, 0);
+	const float hp = (skin && skin->shine >= 0.99f) ? (shopHoloPhase() * (0.2546479f)) : 0.0f;  // 1.6 / (2*pi)
+	C3D_FVUnifSet(GPU_VERTEX_SHADER, sLocHolo, (skin && skin->shine >= 0.99f) ? 1.0f : 0.0f, hp - floorf(hp), 0, 0);
 	// See-through fruit show only their near side, or their back faces would draw through patchily.
 	C3D_CullFace(skin && skin->alpha < 1 ? GPU_CULL_BACK_CCW : GPU_CULL_NONE);
 }

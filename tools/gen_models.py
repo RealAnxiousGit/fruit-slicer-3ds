@@ -302,7 +302,10 @@ def gold(lat, lon):
         return (19 + 7 * abs(math.cos(ph * 2.5))) * (0.72 + 0.28 * math.sin(th))
 
     def col(th, ph):
-        return lerp3((255, 230, 96), (240, 170, 34), th / math.pi)
+        ridge = 0.5 + 0.5 * math.cos(ph * 5.0)
+        t = th / math.pi
+        base = lerp3((255, 238, 128), (222, 148, 22), t)
+        return lerp3(base, (255, 250, 190), 0.35 * (ridge ** 2) * math.sin(th))
 
     return surface(lat, lon, rad, col)
 
@@ -722,6 +725,97 @@ def splash(lat, lon):
     return grid(lat, lon, point, col)
 
 
+def floatie(lat, lon):
+    """Coral-and-cream striped 3D inflatable swim ring wrapping Lord Lemon's torso."""
+    m = Mesh()
+    rings = max(12, lat)
+    segs = max(24, lon + 6)
+    R, rt = 22.8, 5.8
+    for a in range(rings + 1):
+        u = a / rings * math.tau
+        cu, su = math.cos(u), math.sin(u)
+        for b in range(segs):
+            ph = b / segs * math.tau
+            cp, sp = math.cos(ph), math.sin(ph)
+            rr = R + rt * cu
+            p = (cp * rr, su * rt * 0.88, sp * rr)
+            n = (cp * cu, su, sp * cu)
+            stripe = math.cos(6 * ph) > 0.25
+            base = (255, 244, 216) if stripe else (246, 108, 44)
+            shade = clamp01(0.74 + 0.26 * cu)
+            c = tuple(v * shade for v in base)
+            m.add_vertex(p, n, c)
+    for a in range(rings):
+        for b in range(segs):
+            bn = (b + 1) % segs
+            p = a * segs + b
+            q = a * segs + bn
+            r = (a + 1) * segs + b
+            s = (a + 1) * segs + bn
+            m.add_tri(p, q, r)
+            m.add_tri(q, s, r)
+    return m
+
+
+def shield(lat, lon):
+    """Translucent cyan-blue spherical guard barrier surrounding guarded 3D bosses."""
+    def rad(th, ph):
+        return 23.2 + 0.35 * math.sin(th * 6) * math.cos(ph * 6)
+
+    def col(th, ph):
+        rim = abs(math.sin(th))
+        band = 0.5 + 0.5 * math.sin(th * 6 + ph * 4)
+        return lerp3((100, 198, 255), (195, 242, 255), clamp01(0.28 + 0.42 * rim + 0.22 * band))
+
+    return surface(lat, lon, rad, col)
+
+
+def worm(lat, lon):
+    """Segmented wiggly 3D worm emerging along +x out of Aggro Apple's burrow holes."""
+    segs = 10 if lat >= 12 else 6
+    m = Mesh()
+    # Dark burrow crater collar where the worm bursts through the apple skin.
+    m.add(prism(np.array((-1.8, 0.0, 0.0)), np.array((1.0, 0.0, 0.0)), 6.2, 5.2, (52, 22, 12), 10 if lat >= 12 else 6))
+    length = 23.5
+    pts = []
+    for k in range(segs + 1):
+        t = k / segs
+        x = -2.5 + length * t
+        y = math.sin(t * 5.2) * 3.2 * (0.25 + 0.75 * t)
+        z = math.cos(t * 4.4) * 1.6 * (0.2 + 0.8 * t)
+        r = 3.2 + 2.0 * math.sin(t * math.pi * 0.85) + (1.1 if t > 0.78 else 0.0)
+        pts.append((np.array((x, y, z)), r, t))
+    for k in range(segs):
+        p0, r0, t0 = pts[k]
+        p1, r1, t1 = pts[k + 1]
+        stripe = (k % 2) == 0
+        c = lerp3((218, 108, 142), (248, 152, 178), 1.0 if (k >= segs - 2 or stripe) else 0.35)
+        m.add(prism(p0, p1, r0, r1, c, sides=8 if lat >= 12 else 6))
+    tip = pts[-1][0]
+    m.add(ball(tip, 4.9, 6 if lat >= 12 else 4, 8 if lat >= 12 else 6, lambda th, ph: (250, 154, 180)))
+    # Angry white eyes + proud dark pupils + brow ridge free of z-fighting.
+    for sy in (-2.05, 2.05):
+        m.add(ball(tip + np.array((2.1, sy, 2.85)), 1.65, 5, 8, lambda th, ph: (255, 252, 244)))
+        m.add(ball(tip + np.array((3.0, sy, 4.15)), 0.90, 4, 6, lambda th, ph: (28, 20, 32)))
+    m.add(prism(tip + np.array((1.0, -3.5, 4.3)), tip + np.array((2.2, -0.2, 4.65)), 0.65, 0.55, (32, 24, 34), 4))
+    m.add(prism(tip + np.array((1.0, 3.5, 4.3)), tip + np.array((2.2, 0.2, 4.65)), 0.65, 0.55, (32, 24, 34), 4))
+    return m
+
+
+def durian_thorns(lat, lon):
+    """Extendable poisoned-gold radial thorn cones matching Dusty Durian's 24-spike layout."""
+    lo = lat < 10
+    m = Mesh()
+    count = 16 if lo else 24
+    golden = math.pi * (3 - math.sqrt(5))
+    for k in range(count):
+        y = 1 - (k + 0.5) / count * 2
+        r = math.sqrt(1 - y * y)
+        d = np.array((math.cos(golden * k) * r, y, math.sin(golden * k) * r))
+        m.add(prism(d * 14.0, d * 32.0, 2.8, 0.0, (242, 224, 128), 3 if lo else 4))
+    return m
+
+
 # name, builder, flesh, rim
 FRUIT = [
     ("apple", apple, (255, 240, 190), (246, 216, 150)),
@@ -754,6 +848,10 @@ FRUIT = [
     ("pinata", pinata, (255, 232, 170), (238, 66, 138)),
     ("seed", seed, (165, 122, 74), (68, 40, 22)),
     ("splash", splash, (255, 165, 178), (236, 56, 72)),
+    ("floatie", floatie, (246, 108, 44), (255, 244, 216)),
+    ("shield", shield, (130, 210, 255), (195, 242, 255)),
+    ("worm", worm, (248, 152, 178), (218, 108, 142)),
+    ("durian_thorns", durian_thorns, (242, 224, 128), (195, 160, 75)),
 ]
 
 

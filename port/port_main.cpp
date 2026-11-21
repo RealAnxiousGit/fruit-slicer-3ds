@@ -128,6 +128,8 @@ void assetClose(AssetFile* a) {
 // The Lab keeps its own folder, so a test run never touches a player's save.
 #ifdef LAB
 #define DATA_DIR "sdmc:/3ds/FruitSlicerLab"
+#elif defined(BOSS_TEST_APP)
+#define DATA_DIR "sdmc:/3ds/FruitSlicerBossTest"
 #else
 #define DATA_DIR "sdmc:/3ds/FruitSlicer"
 #endif

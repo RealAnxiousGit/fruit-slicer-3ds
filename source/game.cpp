@@ -19,6 +19,11 @@ Rng gRng;
 Rng gSpawn;
 bool gStickInUse = false;
 bool gHudPaused = false;
+#if defined(__ANDROID__)
+InputMode gInputMode = INPUT_TOUCH;
+#else
+InputMode gInputMode = INPUT_KEYMOUSE;
+#endif
 
 const ModeInfo kModes[MODE_COUNT] = {
 	{"Classic", "Three misses and you are out.", "A bomb ends the run."},
@@ -2225,6 +2230,7 @@ void Game::drawObjects3D(bool top, float ox, float oy) const {
 		if (!h.on || !onThisScreen(h.y, 30, top, oy)) continue;
 		const float hs = fruitSize() * (h.scale > 0 ? h.scale : 1.0f);
 		m3d::Pose pose = {h.x + ox, h.y + oy, kFruitZ, h.rx, h.ry, h.rot, hs, h.axisX, h.axisY, h.tilt};
+		m3d::setSkin(h.mesh == m3d::MESH_GOLD && !shopWornSkin() ? &shopSkinLook(0) : shopWornSkin());
 		if (h.cut >= 0) m3d::drawCut(h.cut, pose);
 		else m3d::draw(h.mesh, (m3d::Part)h.part, pose);
 	}
@@ -2236,7 +2242,7 @@ void Game::drawObjects3D(bool top, float ox, float oy) const {
 			const float os = o.kind == OBJ_BOMB ? 1.0f : fruitSize() * (o.cutGen == 1 ? 0.90f : (o.cutGen == 2 ? 0.58f : 1.0f));
 			const m3d::Part mp = (o.kind <= OBJ_GOLD && o.cutGen > 0) ? (o.cutPart ? m3d::PART_RIGHT : m3d::PART_LEFT) : m3d::PART_WHOLE;
 			m3d::Pose pose = {o.x + ox, o.y + oy, o.kind == OBJ_BOMB ? kBombZ : kFruitZ, o.rx, o.ry, o.rot, os, 0, 0, 0};
-			m3d::setSkin(o.kind == OBJ_BOMB ? nullptr : shopWornSkin());  // a bomb must always look like a bomb
+			m3d::setSkin(o.kind == OBJ_BOMB ? nullptr : (o.kind == OBJ_GOLD && !shopWornSkin() ? &shopSkinLook(0) : shopWornSkin()));  // a bomb must always look like a bomb; a gold fruit gleams like solid gold
 			m3d::draw(mesh, mp, pose);
 		}
 	}
@@ -2711,7 +2717,7 @@ void Game::drawHud() const {
 	const float u = uiScale();
 	const float narrow = clampf((kFieldW - 12.0f) / 390.0f, 0.62f, 1.0f);
 	const float hu = u * narrow;
-	const float right = kFieldW - (PORT_PAUSE_BUTTON ? 38.0f : (narrow < 0.85f ? 14.0f : 22.0f));  // clear of the sign's screws
+	const float right = kFieldW - (touchUiActive() ? 38.0f : (narrow < 0.85f ? 14.0f : 22.0f));  // clear of the sign's screws
 	gfx::sign(sprites_plank_idx, 2, 1, kFieldW - 4, 34 * hu, COL_PLANK);
 
 	float pulse = 1.0f + clampf(scorePulse, 0, 1) * 0.16f;
@@ -2793,7 +2799,7 @@ void Game::drawHud() const {
 
 	struct Meter { float t, max; int spr; };
 	const Meter meters[] = {{freezeT, 6, sprites_pw_freeze_idx}, {doubleT, 8, sprites_pw_double_idx}, {frenzyT, 5, sprites_pw_frenzy_idx}, {magnetT, 6, sprites_pw_magnet_idx}, {wideT, 8, sprites_pw_wide_idx}, {shield ? 1.0f : 0.0f, 1, sprites_pw_shield_idx}};
-	float mx = PORT_PAUSE_BUTTON ? (mode == MODE_ORCHARD ? 82 : 44) : 12;  // the pause and inventory signs have the corner
+	float mx = touchUiActive() ? (mode == MODE_ORCHARD ? 82 : 44) : 12;  // the pause and inventory signs have the corner
 	// Coins made this run, just under the score, ahead of any power-up meters.
 	if (mode != MODE_PRACTICE) {
 		float cp = 1.0f + clampf(coinPulse, 0, 1) * 0.3f;

@@ -40,6 +40,7 @@ u32 shopSkinTint(int item);
 const m3d::Skin* shopWornSkin();
 u32 shopWornSkinTint();
 void shopTick(float dt);
+float shopHoloPhase();
 
 // Boss tracks: Shop songs tied to a boss. Each stays locked, with no price and no preview, until its boss is beaten.
 int trackBoss(int track);              // the boss a 0-based track belongs to, or -1

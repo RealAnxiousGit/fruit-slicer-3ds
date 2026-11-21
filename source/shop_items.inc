@@ -88,9 +88,9 @@ SHOP_SPLAT("Blue Raspberry", 140, "No fruit has ever been this blue.", 0x2C8CFF)
 SHOP_SPLAT("Golden Honey", 200, "Slow, thick and shining.", 0xF2B420)
 SHOP_SPLAT("Ghost Milk", 250, "A pale splash that barely shows.", 0xE8F0FF)
 
-SHOP_SKIN("Solid Gold", 650, "Every fruit cast in polished gold.", 100, 0xFFC84A, 210, 100, 85)
+SHOP_SKIN("Solid Gold", 650, "Every fruit cast in polished gold.", 100, 0xFFD04C, 215, 100, 92)
 SHOP_SKIN("Clear Glass", 550, "Blown glass with a hint of the fruit.", 60, 0xC8E8FF, 180, 60, 75)
-SHOP_SKIN("Holographic", 750, "Shiny transparent rainbow iridescence.", 78, 0xFFFFFF, 250, 78, 100)
+SHOP_SKIN("Holographic", 750, "Animated rainbow shine over the fruit.", 42, 0xFFFFFF, 235, 100, 100)
 
 #undef SHOP_THEME
 #undef SHOP_TRAIL
