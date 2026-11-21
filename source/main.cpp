@@ -7547,6 +7547,32 @@ bool app::frame(Input& in, int steps) {
 
 #if defined(DEV_TOOLS) && defined(BOSS_TEST_APP)
 #if PORT_3DS
+		{
+			static int sWalkMode = -1;
+			static int sWalkFrame = 0;
+			if (sWalkMode < 0) {
+				char wp[256];
+				port::dataPath(wp, sizeof wp, "shot_walk.txt");
+				FILE* wf = fopen(wp, "rb");
+				if (wf) { fclose(wf); sWalkMode = 1; } else { sWalkMode = 0; }
+			}
+			if (sWalkMode == 1 && sScreen != SCREEN_LOADING) {
+				sWalkFrame++;
+				if (sWalkFrame == 2) {
+					sBossTestBoss = BOSS_DURIAN;
+					sFocus[SCREEN_BOSS_TEST] = 12;
+					sFade = 0;
+				} else if (sWalkFrame == 110) {
+					startBossTestDialogue();
+					sGame.orc.dialogueChars = 99.0f;
+					sFade = 0;
+				} else if (sWalkFrame == 220) {
+					sGame.start(MODE_BOSSRUSH);
+					sOrcOpenT = 1.0f;
+					sFade = 0;
+				}
+			}
+		}
 		if (in.down & KEY_SELECT) {
 #else
 		if (in.down & KEY_TAB) {
