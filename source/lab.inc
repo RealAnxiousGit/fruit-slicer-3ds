@@ -2270,6 +2270,54 @@ static void labFinish(Input& in) {
 				labCheck(lowCalls == 0 && highCalls >= 1 && calmCalls <= highCalls && blendRestored && hueA != hueB && sGame.beatLightFade > 0.8f,
 				         "Beat Slice light show activates at high combo, shifts hue/beams with beat tempo, and honors Calm Effects", bmsg);
 			}
+			// Android/Touch parity: plain taps pick non-back menu buttons, screen transitions ignore held
+			// touches, menuHit covers label text, and portrait Practice clears kPauseSign.
+			{
+				const InputMode wasMode = gInputMode;
+				const auto wasCut = sCut;
+				const int wasPauseFocus = sFocus[SCREEN_PAUSE];
+				gInputMode = INPUT_TOUCH;
+				sCut = {};
+
+				// 1) Screen-transition while held must NOT trigger a phantom swipe/tap on the new screen.
+				int dummyFocus = 1;
+				Input heldIn{};
+				heldIn.touching = true;
+				heldIn.tx = (int)(kPauseButtons[2].x + kPauseButtons[2].w * 0.5f);
+				heldIn.ty = (int)(kPauseButtons[2].y + kPauseButtons[2].h * 0.5f);
+				sliceButtons(kPauseButtons, 4, SCREEN_PAUSE, heldIn, true, dummyFocus);
+				Input relIn{};
+				sliceButtons(kPauseButtons, 4, SCREEN_PAUSE, relIn, true, dummyFocus);
+				const bool noPhantom = !sCut.pending;
+
+				// 2) Fresh plain tap + release on a non-zero touch button ("Options" on Pause) activates sCut.pending.
+				sCut = {};
+				sliceButtons(kPauseButtons, 4, SCREEN_PAUSE, heldIn, false, dummyFocus);
+				sliceButtons(kPauseButtons, 4, SCREEN_PAUSE, heldIn, true, dummyFocus);
+				sliceButtons(kPauseButtons, 4, SCREEN_PAUSE, relIn, true, dummyFocus);
+				const bool tapWorks = sCut.pending && sCut.index == 2 && sCut.screen == SCREEN_PAUSE;
+
+				// 3) menuHit covers the label text under a fruit while keeping outer top-left corners clear.
+				float fx, fy, d;
+				fruitSpot(kPauseButtons[2], &fx, &fy, &d);
+				const bool labelHit = menuHit(kPauseButtons[2], SCREEN_PAUSE, (int)fx, (int)(fy + d * 0.5f + 6.0f));
+				const bool cornerMiss = !menuHit(kTitleButtons[0], SCREEN_TITLE, (int)kTitleButtons[0].x + 2, (int)kTitleButtons[0].y + 2);
+
+#if !PORT_TWO_SCREENS && PORT_PAUSE_BUTTON
+				const float wasFieldW = gFieldW;
+				gFieldW = 240.0f;
+				const float practiceTop = (touchUiActive() && kFieldW < 340.0f) ? fmaxf(30.0f * uiScale() + 28.0f, kFieldTop + 44.0f) : (30.0f * uiScale() + 28.0f);
+				const bool clearsPause = practiceTop >= kPauseSign.y + kPauseSign.h;
+				gFieldW = wasFieldW;
+#else
+				const bool clearsPause = true;
+#endif
+				sCut = wasCut;
+				sFocus[SCREEN_PAUSE] = wasPauseFocus;
+				gInputMode = wasMode;
+				labCheck(noPhantom && tapWorks && labelHit && cornerMiss && clearsPause,
+				         "Touch tap activates menu buttons, ignores held transition, hits labels, and portrait Practice clears Pause");
+			}
 		}
 		step = 1;
 #if PORT_3DS

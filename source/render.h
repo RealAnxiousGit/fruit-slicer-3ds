@@ -55,6 +55,7 @@ void beginBottom();
 // Windows, Linux and Android only (the Quit Game bomb): the whole window in sign-side units, which on a
 // wide window reaches left of and above the signs. beginCorner draws in those units anywhere in the window.
 void windowArea(float* x, float* y, float* w, float* h);
+bool isPortrait();
 void beginCorner();
 void topToCorner(float x, float y, float* cx, float* cy);  // a point on the picture side, in beginCorner's units (not the 3DS)
 #if !PORT_3DS

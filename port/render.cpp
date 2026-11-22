@@ -192,6 +192,7 @@ void beginBottom() {
 }
 
 bool onTop() { return sOnTop; }
+bool isPortrait() { return false; }
 
 void setDepth(float depth) {
 	if (!sOnTop) return;

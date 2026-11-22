@@ -188,7 +188,8 @@ void Game::drawPractice() const {
 #if PORT_TWO_SCREENS
 	const float y = kFieldTop + 6;
 #else
-	const float y = 30 * uiScale() + 28;  // under the score sign, its meter and the power-up row
+	const float baseY = 30 * uiScale() + 28;  // under the score sign, its meter and the power-up row
+	const float y = (touchUiActive() && kFieldW < 340.0f) ? fmaxf(baseY, kFieldTop + 44.0f) : baseY;
 #endif
 	const float x = kFieldW * 0.5f - w / 2;
 	gfx::sign(sprites_plank_idx, x, y, w, h, withAlpha(COL_PLANK, 0.82f));

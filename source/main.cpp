@@ -270,7 +270,7 @@ static const Button kTitleButtons[] = {
 	{10, 88, 96, 50, "Options"},  {112, 88, 96, 50, "Journal"}, {214, 88, 96, 50, "Stats"},
 	{10, 142, 96, 46, "How to Play"}, {112, 142, 96, 46, "Shop"}, {214, 142, 96, 46, "Credits"},
 	// Link icons: not fruit, so a swipe never opens a browser.
-	{8, 196, 38, 38, "GitHub"}, {52, 196, 38, 38, "X"}, {96, 196, 38, 38, "YouTube"},
+	{8, 198, 38, 38, "GitHub"}, {52, 198, 38, 38, "X"}, {96, 198, 38, 38, "YouTube"},
 #endif
 };
 static constexpr int kTitleCount = sizeof kTitleButtons / sizeof kTitleButtons[0];
@@ -541,7 +541,7 @@ static int modeList(int page, Button* out) {
 
 static const Button kOnlyBack[] = {kBack};
 static const Button kHowtoButtons[] = {kBack, {20, 188, 134, 48, "Practice"}, {166, 188, 134, 48, "Guides"}};
-static const Button kPracticeEndButtons[] = {kBack, {90, 170, 140, 52, "Let's Play"}};
+static const Button kPracticeEndButtons[] = {kBack, {90, 96, 140, 56, "Let's Play"}};
 // Beat Slice's track list: a row is a tap (or Up and Down), and Play is a fruit like any other.
 static const Button kBeatButtons[] = {kBack, {216, 46, 96, 76, "Play"}};
 static constexpr int kBeatRows = 5;
@@ -569,7 +569,7 @@ static const Button kResultButtons[] = {kBack, {20, 170, 134, 52, "Again"}, {166
 static constexpr int kResultCount = 4;
 static constexpr int kResultTopIdx = 3;
 #else
-static const Button kResultButtons[] = {kBack, {20, 168, 134, 52, "Again"}, {166, 168, 134, 52, "Modes"}, {166, 104, 134, 48, "Share"}, {20, 104, 134, 48, "Top 10"}};
+static const Button kResultButtons[] = {kBack, {20, 122, 134, 52, "Again"}, {166, 122, 134, 52, "Modes"}, {166, 52, 134, 48, "Share"}, {20, 52, 134, 48, "Top 10"}};
 static constexpr int kResultCount = 5;
 static constexpr int kResultTopIdx = 4;
 #endif
@@ -582,8 +582,8 @@ static float sCardNoteT;
 static const Button kPauseSign = {2, kFieldTop + 5, 36, 36, nullptr};  // in field units: top-left, cleanly below score bar & Frenzy meter
 static const Button kInvSign = {40, kFieldTop + 5, 36, 36, nullptr};   // mobile: opens Inventory in Orchard Blast
 #endif
-static const Button kPauseButtons[] = {kBack, {50, 44, 220, 56, "Resume"}, {50, 108, 220, 56, "Options"}, {50, 172, 220, 56, "Main Menu"}};
-static const Button kPauseOrchardButtons[] = {kBack, {50, 38, 220, 44, "Resume"}, {50, 88, 220, 44, "Options"}, {50, 138, 220, 44, "Start Over"}, {50, 188, 220, 44, "Main Menu"}};
+static const Button kPauseButtons[] = {kBack, {56, 26, 208, 60, "Resume"}, {56, 94, 208, 60, "Options"}, {56, 162, 208, 60, "Main Menu"}};
+static const Button kPauseOrchardButtons[] = {kBack, {56, 18, 208, 48, "Resume"}, {56, 72, 208, 48, "Options"}, {56, 126, 208, 48, "Start Over"}, {56, 180, 208, 48, "Main Menu"}};
 static const Button kStartOverConfirmBtns[2] = {{54, 144, 96, 32, "Yes"}, {170, 144, 96, 32, "No"}};
 static bool sPauseStartOverConfirm = false;
 static int sPauseConfirmFocus = 1;
@@ -742,9 +742,15 @@ static bool menuHit(const Button& b, Screen screen, int x, int y) {
 	if (!b.label || screen == SCREEN_MODES) return hit(b, x, y);
 	float fx, fy, d;
 	fruitSpot(b, &fx, &fy, &d);
-	const float half = d * 0.5f + 8;
-	const float top = fy - d * 0.5f - 6, bottom = fy + d * 0.5f + (fruit3D() ? 8 : 16);
-	return x >= fx - half && x < fx + half && y >= top && y < bottom && hit(b, x, y);
+	const float pad = touchUiActive() ? 12.0f : 8.0f;
+	const float half = d * 0.5f + pad;
+	const float top = fy - d * 0.5f - (touchUiActive() ? 8.0f : 6.0f);
+	const float bottom = fy + d * 0.5f + (fruit3D() ? 14.0f : 18.0f);
+	const bool inFruit = x >= fx - half && x < fx + half && y >= top && y < bottom;
+	const float labelW = gfx::textWidth(b.label, fruit3D() ? 0.44f : 0.40f) * 0.5f + 8.0f;
+	const float lHalf = fminf(b.w * 0.5f - 4.0f, fmaxf(half, labelW));
+	const bool inLabel = x >= fx - lHalf && x < fx + lHalf && y >= fy - 2.0f && y < bottom;
+	return (inFruit || inLabel) && hit(b, x, y);
 }
 
 // The name on a tilted ring round the fruit, swaying gently to and fro so the whole word always faces
@@ -1092,13 +1098,25 @@ static void startCut(const Button* btns, int i, Screen screen, float ang) {
 	audio::play(SFX_JUICY0, 0.8f * v, 0, 1.1f);
 }
 
-// A swipe across a sign picks it. A plain tap only counts with a mouse, with Slice Assist, on the back
-// sign, or with the 3DS stylus, since on a phone it may be a stray touch. Taps keep working on settings rows.
+// A swipe across a sign or a clean tap on it picks it. A finger still held down from a previous screen
+// must lift before it can start a new swipe or tap here.
 static int sliceButtons(const Button* btns, int n, Screen screen, const Input& in, bool wasTouching, int& focus) {
 	static float lastX, lastY, length;
 	static int downOn = -1;
 	static bool done;
-	const bool mouse = !PORT_3DS && !touchUiActive();
+	static Screen lastScreen = SCREEN_COUNT;
+	static bool waitRelease = false;
+	if (screen != lastScreen) {
+		lastScreen = screen;
+		downOn = sPressed = -1;
+		length = 0;
+		done = false;
+		waitRelease = in.touching && wasTouching;
+	}
+	if (waitRelease) {
+		if (!in.touching) waitRelease = false;
+		return -1;
+	}
 	const float minSwipe = gSave.sliceAssist ? 12.0f : 30.0f;
 	if (in.touching) {
 		if (!wasTouching) {
@@ -1134,9 +1152,8 @@ static int sliceButtons(const Button* btns, int n, Screen screen, const Input& i
 		lastX = in.tx;
 		lastY = in.ty;
 	} else if (wasTouching) {
-		// A stylus touch is always on purpose, so on the 3DS a tap picks as well.
-		bool tapOk = mouse || gSave.sliceAssist || downOn == 0 || PORT_3DS;
-		if (!done && downOn >= 0 && length < minSwipe && tapOk && menuHit(btns[downOn], screen, (int)lastX, (int)lastY))
+		const bool hitAtEnd = downOn >= 0 && (menuHit(btns[downOn], screen, (int)lastX, (int)lastY) || (touchUiActive() && hit(btns[downOn], (int)lastX, (int)lastY)));
+		if (!done && downOn >= 0 && length < minSwipe && hitAtEnd)
 			startCut(btns, downOn, screen, -0.6f);
 		sPressed = downOn = -1;
 		done = false;
@@ -1198,7 +1215,18 @@ static void cutBack(Screen screen) {
 }
 static bool backCut(Screen screen, const Input& in, bool wasTouching, bool* leave) {
 	static float lastX, lastY, length;
+	static Screen lastScreen = SCREEN_COUNT;
+	static bool waitRelease = false;
 	*leave = false;
+	if (screen != lastScreen) {
+		lastScreen = screen;
+		length = 0;
+		waitRelease = in.touching && wasTouching;
+	}
+	if (waitRelease) {
+		if (!in.touching) waitRelease = false;
+		return false;
+	}
 	if (sCut.pending && sCut.screen == screen) {
 		if (sCut.t >= kCutDelay) {
 			sCut.pending = false;
@@ -5249,7 +5277,7 @@ static void drawTopContent(Screen screen) {
 			gfx::setDepth(1.2f);
 			drawLogo(200, 66 + sinf(sTime * 1.6f) * 2);
 			gfx::setDepth(1.4f);
-			drawSplash(298, 114 + sinf(sTime * 1.6f) * 2);
+			drawSplash(304, 122 + sinf(sTime * 1.6f) * 2);
 			drawHero(200, 172, 1.25f, 0.8f);
 #if PORT_TWO_SCREENS
 			{
@@ -5510,18 +5538,22 @@ static void drawTopContent(Screen screen) {
 				gfx::text(cb, 200, 156, 0.38f, COL_ACCENT, ALIGN_CENTER);
 			}
 #else
-			gfx::setDepth(1.8f);
-			gfx::text("PAUSED", 200, 78, 1.1f, COL_CREAM, ALIGN_CENTER);
 			{
 				// Coins saved, with what this run has made so far waiting to be added.
+				const bool hasRun = sGame.runCoins() > 0;
+				const float ph = hasRun ? 124.0f : 104.0f;
+				const float py = gfx::isPortrait() ? (230.0f - ph) : (240.0f - ph) * 0.5f;
+				topPanel(44, py, 312, ph);
+				gfx::setDepth(1.8f);
+				gfx::text("PAUSED", 200, py + 12, 0.96f, COL_CREAM, ALIGN_CENTER);
 				char cb[40];
 				snprintf(cb, sizeof cb, "%lu", (unsigned long)gSave.coins);
-				float w = gfx::textWidth(cb, 0.5f);
-				gfx::sprite(SHEET_SPRITES, sprites_coin_idx, 200 - w / 2 - 6, 151, 0.56f, 0.56f);
-				gfx::text(cb, 200 + 8, 142, 0.5f, COL_CREAM, ALIGN_CENTER);
-				if (sGame.runCoins()) {
+				float w = gfx::textWidth(cb, 0.48f);
+				gfx::sprite(SHEET_SPRITES, sprites_coin_idx, 200 - w / 2 - 6, py + 74, 0.52f, 0.52f);
+				gfx::text(cb, 200 + 8, py + 66, 0.48f, COL_CREAM, ALIGN_CENTER);
+				if (hasRun) {
 					snprintf(cb, sizeof cb, "+%lu FROM THIS RUN", (unsigned long)sGame.runCoins());
-					gfx::text(cb, 200, 168, 0.34f, COL_ACCENT, ALIGN_CENTER);
+					gfx::text(cb, 200, py + 94, 0.34f, COL_ACCENT, ALIGN_CENTER);
 				}
 			}
 #endif
@@ -5738,8 +5770,10 @@ static void drawTopContent(Screen screen) {
 	// Every main menu shows the coins saved, top left: the logo leaves it free, and on one screen
 	// it stays well away from the menu's back arrow. On Title with Quit Bomb, keep top-right symmetrical.
 	if (screen == SCREEN_TITLE && PORT_QUIT_BOMB) {
-		gfx::setDepth(0.8f);
-		drawPurse(388, 10, 0.5f, true);
+		if (!gfx::isPortrait()) {
+			gfx::setDepth(0.8f);
+			drawPurse(388, 10, 0.5f, true);
+		}
 	} else if (screen == SCREEN_TITLE || screen == SCREEN_MODES || screen == SCREEN_OPTIONS || screen == SCREEN_JOURNAL || screen == SCREEN_STATS || screen == SCREEN_HOWTO || screen == SCREEN_BEAT) {
 		gfx::setDepth(0.8f);
 		drawPurse(12, 10, 0.5f, false);
@@ -6194,7 +6228,9 @@ static void drawBottomContent(Screen screen) {
 					drawSign(kPauseOrchardButtons[i], lbl, !sPauseStartOverConfirm && f == i, !sPauseStartOverConfirm && sPressed == i, 0.50f, -1, fruitFor(kPauseOrchardButtons[i].label));
 				}
 				if (sPauseStartOverConfirm) {
+#if PORT_TWO_SCREENS
 					gfx::rect(0, 0, 320, 240, rgba(20, 12, 8, 170));
+#endif
 					gfx::sign(sprites_plank_idx, 36, 54, 248, 132, COL_PLANK);
 					orcWrap("Are you sure you wanna start over? You will lose all progress and go back to Room 1.", 160, 68, 0.34f, 224, 13.0f, COL_CREAM, 5);
 					for (int i = 0; i < 2; i++) {
@@ -6283,7 +6319,7 @@ static void drawBottomContent(Screen screen) {
 					const float sc = (i == kResultTopIdx || (!PORT_3DS && i == 3)) ? 0.50f : 0.56f;
 					drawSign(kResultButtons[i], lbl, f == i, sPressed == i, sc, -1, fruitFor(lbl));
 				}
-				if (sCardNoteT > 0 && sCardNote) gfx::text(sCardNote, 160, 159, 0.34f, withAlpha(COL_CREAM, clampf(sCardNoteT, 0, 1)), ALIGN_CENTER);
+				if (sCardNoteT > 0 && sCardNote) gfx::text(sCardNote, 160, 186, 0.34f, withAlpha(COL_CREAM, clampf(sCardNoteT, 0, 1)), ALIGN_CENTER);
 			}
 			break;
 		}
@@ -7313,7 +7349,10 @@ static void drawFrame() {
 			}
 		}
 #endif
-		if (sScreen == SCREEN_PAUSE || sScreen == SCREEN_RESULT) gfx::rect(kFillX, kFillX, kFillW, kFillW, rgba(24, 14, 8, sScreen == SCREEN_RESULT ? 165 : 150));
+		const float curDim = (sScreen == SCREEN_PAUSE || sScreen == SCREEN_RESULT) ? (sScreen == SCREEN_RESULT ? 0.65f : 0.60f) : 0.0f;
+		const float prevDim = sSliding && (sSlideFrom == SCREEN_PAUSE || sSlideFrom == SCREEN_RESULT) ? (sSlideFrom == SCREEN_RESULT ? 0.65f : 0.60f) : 0.0f;
+		const float fieldDim = sSliding ? prevDim + (curDim - prevDim) * e : curDim;
+		if (fieldDim > 0.01f) gfx::fadeAll(fieldDim);
 	}
 	for (int pass = 0; pass < 2; pass++) {
 		if (pass == 0) gfx::beginTop(0);
@@ -7354,6 +7393,12 @@ static void drawFrame() {
 		if (PORT_QUIT_BOMB && (quitIn > 0 || sQuitT >= 0)) {
 			gfx::beginCorner();
 			drawQuitBomb(sFocus[SCREEN_TITLE] == kTitleQuit, sQuitT >= 0 ? 1 : quitIn);
+		}
+		if (gfx::isPortrait() && quitIn > 0 && sQuitT < 0) {
+			float wx, wy, ww, wh;
+			gfx::beginCorner();
+			gfx::windowArea(&wx, &wy, &ww, &wh);
+			drawPurse(wx + ww - 10, wy + 14, 0.46f, true);
 		}
 	}
 	// A message from starting up, such as the chosen renderer not working, shows under the logo for a while.

@@ -2734,7 +2734,7 @@ void Game::drawHud() const {
 	const float u = uiScale();
 	const float narrow = clampf((kFieldW - 12.0f) / 390.0f, 0.62f, 1.0f);
 	const float hu = u * narrow;
-	const float right = kFieldW - (touchUiActive() ? 38.0f : (narrow < 0.85f ? 14.0f : 22.0f));  // clear of the sign's screws
+	const float right = kFieldW - (narrow < 0.85f ? 14.0f : 22.0f);  // clear of the sign's screws
 	gfx::sign(sprites_plank_idx, 2, 1, kFieldW - 4, 34 * hu, COL_PLANK);
 
 	float pulse = 1.0f + clampf(scorePulse, 0, 1) * 0.16f;
@@ -2836,7 +2836,8 @@ void Game::drawHud() const {
 	// The lesson goes over everything else, with the big words below it so the two never meet.
 	const bool lesson = mode == MODE_PRACTICE && (phase == PHASE_PLAY || phase == PHASE_READY) && !gHudPaused;
 	if (lesson) drawPractice();
-	const float midY = lesson ? 30 * u + 28 + 64 * fminf(u, (kFieldW - 24) / 300.0f) + 26 : kFieldH * 0.4f;
+	const float practiceY = (!PORT_TWO_SCREENS && touchUiActive() && kFieldW < 340.0f) ? fmaxf(30 * u + 28, kFieldTop + 44.0f) : (30 * u + 28);
+	const float midY = lesson ? practiceY + 64 * fminf(u, (kFieldW - 24) / 300.0f) + 26 : kFieldH * 0.4f;
 	const float cx = kFieldW * 0.5f;
 	if (phase == PHASE_FINALE && finaleHits > 0) {
 		snprintf(buf, sizeof buf, "%d", finaleHits);
