@@ -43,15 +43,15 @@ ARCH	:=	-march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
 
 CFLAGS	:=	-g -Wall -O2 -mword-relocations -ffunction-sections -fdata-sections $(ARCH)
 CFLAGS	+=	$(INCLUDE) -D__3DS__
-ifneq ($(strip $(LAB)),)
+ifneq ($(filter-out 0,$(strip $(LAB))),)
 AUTOTEST := 1
 DEV := 1
 TESTDEFS += -DLAB
 endif
-ifneq ($(strip $(QUICK)),)
+ifneq ($(filter-out 0,$(strip $(QUICK))),)
 TESTDEFS += -DLAB_QUICK
 endif
-ifneq ($(strip $(AUTOTEST)),)
+ifneq ($(filter-out 0,$(strip $(AUTOTEST))),)
 CFLAGS	+=	-DAUTOTEST
 endif
 CFLAGS	+=	$(TESTDEFS)

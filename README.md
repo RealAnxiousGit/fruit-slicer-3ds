@@ -6,6 +6,10 @@ A free, fan-made fruit-slicing arcade game for the Nintendo 3DS. Swipe the touch
 
 <p>
   <img src="docs/screenshots/title.png" width="150" alt="Title screen with the logo on top and a menu of fruit to slice below">
+  <img src="docs/screenshots/orchard.png" width="150" alt="Orchard Blast Room 25 Milestone Boss cutscene on the Nintendo 3DS">
+  <img src="docs/screenshots/bossrush.png" width="150" alt="Picking a starting build in Boss Rush mode">
+  <img src="docs/screenshots/recipe.png" width="150" alt="Filling a Smoothie order in Recipe mode">
+  <img src="docs/screenshots/sharpshooter.png" width="150" alt="Slicing the called shape in Sharpshooter mode">
   <img src="docs/screenshots/gameplay.png" width="150" alt="Slicing 3D fruit on the picnic blanket board, with a combo bonus">
   <img src="docs/screenshots/frenzy.png" width="150" alt="A Fruit Frenzy starting on the picnic blanket board">
   <img src="docs/screenshots/plate.png" width="150" alt="A Fruit Frenzy on the plate board">
@@ -193,7 +197,9 @@ Programming by NickBin, with the Claude Code toolkit.
 
 **Music:** the six Shop tracks (Summer House, 8-Bit Hero Quest, Friendly Trap, Unruly Beat, Vengeance Electro and Eternal Explorer) are by [Of Far Different Nature](https://fardifferent.carrd.co/), from "Loop Box #1" and "Loop Box #4" on [OpenGameArt.org](https://opengameart.org), licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). They were converted (to 16 kHz mono) and turned down to match the game's loudness.
 
-The seven songs added in 1.1 are by NickBin and friends, all rights reserved and used with permission:
+**Boss music:** four tracks made in code for Fruit Slicer, and five from [OpenGameArt.org](https://opengameart.org): "8bit Action Boss Battle" by MintoDog (CC0), "Boss Fight 2" by ansimuz (CC0), "Boss Fight Bounce" by Locomule (CC0), "Epic Boss Battle" by Juhani Junkala (CC0), and "A Champion's Will" by ATMANAN, licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+
+The eight songs added in 1.1 and 2.0 are by NickBin and friends, all rights reserved and used with permission:
 
 | Song | Artists | Genre |
 | --- | --- | --- |
@@ -204,6 +210,7 @@ The seven songs added in 1.1 are by NickBin and friends, all rights reserved and
 | Lies | NickBin | EDM |
 | Lies (VIP Remix) | NickBin | EDM |
 | JUST STAY WITH ME | NickBin | Dariacore |
+| Show the World You're Enough | NickBin ft. Cabex Music, Calling All Villains | Electronic / Vocal |
 
 They were cut to whole bars so they loop cleanly, matched to the game's loudness, and packed to 16 kHz mono to fit the 3DS's memory.
 

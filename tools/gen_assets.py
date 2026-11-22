@@ -2177,8 +2177,9 @@ from gen_backgrounds import bg_top, bg_boards  # noqa: E402
 # ---------------------------------------------------------------- meta art
 def meta_art():
     from gen_meta import build_meta
+    from gen_promo_logo import build_orchard_blast_logo
     sky, far, mid, near = bg_top(0, hill_layer, v_gradient, spr_soft)
-    build_meta(sky, far, mid, spr_logo())
+    build_meta(sky, far, mid, build_orchard_blast_logo())
 
 
 # ---------------------------------------------------------------- sheets

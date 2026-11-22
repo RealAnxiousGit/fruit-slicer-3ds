@@ -1,5 +1,27 @@
 # Changelog
 
+## 2.0.0
+
+**Fruit Slicer 3DS: Orchard Blast.** Saves from 1.0 and 1.1 carry over: your best scores, coins, shop unlocks and settings are kept.
+
+### New
+
+- **Orchard Blast:** an endless roguelike mode where every sliced fruit grants XP to draft uncapped upgrades and active/passive charms (`L`/`R` or touch slots, `Select` for the Inventory, plus free and coin Rerolls on level-up). Face 7 escalating bosses — The Big Melon, The Bomb King, The Pineapple Guard, The Inferno Pepper, and Room 25+ Milestone Bosses Dusty Durian, Lord Lemon and Aggro Apple — plus Royal crowned variants from lap 2 onward. Saved runs can be resumed anytime between sessions.
+- **Boss Rush:** pick a starting build (Tank, Glass Cannon or Charmer) and battle 5 escalating bosses back to back (ending with a Milestone Boss finale) for the fastest clear time.
+- **Recipe:** fill 3–4 ingredient Smoothie orders within 60 seconds; slicing the wrong fruit spoils the cup and bombs take 10 seconds off the clock.
+- **Sharpshooter:** 60 seconds of colored shape rings around flying fruit — only slice the called shape.
+- **Juggle:** keep fruit bouncing airborne cleanly; 3 drops or knocked bombs end the run.
+- **StreetPass Challenge:** swap score cards and custom greeting messages with nearby players via `cecd:u` (`0x000F51CE`), and play Classic 3-strike challenges against their best scores.
+- **Cross-Platform Online Leaderboards:** submit personal bests over Wi-Fi (`libcurl` + `Mbed TLS`) with a 6-character tag across all modes, shared with Windows, Linux, Android and Browser players. **Stats** now has three tabs: **Personal**, **StreetPass** and **Global** (Top 100 rankings).
+- **Top-Screen Sceneries & PICA200 Holographic Shader:** choose from 6 seamless parallax sceneries (`Dusk Orchard`, `Morning Meadow`, `Moonlit Bay`, `Sakura Grove`, `Autumn Harvest`, `Starlit Mountain`) in `Options -> Visuals -> Scenery`, and unlock the animated **Holographic** 3D fruit skin powered by a custom PICA200 vertex rainbow shader.
+- **Mode Guides & Shop Music:** How to Play now includes interactive illustrated guides for every mode, and the Shop adds `"Show the World You're Enough"` plus 9 boss battle tracks (ADPCM).
+- **3D Boss Props & CIA Banner:** 3D translucent boss shields, Lord Lemon's 3D floatie, volumetric 3D lemonade pool and 3D drain plug, Dusty Durian's 3D radial thorns, Aggro Apple's emerging 3D worms, 3D Royal crowns, 3D flying power-ups, and the transparent **Fruit Slicer: Orchard Blast** HOME Menu CIA banner.
+
+### Changed & Fixed
+
+- **3DS Memory & Stack Headroom:** moved `OrcRunSave` off the thread stack into static storage and increased `__stacksize__` to 96 KB, keeping long Orchard Blast runs and boss fights rock-solid on 3DS hardware.
+- **3D/2D Hitbox Parity & Progressive Orchard XP:** aligned 3D and 2D fruit, seed and projectile hitboxes, smoothed 3D boss spin recoveries upright, and tuned Orchard Blast's XP curve for steady multi-room progression.
+
 ## 1.1.0
 
 Saves from 1.0 carry over: scores, coins, unlocks and settings are kept. Zen and Combo Rush play by new rules, so their old best scores are cleared once, the first time 1.1 opens your save, and start fresh.
