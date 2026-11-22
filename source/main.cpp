@@ -83,6 +83,27 @@ static float sFade = 0;       // 0 clear, 1 black
 static bool sFadingOut = false;
 static void (*sFadeAction)() = nullptr;
 
+#if !PORT_3DS
+static bool sLogoRainbow = false;
+static float sLogoRainbowT = 0.0f;
+static Screen sLogoLastScreen = SCREEN_LOADING;
+struct LogoBox {
+	float cx, cy, scale;
+	bool valid;
+};
+static LogoBox sLogoBox;
+#endif
+static bool sCardFrame;          // this frame is the score card: the sign shows the logo, not the coins
+
+static void drawLogo(float cx, float cy, float scale = 1.0f) {
+#if !PORT_3DS
+	if (!sSliding && !sCardFrame && sScreen != SCREEN_LOADING) sLogoBox = {cx, cy, scale, true};
+	gfx::drawVectorLogo(cx, cy, scale, sLogoRainbow, sLogoRainbowT);
+#else
+	gfx::sprite(SHEET_LOGO, logo_logo_idx, cx, cy, scale, scale);
+#endif
+}
+
 static void pickSplash();
 static void toModes();
 static void toTitle();
@@ -90,6 +111,10 @@ static void startGame();
 
 static void goTo(Screen to, float dir) {
 	sPressed = -1;
+#if !PORT_3DS
+	sLogoRainbow = false;
+	sLogoBox.valid = false;
+#endif
 	if (to == SCREEN_TITLE) pickSplash();
 	// These menus open on their first real choice, not on the back arrow.
 	if ((to == SCREEN_MODES || to == SCREEN_OPTIONS) && sFocus[to] == 0) sFocus[to] = 1;
@@ -106,6 +131,10 @@ static void goTo(Screen to, float dir) {
 
 static void fadeThen(void (*action)()) {
 	sPressed = -1;
+#if !PORT_3DS
+	sLogoRainbow = false;
+	sLogoBox.valid = false;
+#endif
 	if (!gSave.transitions) {
 		action();
 		return;
@@ -547,7 +576,6 @@ static constexpr int kResultTopIdx = 4;
 static bool sResultBoard = false;
 static bool sLbTypingName = false;
 static int sLbNameFocus = 0;
-static bool sCardFrame;          // this frame is the score card: the sign shows the logo, not the coins
 static const char* sCardNote;    // what became of the last card, shown for a while
 static float sCardNoteT;
 #if PORT_PAUSE_BUTTON
@@ -3739,7 +3767,7 @@ static void drawStats() {
 static void drawStatsTop() {
 	char buf[72];
 	gfx::setDepth(1.0f);
-	gfx::sprite(SHEET_LOGO, logo_logo_idx, 200, 44, 0.52f, 0.52f);
+	drawLogo(200, 44, 0.52f);
 	topPanel(30, 80, 340, 150);
 	gfx::setDepth(0.7f);
 #if PORT_3DS
@@ -4322,7 +4350,7 @@ static void drawUpdateTop() {
 	const update::State st = update::state();
 	if (st != update::OFFER && st != update::NOTE) {
 		gfx::setDepth(1.0f);
-		gfx::sprite(SHEET_LOGO, logo_logo_idx, 200, 50, 0.62f, 0.62f);
+		drawLogo(200, 50, 0.62f);
 		topPanel(30, 96, 340, 74);
 		gfx::setDepth(0.7f);
 		gfx::text(st == update::ASK ? "Nothing about you is sent:" : "Fruit Slicer", 200, 112, 0.4f, COL_ACCENT, ALIGN_CENTER);
@@ -4330,7 +4358,7 @@ static void drawUpdateTop() {
 		return;
 	}
 	gfx::setDepth(1.0f);
-	gfx::sprite(SHEET_LOGO, logo_logo_idx, 200, 40, 0.5f, 0.5f);
+	drawLogo(200, 40, 0.5f);
 	topPanel(30, 70, 340, 162);
 	gfx::setDepth(0.7f);
 	char buf[64];
@@ -5080,7 +5108,7 @@ static void drawLatencyTop() {
 	char buf[48];
 	topPanel(30, 96, 340, sLatDone ? 116.0f : 134.0f);
 	gfx::setDepth(1.0f);
-	gfx::sprite(SHEET_LOGO, logo_logo_idx, 200, 50, 0.62f, 0.62f);
+	drawLogo(200, 50, 0.62f);
 	gfx::setDepth(0.7f);
 	gfx::text("Latency Test", 200, 104, 0.6f, COL_ACCENT, ALIGN_CENTER);
 	if (sLatDone) {
@@ -5210,13 +5238,16 @@ static void drawBossTestTop();
 
 static void drawTopContent(Screen screen) {
 	char buf[48];
+#if !PORT_3DS
+	if (!sSliding && screen == sScreen) sLogoBox.valid = false;
+#endif
 	gfx::clearPanels();
 	switch (screen) {
 		case SCREEN_LOADING:
 			break;
 		case SCREEN_TITLE:
 			gfx::setDepth(1.2f);
-			gfx::sprite(SHEET_LOGO, logo_logo_idx, 200, 66 + sinf(sTime * 1.6f) * 2);
+			drawLogo(200, 66 + sinf(sTime * 1.6f) * 2);
 			gfx::setDepth(1.4f);
 			drawSplash(298, 114 + sinf(sTime * 1.6f) * 2);
 			drawHero(200, 172, 1.25f, 0.8f);
@@ -5249,7 +5280,7 @@ static void drawTopContent(Screen screen) {
 				topPanel(30, 96, 340, mode == SIGN_PASS ? 92.0f : 122.0f);
 			}
 			gfx::setDepth(1.0f);
-			if (mode != MODE_DAILY) gfx::sprite(SHEET_LOGO, logo_logo_idx, 200, 50, 0.62f, 0.62f);
+			if (mode != MODE_DAILY) drawLogo(200, 50, 0.62f);
 			gfx::setDepth(0.7f);
 			if (mode == MODE_DAILY) {
 				drawDailyTop();
@@ -5287,7 +5318,7 @@ static void drawTopContent(Screen screen) {
 			int f = sFocus[SCREEN_OPTIONS];
 			const Section* sec = f >= 1 && f < n ? &kSections[sOptionSection[f]] : nullptr;
 			gfx::setDepth(1.0f);
-			gfx::sprite(SHEET_LOGO, logo_logo_idx, 200, 50, 0.62f, 0.62f);
+			drawLogo(200, 50, 0.62f);
 			if (!sec) {
 				topPanel(48, 112, 304, 62);
 				gfx::setDepth(0.7f);
@@ -5332,7 +5363,7 @@ static void drawTopContent(Screen screen) {
 			} else {
 				// No preview for this row: the logo fills the space above the hint, as on the Options screen.
 				gfx::setDepth(1.0f);
-				gfx::sprite(SHEET_LOGO, logo_logo_idx, 200, 50, 0.62f, 0.62f);
+				drawLogo(200, 50, 0.62f);
 			}
 			if (!r) {
 				topPanel(48, 118, 304, 62);
@@ -5411,7 +5442,7 @@ static void drawTopContent(Screen screen) {
 		case SCREEN_BEATTOOL:
 			topPanel(30, 96, 340, PORT_ANDROID ? 96.0f : 132.0f);
 			gfx::setDepth(1.0f);
-			gfx::sprite(SHEET_LOGO, logo_logo_idx, 200, 50, 0.62f, 0.62f);
+			drawLogo(200, 50, 0.62f);
 			gfx::setDepth(0.7f);
 			gfx::text("Beat Tool", 200, 104, 0.6f, COL_ACCENT, ALIGN_CENTER);
 			gfx::text("The game listens to your song for its beat.", 200, 134, 0.36f, COL_CREAM, ALIGN_CENTER);
@@ -5429,7 +5460,7 @@ static void drawTopContent(Screen screen) {
 		case SCREEN_BEAT: {
 			topPanel(30, 96, 340, 122);
 			gfx::setDepth(1.0f);
-			gfx::sprite(SHEET_LOGO, logo_logo_idx, 200, 50, 0.62f, 0.62f);
+			drawLogo(200, 50, 0.62f);
 			gfx::setDepth(0.7f);
 			const ModeInfo& m = kModes[MODE_BEAT];
 			gfx::text(m.name, 200, 104, 0.6f, COL_ACCENT, ALIGN_CENTER);
@@ -5442,7 +5473,7 @@ static void drawTopContent(Screen screen) {
 		}
 		case SCREEN_CREDITS:
 			gfx::setDepth(1.0f);
-			gfx::sprite(SHEET_LOGO, logo_logo_idx, 200, 54, 0.72f, 0.72f);
+			drawLogo(200, 54, 0.72f);
 			topPanel(30, 110, 340, 116);
 			gfx::setDepth(0.7f);
 			gfx::text("Free, non-commercial fan game.", 200, 118, 0.38f, COL_CREAM, ALIGN_CENTER);
@@ -5453,7 +5484,7 @@ static void drawTopContent(Screen screen) {
 			break;
 		case SCREEN_HOWTO:
 			gfx::setDepth(1.0f);
-			gfx::sprite(SHEET_LOGO, logo_logo_idx, 200, 50, 0.62f, 0.62f);
+			drawLogo(200, 50, 0.62f);
 			drawHero(200, 164, 1.2f, 0.8f);
 			break;
 		case SCREEN_GUIDES:
@@ -5498,7 +5529,7 @@ static void drawTopContent(Screen screen) {
 		case SCREEN_PASS_TURN:
 			topPanel(30, 96, 340, 122);
 			gfx::setDepth(1.0f);
-			gfx::sprite(SHEET_LOGO, logo_logo_idx, 200, 50, 0.62f, 0.62f);
+			drawLogo(200, 50, 0.62f);
 			gfx::setDepth(0.7f);
 			gfx::text(modeName(sStartMode), 200, 104, 0.6f, COL_ACCENT, ALIGN_CENTER);
 			gfx::text(kModes[sStartMode].line1, 200, 134, 0.38f, COL_CREAM, ALIGN_CENTER);
@@ -5513,7 +5544,7 @@ static void drawTopContent(Screen screen) {
 			const int winner = passWinner();
 			topPanel(30, 96, 340, winner >= 0 ? 114.0f : 82.0f);
 			gfx::setDepth(1.0f);
-			gfx::sprite(SHEET_LOGO, logo_logo_idx, 200, 50, 0.62f, 0.62f);
+			drawLogo(200, 50, 0.62f);
 			gfx::setDepth(0.7f);
 			gfx::text(modeName(sStartMode), 200, 104, 0.5f, COL_CREAM, ALIGN_CENTER);
 			if (winner >= 0) snprintf(buf, sizeof buf, "%s WINS!", sPassNames[winner]);
@@ -5660,7 +5691,7 @@ static void drawTopContent(Screen screen) {
 			if (sCardFrame) {
 				// The score card: the game's name where the coins go, which are nobody else's business.
 				gfx::setDepth(1.2f);
-				gfx::sprite(SHEET_LOGO, logo_logo_idx, 200, 182 + dy, 0.28f, 0.28f);
+				drawLogo(200, 182 + dy, 0.28f);
 			} else if (sGame.scoreCommitted && sPassTurn < 0) {
 				snprintf(buf, sizeof buf, "+%lu COINS", (unsigned long)sGame.coinsEarned);
 				float cw = gfx::textWidth(buf, 0.40f);
@@ -6441,6 +6472,24 @@ static void updateFrame(const Input& in, bool wasTouching) {
 
 	// The game keeps moving during a fade, but menus ignore input while anything is sliding.
 	const bool blocked = inputBlocked();
+#if !PORT_3DS
+	if (sScreen != sLogoLastScreen) {
+		sLogoRainbow = false;
+		sLogoBox.valid = false;
+		sLogoLastScreen = sScreen;
+	}
+	if (sLogoRainbow) sLogoRainbowT += kDt * (gSave.calmFx ? 0.35f : 1.0f);
+	if (!blocked && sLogoBox.valid && sScreen != SCREEN_GAME && sScreen != SCREEN_LOADING &&
+	    sQuitT < 0 && sQuitHold == 0 && in.touching && !wasTouching) {
+		float lx = 0, ly = 0;
+		gfx::signToTop((float)in.tx, (float)in.ty, &lx, &ly);
+		if (gfx::logoHitTest(lx, ly, sLogoBox.cx, sLogoBox.cy, sLogoBox.scale)) {
+			sLogoRainbow = !sLogoRainbow;
+			if (sLogoRainbow) sLogoRainbowT = 0.0f;
+			audio::play(SFX_CLICK, 0.7f, 0.0f, sLogoRainbow ? 1.25f : 0.88f);
+		}
+	}
+#endif
 	switch (sScreen) {
 		case SCREEN_TITLE: {
 			if (blocked) break;
@@ -6976,6 +7025,8 @@ static void updateFrame(const Input& in, bool wasTouching) {
 					break;  // the Inventory holds the run, and closing via Esc returns to play cleanly
 				}
 				Input bin = in;
+				const bool bladeAllowed = !orcTook && !sOrcSlotTouch && !sOrcInv && !sGame.orchardHeld() && sGame.phase != PHASE_OVER;
+				if (bin.hoverSlice && bladeAllowed) bin.touching = true;
 #if PORT_PAUSE_BUTTON
 				if (touchUiActive() && (hit(kPauseSign, in.tx, in.ty) || (sGame.mode == MODE_ORCHARD && !sGame.orchardHeld() && hit(kInvSign, in.tx, in.ty)))) bin.touching = false;
 #endif
@@ -7332,7 +7383,7 @@ static void drawLoading(float progress) {
 		drawTopBackground();
 #endif
 		gfx::setDepth(1.0f);
-		gfx::sprite(SHEET_LOGO, logo_logo_idx, 200, 90);
+		drawLogo(200, 90);
 		gfx::setDepth(0.3f);
 		gfx::text(PORT_LOADING_TEXT, 200, 190, 0.38f, COL_CREAM, ALIGN_CENTER);
 	}
@@ -7490,7 +7541,7 @@ static void stickBlade(Input& in) {
 		menuStickBlade(in);
 		return;
 	}
-	if (in.touching) {
+	if (in.touching || in.hoverSlice) {
 		sPointShow = 0;
 		return;
 	}

@@ -816,6 +816,196 @@ def durian_thorns(lat, lon):
     return m
 
 
+def _torus(center, R, rt, rings, segs, color_fn, axis="y"):
+    m = Mesh()
+    cx, cy, cz = center
+    for a in range(rings + 1):
+        u = a / rings * math.tau
+        cu, su = math.cos(u), math.sin(u)
+        for b in range(segs):
+            ph = b / segs * math.tau
+            cp, sp = math.cos(ph), math.sin(ph)
+            rr = R + rt * cu
+            if axis == "z":
+                p = (cx + cp * rr, cy + sp * rr, cz + su * rt)
+                n = (cp * cu, sp * cu, su)
+            else:
+                p = (cx + cp * rr, cy + su * rt, cz + sp * rr)
+                n = (cp * cu, su, sp * cu)
+            m.add_vertex(p, n, color_fn(u, ph))
+    for a in range(rings):
+        for b in range(segs):
+            bn = (b + 1) % segs
+            p, q = a * segs + b, a * segs + bn
+            r, s = (a + 1) * segs + b, (a + 1) * segs + bn
+            m.add_tri(p, q, r)
+            m.add_tri(q, s, r)
+    return m
+
+
+def drain(lat, lon):
+    """Metallic bathtub drain stopper with rubber rim, 4 drain holes, and pull-ring."""
+    lo = lat < 10
+    sides = 10 if lo else 16
+    m = Mesh()
+    m.add(prism((0, 3.8, 0), (0, 1.8, 0), 10.6, 12.2, (52, 58, 74), sides))
+    m.add(prism((0, 2.0, 0), (0, -3.5, 0), 9.4, 11.4, (194, 212, 228), sides))
+    m.add(prism((0, -3.5, 0), (0, -4.1, 0), 11.4, 8.8, (222, 236, 248), sides))
+    for sx in (-4.2, 4.2):
+        for sz in (-3.2, 3.2):
+            m.add(prism((sx, -3.4, sz), (sx, -4.25, sz), 1.7, 1.5, (44, 52, 68), 6))
+    m.add(prism((0, -3.8, 0), (0, -6.2, 0), 2.1, 1.6, (216, 230, 244), 6))
+    m.add(_torus((0, -9.8, 0), 4.6, 1.35, 6 if lo else 10, 10 if lo else 14,
+                 lambda u, ph: (232, 242, 252) if math.sin(u) >= 0 else (168, 186, 206), axis="z"))
+    return m
+
+
+def crown(lat, lon):
+    """Royal golden crown with 5 flared spires, gold orbs, and jewel studs."""
+    lo = lat < 10
+    segs = 12 if lo else 20
+    m = Mesh()
+    r_bot, r_top = 12.6, 14.4
+    for k in range(segs):
+        a0, a1 = k / segs * math.tau, (k + 1) / segs * math.tau
+        c0, s0, c1, s1 = math.cos(a0), math.sin(a0), math.cos(a1), math.sin(a1)
+        p0b, p1b = (c0 * r_bot, 5.0, s0 * r_bot), (c1 * r_bot, 5.0, s1 * r_bot)
+        p0t, p1t = (c0 * r_top, -2.2, s0 * r_top), (c1 * r_top, -2.2, s1 * r_top)
+        n0, n1 = (c0, 0.0, s0), (c1, 0.0, s1)
+        v0 = m.add_vertex(p0b, n0, (214, 152, 32))
+        v1 = m.add_vertex(p1b, n1, (214, 152, 32))
+        v2 = m.add_vertex(p0t, n0, (255, 214, 72))
+        v3 = m.add_vertex(p1t, n1, (255, 214, 72))
+        m.add_tri(v0, v2, v1)
+        m.add_tri(v1, v2, v3)
+        m.add_tri(v0, v1, v2)
+        m.add_tri(v1, v3, v2)
+    spires = 5
+    for k in range(spires):
+        a = k / spires * math.tau - math.pi * 0.5
+        ca, sa = math.cos(a), math.sin(a)
+        base = np.array((ca * 13.8, -1.6, sa * 13.8))
+        tip = np.array((ca * 15.8, -13.5, sa * 15.8))
+        m.add(prism(base, tip, 3.8, 0.8, (255, 220, 84), 4))
+        m.add(ball(tip, 1.9, 4, 6, lambda th, ph: (255, 238, 128)))
+        gem_col = (228, 48, 78) if (k % 2 == 0) else (64, 174, 250)
+        m.add(ball(np.array((ca * 14.0, 1.5, sa * 14.0)), 1.9, 4, 6, lambda th, ph, c=gem_col: c))
+    return m
+
+
+def pw_freeze(lat, lon):
+    """Icy cyan faceted diamond crystal with radiating frost spikes."""
+    lo = lat < 10
+    m = Mesh()
+    m.add(prism((0, 0, 0), (0, -16, 0), 10.5, 0.4, (130, 234, 255), 6))
+    m.add(prism((0, 0, 0), (0, 16, 0), 10.5, 0.4, (92, 206, 248), 6))
+    for k in range(4):
+        a = k / 4 * math.tau + 0.4
+        d = np.array((math.cos(a), 0.12 * (1 if k % 2 == 0 else -1), math.sin(a)))
+        m.add(prism(d * 5.0, d * 15.0, 3.0, 0.3, (198, 246, 255), 4 if lo else 5))
+    return m
+
+
+def pw_double(lat, lon):
+    """Chunky beveled golden 5-point star medallion."""
+    m = Mesh()
+    m.add(ball((0, 0, 0), 7.2, 5, 8, lambda th, ph: (255, 236, 118)))
+    for k in range(5):
+        a = k / 5 * math.tau - math.pi * 0.5
+        d = np.array((math.cos(a), math.sin(a), 0.0))
+        m.add(prism(d * 3.5, d * 16.5, 5.2, 0.4, (255, 198, 46), 4))
+    return m
+
+
+def pw_frenzy(lat, lon):
+    """Vibrant magenta-gold star orb with tilted glowing energy ring."""
+    lo = lat < 10
+    m = Mesh()
+    m.add(ball((0, 0, 0), 10.5, 6 if lo else 10, 8 if lo else 14,
+               lambda th, ph: lerp3((255, 196, 80), (242, 68, 174), 0.5 + 0.5 * math.sin(th * 3 + ph * 2))))
+    ring = _torus((0, 0, 0), 14.5, 2.1, 6 if lo else 10, 12 if lo else 18,
+                  lambda u, ph: lerp3((255, 224, 96), (255, 96, 210), 0.5 + 0.5 * math.cos(ph * 2)))
+    rot_c, rot_s = math.cos(0.45), math.sin(0.45)
+    ring.v = [((p[0], p[1] * rot_c - p[2] * rot_s, p[1] * rot_s + p[2] * rot_c),
+               (n[0], n[1] * rot_c - n[2] * rot_s, n[1] * rot_s + n[2] * rot_c), c) for p, n, c in ring.v]
+    m.add(ring)
+    return m
+
+
+def pw_magnet(lat, lon):
+    """Classic red U-shaped horseshoe magnet with bright silver-chrome tips."""
+    lo = lat < 10
+    steps = 7 if lo else 11
+    m = Mesh()
+    R = 9.5
+    pts = []
+    pts.append((np.array((-R, -10.5, 0)), (218, 228, 240)))
+    pts.append((np.array((-R, -4.5, 0)), (218, 228, 240)))
+    for k in range(steps + 1):
+        a = math.pi - (k / steps) * math.pi
+        pts.append((np.array((math.cos(a) * R, 2.0 + math.sin(a) * R, 0)), (226, 44, 54)))
+    pts.append((np.array((R, -4.5, 0)), (218, 228, 240)))
+    pts.append((np.array((R, -10.5, 0)), (218, 228, 240)))
+    for k in range(len(pts) - 1):
+        p0, c0 = pts[k]
+        p1, c1 = pts[k + 1]
+        m.add(prism(p0, p1, 3.6, 3.6, c1, 6 if lo else 8))
+    return m
+
+
+def pw_wide(lat, lon):
+    """Gleaming katana blade power-up with golden guard and wrapped handle."""
+    m = Mesh()
+    m.add(prism((-12.5, 11.5, 0), (-7.0, 6.0, 0), 2.1, 2.3, (46, 72, 92), 6))
+    m.add(prism((-8.5, 3.5, 0), (-4.0, 8.0, 0), 3.4, 3.4, (248, 198, 56), 6))
+    m.add(prism((-6.2, 5.2, 0), (5.5, -5.5, 0), 2.8, 2.4, (218, 242, 255), 4))
+    m.add(prism((5.2, -5.2, 0), (14.5, -14.5, 0), 2.4, 0.3, (242, 252, 255), 4))
+    return m
+
+
+def pw_shield(lat, lon):
+    """Armored royal-blue heraldic kite shield with golden rim and center boss."""
+    lo = lat < 10
+    m = Mesh()
+    # Flat-backed beveled heraldic kite shield outline in XY, extruded in Z.
+    outline = [(-10.5, -11.5), (0.0, -13.0), (10.5, -11.5), (11.0, -1.5), (7.0, 8.0), (0.0, 14.5), (-7.0, 8.0), (-11.0, -1.5)]
+    n = len(outline)
+    for sign_z, base_col in ((1.0, (68, 146, 248)), (-1.0, (44, 98, 188))):
+        zc = 2.6 * sign_z
+        zr = 1.6 * sign_z
+        c_idx = m.add_vertex((0.0, -1.0, zc), (0.0, 0.0, sign_z), (96, 174, 255) if sign_z > 0 else base_col)
+        ring = [m.add_vertex((x * 0.84, y * 0.84, zr), (x * 0.03, y * 0.03, sign_z), base_col) for x, y in outline]
+        for k in range(n):
+            nxt = (k + 1) % n
+            if sign_z > 0:
+                m.add_tri(c_idx, ring[k], ring[nxt])
+            else:
+                m.add_tri(c_idx, ring[nxt], ring[k])
+    # Golden beveled border around the shield perimeter.
+    for k in range(n):
+        x0, y0 = outline[k]
+        x1, y1 = outline[(k + 1) % n]
+        m.add(prism((x0, y0, 0.0), (x1, y1, 0.0), 2.0, 2.0, (244, 196, 58), 5 if lo else 6))
+    m.add(ball((0, -1.5, 2.8), 3.6, 4 if lo else 6, 6 if lo else 8, lambda th, ph: (255, 218, 80)))
+    m.add(ball((0, -1.5, -2.8), 3.6, 4 if lo else 6, 6 if lo else 8, lambda th, ph: (232, 182, 54)))
+    return m
+
+
+def pw_time(lat, lon):
+    """Brass-rimmed 3D hourglass with cyan glass cones and golden sand."""
+    lo = lat < 10
+    sides = 8 if lo else 12
+    m = Mesh()
+    m.add(prism((0, -14.0, 0), (0, -11.8, 0), 10.8, 10.8, (226, 174, 58), sides))
+    m.add(prism((0, 14.0, 0), (0, 11.8, 0), 10.8, 10.8, (226, 174, 58), sides))
+    m.add(prism((0, -11.8, 0), (0, -0.5, 0), 9.0, 1.6, (156, 238, 255), sides))
+    m.add(prism((0, 11.8, 0), (0, 0.5, 0), 9.0, 1.6, (156, 238, 255), sides))
+    m.add(prism((0, 11.4, 0), (0, 4.5, 0), 7.4, 1.4, (255, 214, 78), sides))
+    for sx in (-8.6, 8.6):
+        m.add(prism((sx, -12.0, 0), (sx, 12.0, 0), 1.1, 1.1, (206, 154, 48), 5))
+    return m
+
+
 # name, builder, flesh, rim
 FRUIT = [
     ("apple", apple, (255, 240, 190), (246, 216, 150)),
@@ -852,6 +1042,15 @@ FRUIT = [
     ("shield", shield, (130, 210, 255), (195, 242, 255)),
     ("worm", worm, (248, 152, 178), (218, 108, 142)),
     ("durian_thorns", durian_thorns, (242, 224, 128), (195, 160, 75)),
+    ("drain", drain, (194, 212, 228), (52, 58, 74)),
+    ("crown", crown, (255, 214, 72), (214, 152, 32)),
+    ("pw_freeze", pw_freeze, (130, 234, 255), (198, 246, 255)),
+    ("pw_double", pw_double, (255, 214, 72), (255, 198, 46)),
+    ("pw_frenzy", pw_frenzy, (242, 68, 174), (255, 224, 96)),
+    ("pw_magnet", pw_magnet, (226, 44, 54), (218, 228, 240)),
+    ("pw_wide", pw_wide, (218, 242, 255), (248, 198, 56)),
+    ("pw_shield", pw_shield, (68, 146, 248), (244, 196, 58)),
+    ("pw_time", pw_time, (156, 238, 255), (226, 174, 58)),
 ]
 
 

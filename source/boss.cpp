@@ -1521,7 +1521,7 @@ void Game::drawShots() const {
 	if (in3D) {
 		m3d::begin(kFieldW, gfx::stereoPerZ(), true);
 		for (const auto& s : orc.shots) {
-			if (!s.on || s.kind == SHOT_CROWN) continue;
+			if (!s.on) continue;
 			const float ang = atan2f(s.vy, s.vx) + 1.5708f;
 			if (s.kind == SHOT_SEED) {
 				m3d::Pose pose = {s.x, s.y, 26, s.age * 3.0f, s.rot * 0.7f, ang, 0.66f, 0, 0, 0};
@@ -1534,6 +1534,12 @@ void Game::drawShots() const {
 				m3d::setSkin(&skin);
 				m3d::Pose pose = {s.x, s.y, 26, s.age * 2.0f, s.rot, s.rot * 0.6f, 0.8f, 0, 0, 0};
 				m3d::draw(m3d::MESH_BOMB, m3d::PART_WHOLE, pose);
+				m3d::setSkin(nullptr);
+			} else if (s.kind == SHOT_CROWN) {
+				m3d::Skin skin = {0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.75f};
+				m3d::setSkin(&skin);
+				m3d::Pose pose = {s.x, s.y, 28, 0.35f, s.age * 7.5f, s.rot * 0.4f, 1.15f, 0, 0, 0};
+				m3d::draw(m3d::MESH_CROWN, m3d::PART_WHOLE, pose);
 				m3d::setSkin(nullptr);
 			} else if (s.kind == SHOT_SPIKE || s.kind == SHOT_THORN) {
 				m3d::Pose pose = {s.x, s.y, 26, s.age * 4.0f, s.rot * 1.2f, ang, s.kind == SHOT_THORN ? 0.56f : 0.52f, 0, 0, 0};
@@ -1556,7 +1562,7 @@ void Game::drawShots() const {
 	}
 	for (const auto& s : orc.shots) {
 		if (!s.on) continue;
-		if (in3D && (s.kind == SHOT_SEED || s.kind == SHOT_SPLASH || s.kind == SHOT_CANNON || s.kind == SHOT_SPIKE || s.kind == SHOT_THORN || s.kind == SHOT_ACID || s.kind == SHOT_EMBER)) continue;
+		if (in3D && (s.kind == SHOT_SEED || s.kind == SHOT_SPLASH || s.kind == SHOT_CANNON || s.kind == SHOT_CROWN || s.kind == SHOT_SPIKE || s.kind == SHOT_THORN || s.kind == SHOT_ACID || s.kind == SHOT_EMBER)) continue;
 		switch (s.kind) {
 			case SHOT_SEED: gfx::sprite(SHEET_SPRITES, sprites_drop_idx, s.x, s.y, 1.15f, 1.45f, atan2f(s.vy, s.vx) - 1.5708f, rgba(70, 40, 30)); break;
 			case SHOT_SPLASH: gfx::sprite(SHEET_SPRITES, sprites_drop_idx, s.x, s.y, 1.5f, 1.5f, s.rot * 0.3f, rgba(255, 80, 110)); break;
@@ -1571,22 +1577,83 @@ void Game::drawShots() const {
 			default: break;
 		}
 	}
-	// Lord Lemon's sour Lemonade pool & sliceable Drain plug (clean visuals without text overlay).
+	// Lord Lemon's sour Lemonade pool & sliceable Drain plug (volumetric 3D pool + 3D drain in 3D style, flat 2D in Stickers).
 	if (b.on && b.lemonadeOn && b.lemLevel > 0.01f) {
 		const float surfY = lemonadeSurfaceY(b);
 		const float bottomY = kFillX + kFillW;
-		gfx::rect(kFillX, surfY, kFillW, fmaxf(0.0f, bottomY - surfY), rgba(246, 224, 48, 136));
-		// Animated citrus surface crest across the pool.
-		const int segs = 16;
-		const float segW = kFillW / segs;
-		for (int i = 0; i < segs; i++) {
-			const float wave = gSave.calmFx ? 0.0f : sinf(b.t * 4.0f + i * 0.65f) * 2.2f;
-			gfx::rect(kFillX + i * segW, surfY + wave - 2.0f, segW + 1.0f, 5.0f, rgba(255, 248, 156, 210));
-		}
-		if (b.drainOn) {
-			const float pulse = 0.85f + 0.15f * sinf(b.t * 8.0f);
-			gfx::sprite(SHEET_SPRITES, sprites_ring_idx, b.drainX, b.drainY, pulse * 0.9f, pulse * 0.9f, 0, rgba(160, 245, 255, 225));
-			gfx::sprite(SHEET_SPRITES, sprites_lem_drain_idx, b.drainX, b.drainY, 1.0f, 1.0f, sinf(b.t * 4.0f) * 0.12f);
+		if (in3D) {
+			const float poolH = fmaxf(1.0f, bottomY - surfY);
+			const float persp = clampf(poolH * 0.15f, 8.0f, 22.0f);
+			const float backY = surfY - persp;
+			const float midY = surfY + poolH * 0.45f;
+			auto quadGrad = [](float x0, float y0, float x1, float y1, u32 topCol, u32 botCol) {
+				gfx::tri(x0, y0, topCol, x1, y0, topCol, x1, y1, botCol);
+				gfx::tri(x0, y0, topCol, x1, y1, botCol, x0, y1, botCol);
+			};
+			// Submerged depth gradient: sunlit citrus top -> golden mid -> deep amber bottom.
+			const u32 cTop = rgba(252, 234, 64, 126), cMid = rgba(228, 184, 24, 168), cBot = rgba(176, 124, 12, 198);
+			quadGrad(kFillX, surfY, kFillX + kFillW, midY, cTop, cMid);
+			quadGrad(kFillX, midY, kFillX + kFillW, bottomY, cMid, cBot);
+			// Subsurface caustic light beams.
+			const float calm = gSave.calmFx ? 0.0f : 1.0f;
+			for (int i = 0; i < 5; i++) {
+				const float bx0 = kFillX + kFillW * (0.10f + i * 0.20f) + sinf(b.t * 1.4f + i * 1.7f) * 8.0f * calm;
+				const float sway = sinf(b.t * 1.1f + i * 2.1f) * 14.0f * calm;
+				const u32 rayTop = rgba(255, 252, 182, 34), rayBot = rgba(255, 245, 130, 0);
+				gfx::tri(bx0 - 10.0f, surfY, rayTop, bx0 + 10.0f, surfY, rayTop, bx0 + sway + 22.0f, bottomY, rayBot);
+				gfx::tri(bx0 - 10.0f, surfY, rayTop, bx0 + sway + 22.0f, bottomY, rayBot, bx0 + sway - 22.0f, bottomY, rayBot);
+			}
+			// Receding 3D top liquid surface plane with specular meniscus crest.
+			const int segs = 20;
+			const float segW = kFillW / segs;
+			const u32 surfBack = rgba(255, 250, 178, 155), surfFront = rgba(250, 232, 74, 215);
+			const u32 crestCol = rgba(255, 254, 200, 238), rimCol = rgba(255, 254, 215, 175);
+			for (int i = 0; i < segs; i++) {
+				const float x0 = kFillX + i * segW, x1 = x0 + segW + 0.6f;
+				const float fw0 = calm * sinf(b.t * 4.0f + i * 0.55f) * 2.2f;
+				const float fw1 = calm * sinf(b.t * 4.0f + (i + 1) * 0.55f) * 2.2f;
+				const float bw0 = calm * sinf(b.t * 3.1f + i * 0.45f + 1.2f) * 1.2f;
+				const float bw1 = calm * sinf(b.t * 3.1f + (i + 1) * 0.45f + 1.2f) * 1.2f;
+				gfx::tri(x0, backY + bw0, surfBack, x1, backY + bw1, surfBack, x1, surfY + fw1, surfFront);
+				gfx::tri(x0, backY + bw0, surfBack, x1, surfY + fw1, surfFront, x0, surfY + fw0, surfFront);
+				gfx::rect(x0, backY + bw0 - 1.0f, segW + 0.8f, 2.0f, rimCol);
+				gfx::rect(x0, surfY + fw0 - 1.5f, segW + 0.8f, 3.2f, crestCol);
+			}
+			// Depth-layered rising bubbles inside the pool.
+			for (int i = 0; i < 10; i++) {
+				const float ph = fmodf(b.t * (0.28f + (i % 3) * 0.08f) * (gSave.calmFx ? 0.25f : 1.0f) + i * 0.37f, 1.0f);
+				const float bx = kFillX + kFillW * (0.06f + ((i * 73 + 19) % 88) * 0.01f) + sinf(b.t * 2.3f + i) * 4.0f * calm;
+				const float by = lerpf(bottomY - 6.0f, surfY + 4.0f, ph);
+				const bool front = (i & 1) != 0;
+				const float r = front ? (2.6f + (i % 3) * 0.9f) : (1.8f + (i % 2) * 0.6f);
+				gfx::rect(bx - r, by - r, r * 2.0f, r * 2.0f, front ? rgba(255, 250, 175, 165) : rgba(215, 175, 40, 130));
+				if (front) gfx::rect(bx - r * 0.5f, by - r * 0.5f, r * 0.65f, r * 0.65f, rgba(255, 255, 240, 210));
+			}
+			if (b.drainOn) {
+				const float pulse = 0.85f + 0.15f * sinf(b.t * 8.0f);
+				gfx::sprite(SHEET_SPRITES, sprites_ring_idx, b.drainX, surfY, pulse * 0.95f, pulse * 0.35f, 0, rgba(255, 252, 200, 185));
+				gfx::sprite(SHEET_SPRITES, sprites_ring_idx, b.drainX, b.drainY, pulse * 0.9f, pulse * 0.9f, 0, rgba(160, 245, 255, 225));
+				m3d::begin(kFieldW, gfx::stereoPerZ(), true);
+				m3d::Skin drainSkin = {0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.72f};
+				m3d::setSkin(&drainSkin);
+				m3d::Pose dpose = {b.drainX, b.drainY, 34.0f, 0.52f, sinf(b.t * 2.1f) * 0.45f, sinf(b.t * 4.0f) * 0.14f, 1.05f, 0, 0, 0};
+				m3d::draw(m3d::MESH_DRAIN, m3d::PART_WHOLE, dpose);
+				m3d::setSkin(nullptr);
+				m3d::end();
+			}
+		} else {
+			gfx::rect(kFillX, surfY, kFillW, fmaxf(0.0f, bottomY - surfY), rgba(246, 224, 48, 136));
+			const int segs = 16;
+			const float segW = kFillW / segs;
+			for (int i = 0; i < segs; i++) {
+				const float wave = gSave.calmFx ? 0.0f : sinf(b.t * 4.0f + i * 0.65f) * 2.2f;
+				gfx::rect(kFillX + i * segW, surfY + wave - 2.0f, segW + 1.0f, 5.0f, rgba(255, 248, 156, 210));
+			}
+			if (b.drainOn) {
+				const float pulse = 0.85f + 0.15f * sinf(b.t * 8.0f);
+				gfx::sprite(SHEET_SPRITES, sprites_ring_idx, b.drainX, b.drainY, pulse * 0.9f, pulse * 0.9f, 0, rgba(160, 245, 255, 225));
+				gfx::sprite(SHEET_SPRITES, sprites_lem_drain_idx, b.drainX, b.drainY, 1.0f, 1.0f, sinf(b.t * 4.0f) * 0.12f);
+			}
 		}
 	}
 }
@@ -1700,6 +1767,13 @@ void Game::drawBoss(bool solid) const {
 				m3d::draw(m3d::MESH_WORM, m3d::PART_WHOLE, wpose);
 			}
 		}
+		if ((b.id == BOSS_KING && b.crownOut <= 0) || (b.royal && b.id != BOSS_KING)) {
+			m3d::Skin crownSkin = {0.0f, 1.0f, 1.0f, 1.0f, alpha, 0.75f};
+			m3d::setSkin(&crownSkin);
+			const float cs = b.radius / (b.royal ? 30.0f : 36.0f);
+			m3d::Pose cpose = {bx, by - b.radius * sy - (b.id == BOSS_KING ? 1.0f : 6.0f), 30, 0.22f, b.t * 0.4f, wob, cs, 0, 0, 0};
+			m3d::draw(m3d::MESH_CROWN, m3d::PART_WHOLE, cpose);
+		}
 		m3d::setSkin(nullptr);
 		m3d::end();
 		gfx::sprite(SHEET_SPRITES, faceIdx, bx, by, art * sx, art * sy, wob, tint);
@@ -1760,8 +1834,8 @@ void Game::drawBoss(bool solid) const {
 			gfx::sprite(SHEET_SPRITES, sprites_ring_idx, wx, wy, 0.58f, 0.58f, 0, rgba(255, 110, 120, (u8)(180 + 70 * sinf(b.t * 16))));
 		}
 	}
-	// The King wears his crown; any Royal boss wears a golden crown too.
-	if ((b.id == BOSS_KING && b.crownOut <= 0) || (b.royal && b.id != BOSS_KING))
+	// The King wears his crown; any Royal boss wears a golden crown too (2D mode draws it here; 3D mode draws MESH_CROWN above).
+	if (!drawing3D() && ((b.id == BOSS_KING && b.crownOut <= 0) || (b.royal && b.id != BOSS_KING)))
 		drawCrown(bx, by - b.radius * sy - (b.id == BOSS_KING ? 2 : 8), b.radius / (b.royal ? 32.0f : 40.0f), rgba(255, 210, 70, (int)(255 * alpha)));
 	if (b.attack == KING_FUSE) {
 		const float fx = visX, fy = b.y - b.radius - 8;
@@ -1795,13 +1869,19 @@ void Game::bossPreview(int bossId, bool royal, float x, float y, float radius, f
 		const float s = radius / kMeshDiv[bi];
 		m3d::Pose pose3 = {x, y, 0, 0, t * 0.55f, wob, s, 0, 0, 0};
 		m3d::draw(kBossMeshId[bi], m3d::PART_WHOLE, pose3);
+		if (bi == BOSS_KING || royal) {
+			m3d::Skin crownSkin = {0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.75f};
+			m3d::setSkin(&crownSkin);
+			m3d::Pose cpose = {x, y - radius - (bi == BOSS_KING ? 1.0f : 6.0f), 0, 0.22f, t * 0.55f, wob, radius / (royal ? 30.0f : 36.0f), 0, 0, 0};
+			m3d::draw(m3d::MESH_CROWN, m3d::PART_WHOLE, cpose);
+		}
 		m3d::setSkin(nullptr);
 		m3d::end();
 		gfx::sprite(SHEET_SPRITES, kBossFaceIdx[bi], x, y, art, art, wob, WHITE);
 	} else {
 		gfx::sprite(SHEET_SPRITES, kBossBodyIdx[bi], x, y, art, art, wob, WHITE);
+		if (bi == BOSS_KING || royal)
+			drawCrown(x, y - radius - (bi == BOSS_KING ? 2 : 7), radius / (royal ? 32.0f : 40.0f), rgba(255, 210, 70));
 	}
-	if (bi == BOSS_KING || royal)
-		drawCrown(x, y - radius - (bi == BOSS_KING ? 2 : 7), radius / (royal ? 32.0f : 40.0f), rgba(255, 210, 70));
 }
 #endif

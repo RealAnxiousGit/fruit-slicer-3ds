@@ -57,6 +57,13 @@ void beginBottom();
 void windowArea(float* x, float* y, float* w, float* h);
 void beginCorner();
 void topToCorner(float x, float y, float* cx, float* cy);  // a point on the picture side, in beginCorner's units (not the 3DS)
+#if !PORT_3DS
+void signToTop(float sx, float sy, float* tx, float* ty);
+u32 logoLetterColor(int letterIdx, float yFrac, bool rainbow, float timeSec);
+void drawVectorLogo(float cx, float cy, float scale, bool rainbow, float timeSec);
+bool logoHitTest(float lx, float ly, float cx, float cy, float scale);
+int vectorLogoTriCount();
+#endif
 bool onTop();
 // Stereo plane for following top-screen draws: >0 pops out, <0 sinks behind the screen.
 void setDepth(float depth);

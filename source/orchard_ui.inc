@@ -955,6 +955,88 @@ static Room50CutsceneBox room50CutsceneBox(const char* line = nullptr) {
 	return B;
 }
 
+struct DiagLine {
+	int start, len;
+	float width, scale;
+};
+
+static int orcLayoutLines(const char* full, float maxW, float scale, int maxLines, DiagLine* outLines) {
+	int line = 0;
+	int pos = 0;
+	const int total = (int)strlen(full);
+	char buf[256];
+	while (pos < total && line < maxLines) {
+		while (pos < total && full[pos] == ' ') pos++;
+		if (pos >= total) break;
+		const char* p = full + pos;
+		const int rem = total - pos;
+		const float fullW = gfx::textWidth(p, scale);
+		int len = rem;
+		if (fullW > maxW && line < maxLines - 1) {
+			int split = -1;
+			for (int i = 1; i < rem && i < (int)sizeof(buf) - 1; i++) {
+				if (p[i] == ' ') {
+					memcpy(buf, p, i);
+					buf[i] = 0;
+					if (gfx::textWidth(buf, scale) <= maxW) split = i;
+					else break;
+				}
+			}
+			if (split < 0) {
+				for (int i = 1; i < rem; i++) {
+					if (p[i] == ' ') { split = i; break; }
+				}
+			}
+			if (split > 0) len = split;
+		}
+		if (len >= (int)sizeof(buf)) len = (int)sizeof(buf) - 1;
+		memcpy(buf, p, len);
+		buf[len] = 0;
+		float ls = scale;
+		float lw = gfx::textWidth(buf, ls);
+		if (lw > maxW && lw > 0) {
+			ls *= maxW / lw;
+			lw = gfx::textWidth(buf, ls);
+		}
+		outLines[line++] = {pos, len, lw, ls};
+		pos += len;
+	}
+	return line;
+}
+
+static constexpr float kDiagCharAnimDur = 0.14f;
+static int sDiagAnimLine = -1;
+static float sDiagAnimClock = 0.0f;
+static float sDiagAnimPrevChars = -1.0f;
+static float sDiagRevealAt[256];
+
+static void resetDiagAnim(int line) {
+	sDiagAnimLine = line;
+	sDiagAnimClock = 0.0f;
+	sDiagAnimPrevChars = 0.0f;
+	for (int i = 0; i < 256; i++) sDiagRevealAt[i] = -1.0f;
+}
+
+static void room50CharAnim(float age, bool calm, float* outScale, float* outDx, float* outDy, float* outAlpha) {
+	const float t = clampf(age / kDiagCharAnimDur, 0.0f, 1.0f);
+	const float inv = 1.0f - t;
+	const float easeOut = 1.0f - inv * inv * inv;
+	if (calm) {
+		*outScale = lerpf(0.80f, 1.0f, easeOut);
+		*outDx = 0.0f;
+		*outDy = inv * inv * 1.5f;
+		*outAlpha = clampf(t * 2.0f, 0.0f, 1.0f);
+	} else {
+		const float u = t - 1.0f;
+		const float c1 = 2.1f, c3 = c1 + 1.0f;
+		const float back = 1.0f + c3 * u * u * u + c1 * u * u;
+		*outScale = lerpf(0.32f, 1.0f, back);
+		*outDx = (1.0f - easeOut) * 3.0f;
+		*outDy = (1.0f - easeOut) * 3.5f;
+		*outAlpha = clampf(t * 2.4f, 0.0f, 1.0f);
+	}
+}
+
 static void drawRoom50Cutscene() {
 	const Orchard& o = sGame.orc;
 	const int idx = o.dialogueLine < 10 ? o.dialogueLine : 9;
@@ -962,14 +1044,57 @@ static void drawRoom50Cutscene() {
 	const int total = (int)strlen(full);
 	int shown = (int)o.dialogueChars;
 	if (shown > total) shown = total;
-	char sub[256];
-	snprintf(sub, sizeof sub, "%.*s", shown, full);
+
+	if (o.dialogueLine != sDiagAnimLine || o.dialogueChars < sDiagAnimPrevChars) {
+		sDiagAnimLine = o.dialogueLine;
+		sDiagAnimPrevChars = o.dialogueChars;
+		for (int i = 0; i < 256; i++) sDiagRevealAt[i] = -1.0f;
+		for (int i = 0; i < shown && i < 256; i++) {
+			sDiagRevealAt[i] = (shown >= total) ? -10.0f : (sDiagAnimClock - (o.dialogueChars - (float)i) / 28.0f);
+		}
+	}
 
 	const Room50CutsceneBox B = room50CutsceneBox(full);
 	gfx::rect(kFillX, kFillX, kFillW, kFillW, rgba(8, 6, 12, 185));
 	drawPlank(B.x, B.y, B.w, B.h, false, false);
 	gfx::rect(B.x + 4, B.y + 4, B.w - 8, 2, rgba(255, 110, 95, 180));
-	orcWrap(sub, kFieldW * 0.5f, B.textY, B.textScale, B.maxW, B.step, COL_CREAM, B.maxLines);
+
+	DiagLine lines[8];
+	const int lineCount = orcLayoutLines(full, B.maxW, B.textScale, B.maxLines, lines);
+	const bool calm = gSave.calmFx != 0;
+	for (int pass = 0; pass < 2; pass++) {
+		float y = B.textY;
+		for (int li = 0; li < lineCount; li++) {
+			const DiagLine& ln = lines[li];
+			float penX = kFieldW * 0.5f - ln.width * 0.5f;
+			for (int k = 0; k < ln.len; k++) {
+				const int ci = ln.start + k;
+				const char ch = full[ci];
+				const float adv = gfx::glyphWidth(ch, ln.scale);
+				if (ci < shown && ch != ' ') {
+					const float revealT = (ci < 256 && sDiagRevealAt[ci] > -5.0f) ? sDiagRevealAt[ci] : (sDiagAnimClock - kDiagCharAnimDur);
+					const float age = (ci < 256 && sDiagRevealAt[ci] < -5.0f) ? kDiagCharAnimDur : (sDiagAnimClock - revealT);
+					float mulS = 1.0f, dx = 0.0f, dy = 0.0f, alpha = 1.0f;
+					room50CharAnim(age, calm, &mulS, &dx, &dy, &alpha);
+					const float s = ln.scale * mulS;
+					const float gx = penX + adv * 0.5f + dx;
+					const float gy = y + (ln.scale - s) * gfx::gTextBoost * 20.0f + dy;
+					const u32 col = withAlpha(COL_CREAM, alpha);
+					if (pass == 0 && gfx::gHighContrast) {
+						const float off = 1.0f + s * gfx::gTextBoost * 1.2f;
+						const u32 edge = C2D_Color32(0, 0, 0, (u8)(230.0f * alpha));
+						gfx::glyph(ch, gx - off, gy, s, s, edge, false);
+						gfx::glyph(ch, gx + off, gy, s, s, edge, false);
+						gfx::glyph(ch, gx, gy - off, s, s, edge, false);
+						gfx::glyph(ch, gx, gy + off, s, s, edge, false);
+					}
+					gfx::glyph(ch, gx, gy, s, s, col, pass == 1);
+				}
+				penX += adv;
+			}
+			y += B.step;
+		}
+	}
 	if (shown >= total && !o.dialogueWaitRelease) {
 		const float bob = gSave.calmFx ? 0.0f : sinf(sTime * 7.5f) * 1.4f;
 		const float ax = B.x + B.w - 15.0f;
@@ -983,6 +1108,8 @@ static void drawRoom50Cutscene() {
 static bool updateRoom50Cutscene(const Input& in, bool wasTouching) {
 	Orchard& o = sGame.orc;
 	if (!o.cutscene) return false;
+	if (o.dialogueLine != sDiagAnimLine || o.dialogueChars < sDiagAnimPrevChars) resetDiagAnim(o.dialogueLine);
+	sDiagAnimClock += kDt;
 	const int idx = o.dialogueLine < 10 ? o.dialogueLine : 9;
 	const char* full = kRoom50Lines[idx];
 	const int total = (int)strlen(full);
@@ -1002,6 +1129,7 @@ static bool updateRoom50Cutscene(const Input& in, bool wasTouching) {
 			if (sTime < sLastBlipT || (o.dialogueLine == 0 && o.dialogueChars < 0.5f)) sLastBlipT = -10.0f;
 			while (o.dialogueLastChar + 1 < cur) {
 				o.dialogueLastChar++;
+				if (o.dialogueLastChar >= 0 && o.dialogueLastChar < 256) sDiagRevealAt[o.dialogueLastChar] = sDiagAnimClock;
 				const char ch = full[o.dialogueLastChar];
 				if (ch != ' ' && ch != '\n') {
 					const float cooldown = proceedHeld ? 0.055f : 0.042f;
@@ -1024,11 +1152,13 @@ static bool updateRoom50Cutscene(const Input& in, bool wasTouching) {
 			}
 		}
 		if ((int)o.dialogueChars >= total && proceedHeld) o.dialogueWaitRelease = true;
+		sDiagAnimPrevChars = o.dialogueChars;
 		return true;
 	}
 
 	if (o.dialogueWaitRelease) {
 		if (!proceedHeld) o.dialogueWaitRelease = false;
+		sDiagAnimPrevChars = o.dialogueChars;
 		return true;
 	}
 
@@ -1041,12 +1171,14 @@ static bool updateRoom50Cutscene(const Input& in, bool wasTouching) {
 			o.dialogueLastChar = -1;
 			o.dialoguePauseT = 0;
 			o.dialogueWaitRelease = false;
+			resetDiagAnim(o.dialogueLine);
 			if (o.dialogueLine == 5 && !o.tensionStarted) {
 				o.tensionStarted = true;
 				audio::tensionMusic(true);
 			}
 		}
 	}
+	sDiagAnimPrevChars = o.dialogueChars;
 	return true;
 }
 

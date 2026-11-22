@@ -2217,10 +2217,23 @@ static inline bool onThisScreen(float y, float r, bool top, float oy) {
 static constexpr float kFruitZ = 8.0f;
 static constexpr float kBombZ = 42.0f;  // in front of the fruit, so it's never hidden behind one
 
+static int powerMesh(ObjKind k) {
+	switch (k) {
+		case OBJ_FREEZE: return m3d::MESH_PW_FREEZE;
+		case OBJ_DOUBLE: return m3d::MESH_PW_DOUBLE;
+		case OBJ_FRENZY: return m3d::MESH_PW_FRENZY;
+		case OBJ_MAGNET: return m3d::MESH_PW_MAGNET;
+		case OBJ_WIDE: return m3d::MESH_PW_WIDE;
+		case OBJ_SHIELD: return m3d::MESH_PW_SHIELD;
+		case OBJ_TIME: return m3d::MESH_PW_TIME;
+		default: return -1;
+	}
+}
+
 void Game::drawObjects3D(bool top, float ox, float oy) const {
 	bool any = finaleOn && !top;
 	for (const auto& h : halves) any = any || (h.on && onThisScreen(h.y, 30, top, oy));
-	for (const auto& o : objs) any = any || (o.on && (o.kind <= OBJ_BOMB || o.kind == OBJ_COIN || o.kind == OBJ_SEED) && onThisScreen(o.y, 34, top, oy));
+	for (const auto& o : objs) any = any || (o.on && (o.kind <= OBJ_BOMB || o.kind == OBJ_COIN || o.kind == OBJ_SEED || powerMesh(o.kind) >= 0) && onThisScreen(o.y, 34, top, oy));
 	if (!any) return;
 
 	jobs::wait();  // any cuts asked for this frame must be finished before the GPU sees them
@@ -2247,7 +2260,7 @@ void Game::drawObjects3D(bool top, float ox, float oy) const {
 		}
 	}
 	m3d::setSkin(nullptr);
-	// Coins flip end over end as they fly; seeds tumble in 3D too.
+	// Coins flip end over end as they fly; seeds and power-ups tumble in 3D too.
 	for (const auto& o : objs) {
 		if (!o.on || !onThisScreen(o.y, 34, top, oy)) continue;
 		if (o.kind == OBJ_COIN) {
@@ -2256,6 +2269,9 @@ void Game::drawObjects3D(bool top, float ox, float oy) const {
 		} else if (o.kind == OBJ_SEED) {
 			m3d::Pose pose = {o.x + ox, o.y + oy, kFruitZ, o.rx, o.ry, o.rot, 0.58f, 0, 0, 0};
 			m3d::draw(m3d::MESH_SEED, m3d::PART_WHOLE, pose);
+		} else if (powerMesh(o.kind) >= 0) {
+			m3d::Pose pose = {o.x + ox, o.y + oy, kFruitZ, 0.22f * sinf(o.age * 2.7f), o.age * 2.4f, sinf(o.age * 3.0f) * 0.22f, 1.0f, 0, 0, 0};
+			m3d::draw(powerMesh(o.kind), m3d::PART_WHOLE, pose);
 		}
 	}
 	if (finaleOn && !top) {
@@ -2457,7 +2473,7 @@ void Game::drawField(const Blade& blade) const {
 				if (!solid) gfx::sprite(SHEET_SPRITES, sprites_drop_idx, o.x, o.y, kSeedSize, kSeedSize, o.rot, kSeedColour);
 				break;
 			default:
-				if (powerSprite(o.kind) >= 0) gfx::sprite(SHEET_SPRITES, powerSprite(o.kind), o.x, o.y, 1, 1, sinf(o.age * 3) * 0.3f);
+				if (!solid && powerSprite(o.kind) >= 0) gfx::sprite(SHEET_SPRITES, powerSprite(o.kind), o.x, o.y, 1, 1, sinf(o.age * 3) * 0.3f);
 				break;
 		}
 	}
@@ -2555,6 +2571,7 @@ void Game::drawFieldTop() const {
 			if (!use3D()) gfx::sprite(SHEET_SPRITES, sprites_drop_idx, o.x + kTopOffsetX, o.y + kTopOffsetY, kSeedSize, kSeedSize, o.rot, kSeedColour);
 			continue;
 		}
+		if (use3D()) continue;
 		int spr = powerSprite(o.kind);
 		if (spr < 0) continue;
 		gfx::sprite(SHEET_SPRITES, spr, o.x + kTopOffsetX, o.y + kTopOffsetY, 1, 1, sinf(o.age * 3) * 0.3f);

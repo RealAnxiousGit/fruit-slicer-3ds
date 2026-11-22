@@ -237,8 +237,9 @@ struct Input {
 	u32 down, held, repeat;
 	bool touching;
 	int tx, ty;
-	bool hovering;  // a mouse cursor rests at tx, ty with no button held
-	int wheel;      // mouse wheel notches this frame, up is positive
+	bool hovering;    // a mouse cursor rests at tx, ty with no button held
+	bool hoverSlice;  // Slice Without Holding: moving mouse slices gameplay without clicking UI
+	int wheel;        // mouse wheel notches this frame, up is positive
 	float stickX, stickY;  // a stick (or two added up), -1 to 1, down is positive
 	bool stickSlice;       // the slice button: right trigger, or A, L or R on a 3DS
 	u8 mode;               // 0 keep current, 1+InputMode sets gInputMode explicitly

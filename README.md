@@ -1,8 +1,8 @@
-# Fruit Slicer 3DS
+# Fruit Slicer 3DS: Orchard Blast
 
-A free, fan-made fruit-slicing arcade game for the Nintendo 3DS. Swipe the touch screen to cut fruit out of the air, chain combos and stay away from the bombs.
+A free, fan-made fruit-slicing arcade game for the Nintendo 3DS. Swipe the touch screen to cut fruit out of the air, chain combos, draft roguelike upgrades, battle seeded bosses, and stay away from the bombs.
 
-**Version 1.1.0.** Tested on a real New 2DS XL and in the Azahar emulator. Old 3DS hardware and the look of stereoscopic 3D are still unconfirmed, so reports are welcome.
+**Version 2.0.0.** Tested on a real New 2DS XL and in the Azahar emulator. Old 3DS hardware and the look of stereoscopic 3D are still unconfirmed, so reports are welcome.
 
 <p>
   <img src="docs/screenshots/title.png" width="150" alt="Title screen with the logo on top and a menu of fruit to slice below">
@@ -27,6 +27,12 @@ A free, fan-made fruit-slicing arcade game for the Nintendo 3DS. Swipe the touch
 | Combo Rush | Only combos score: a fruit on its own is worth nothing, and each one in a long combo is worth more, up to 12. The bigger your combo, the faster fruit comes. Swipe bonuses are doubled. One bomb or an empty combo meter ends the run, and there is no clock. |
 | Daily Fruit | 60 seconds, the same run for everyone that day, on every platform. A calendar keeps your daily scores and streak, and each day's first run pays a coin bonus. |
 | Beat Slice | 60 seconds to music. Fruit is thrown as usual, but only slices on the beat score, and a streak of them scores more. The board's edges glow when a slice will count. Pick any track you own from the track list. |
+| Orchard Blast | Endless roguelike mode. Slicing fruit grants XP to draft uncapped upgrades and active/passive charms (`L`/`R` slots, `Select` for Inventory, free and coin Rerolls). Face 7 escalating bosses (plus Royal variants and Room 25+ Milestone Bosses) and resume saved runs anytime. |
+| Boss Rush | Pick a starting build (Tank, Glass Cannon, Charmer) and fight 5 escalating bosses back to back for the fastest clear time. |
+| Recipe | Fill 3-4 ingredient Smoothie orders within 60 seconds; wrong fruit spoils the cup and bombs cost 10 seconds. |
+| Sharpshooter | 60 seconds of colored shape rings. Only slice the called shape! |
+| Juggle | Keep fruit bouncing airborne cleanly; 3 drops or knocked bombs end the run. |
+| StreetPass Challenge | Classic 3-strike mode synced with your outgoing `cecd:u` StreetPass card and custom greeting message. |
 
 Pick a Game shows six signs a page. The arrows beside the signs, or left and right, turn the page.
 
@@ -58,7 +64,11 @@ Pick a Game shows six signs a page. The arrows beside the signs, or left and rig
 
 **Coins** spin through the air now and then. Slicing one is worth 5 points and 5 coins, and every 100 points of a run pays 1 more. A coin is never a strike, and a missed one costs nothing.
 
-**Shop:** spend coins on board themes, blade trails, splat colours, fruit skins (Solid Gold and Clear Glass) and thirteen recorded songs. Each tab shows six items; drag with the stylus for the rest. Items are tried on while selected; a song plays for 8 seconds, then your own music comes back. Use puts a song on as both the Menu and the Game Music.
+**Shop:** spend coins on board themes, blade trails, splat colours, fruit skins (Solid Gold, Clear Glass, and Holographic with a custom PICA200 rainbow shader) and recorded/boss songs. Each tab shows six items; drag with the stylus for the rest. Items are tried on while selected; a song plays for 8 seconds, then your own music comes back. Use puts a song on as both the Menu and the Game Music.
+
+**Online Leaderboards & StreetPass:** submit personal bests with a 6-character tag across all modes over Wi-Fi (`libcurl` + `Mbed TLS`), or swap score cards and greetings via `cecd:u`. **Stats** has three tabs: **Personal**, **StreetPass**, and **Global** (Top 100 rankings).
+
+**Top-Screen Sceneries:** choose from 6 seamless parallax sceneries (`Dusk Orchard`, `Morning Meadow`, `Moonlit Bay`, `Sakura Grove`, `Autumn Harvest`, `Starlit Mountain`) in `Options -> Visuals -> Scenery`.
 
 **Seasonal boards:** late October, December and spring bring pumpkins, snow or blossom in place of a free board, never one you bought. Seasonal Boards in Advanced Visuals turns them off.
 
@@ -72,11 +82,12 @@ Each sign shows the main settings. Fine tuning and resets are on the Advanced pa
 
 | Section | Settings |
 | --- | --- |
-| Audio | Sound Effects, Music and Menu Sounds sliders. Menu Music and Game Music each choose Auto or a track: Orchard Morning, Picnic Stroll, Sleepy Meadow, Lantern Walk, Still Water, Moss Garden, Bamboo Breeze, Drifting Clouds, or a Shop song you own. Latency Test and Beat Timing. |
+| Audio | Sound Effects, Music and Menu Sounds sliders. Menu Music, Game Music and Boss Music each choose Auto/Off or a track. Latency Test and Beat Timing. |
 | Visuals | Art Style (3D Models or 2D Stickers), Board, Scenery, Blade, Trail and 3D Depth. **Advanced Visuals:** Effects (None, Low, Medium, Full) and the speed savers Background, 3D Detail, Slice Style and Transitions, plus Seasonal Boards. |
 | Gameplay and Controls | Stylus Sensitivity, Difficulty (Easy, Normal, Hard, Insane), Misses Allowed, and Stick Slicing (Hold or Flick) and Point Speed for the Circle Pad. **Advanced Gameplay:** Fruit Speed, Bomb Amount, Slice Forgiveness, Frenzy Drain and Snap Assist. |
 | Accessibility | UI Scale, Larger Text, High Contrast, Colour-blind Mode, Slice Assist and Sound Captions. **Advanced Accessibility:** Calm Effects, Screen Shake and Game Speed. |
-| Scores and Data | The Speed Test, Check for Updates, Check Now, and reset scores or everything. |
+| StreetPass | Enable/disable StreetPass, edit your greeting message, update outbox, and preview your top-screen card. |
+| Scores and Data | The Speed Test, Check for Updates, Check Now, reset leaderboard name, and reset scores or everything. |
 
 A New 3DS starts with 3D models and full effects. An Old 3DS starts with 2D stickers and lighter settings, and can still choose 3D. Every section has its own reset. Saves from 0.4 carry over to 1.0: scores and settings are kept, and coins start at 0. Saves from 1.0 carry over to 1.1 whole, except that Zen and Combo Rush bests start fresh because those modes have new rules. Saves from before 0.4 are not carried over.
 

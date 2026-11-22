@@ -1402,6 +1402,137 @@ static void labV2Fixes() {
 		}
 		labCheck(guideClassicOk && guideOrchardOk && guideSharpOk && guideJuggleOk,
 		         "All corrected Mode Guides match actual gameplay mechanics");
+
+		// Dialogue zoom-in curve & pre-wrapped line stability.
+		{
+			float s0 = 0, dx0 = 0, dy0 = 0, a0 = 0;
+			float sMid = 0, dxMid = 0, dyMid = 0, aMid = 0;
+			float sEnd = 0, dxEnd = 0, dyEnd = 0, aEnd = 0;
+			room50CharAnim(0.0f, false, &s0, &dx0, &dy0, &a0);
+			room50CharAnim(kDiagCharAnimDur * 0.55f, false, &sMid, &dxMid, &dyMid, &aMid);
+			room50CharAnim(kDiagCharAnimDur, false, &sEnd, &dxEnd, &dyEnd, &aEnd);
+			DiagLine lines[8];
+			const Room50CutsceneBox B = room50CutsceneBox(kRoom50Lines[3]);
+			const int lc = orcLayoutLines(kRoom50Lines[3], B.maxW, B.textScale, B.maxLines, lines);
+			labCheck(s0 < 0.5f && a0 == 0.0f && sMid > 1.03f && fabsf(sEnd - 1.0f) < 0.001f &&
+			             fabsf(dxEnd) < 0.001f && fabsf(dyEnd) < 0.001f && aEnd == 1.0f && lc >= 2 && lines[0].start == 0,
+			         "Dialogue letters zoom in smoothly with overshoot and pre-wrap cleanly without jumping");
+		}
+
+		// Slice Without Holding: hoverSlice slices gameplay without triggering dialogue or upgrade card clicks.
+		{
+			const Screen wasScr = sScreen;
+			const u8 wasNoHold = gSave.sliceNoHold;
+			gSave.sliceNoHold = 1;
+			sScreen = SCREEN_GAME;
+			sGame.start(MODE_ORCHARD);
+			sGame.phase = PHASE_PLAY;
+			Orchard& o = sGame.orc;
+			o.cutscene = true;
+			o.dialogueLine = 0;
+			o.dialogueChars = (float)strlen(kRoom50Lines[0]);
+			o.dialogueWaitRelease = false;
+			Input hoverIn = {};
+			hoverIn.hoverSlice = true;
+			hoverIn.tx = (int)(kFieldW * 0.5f);
+			hoverIn.ty = (int)(kFieldH - 30.0f);
+			updateFrame(hoverIn, false);
+			const bool diagUntouched = o.cutscene && o.dialogueLine == 0;
+			o.cutscene = false;
+
+			o.choosing = true;
+			o.offerCount = 3;
+			o.offer[0] = CARD_BLADE;
+			o.offer[1] = CARD_HEALTH;
+			o.offer[2] = CARD_ARMOR;
+			sOrcOpenT = 1.0f;
+			float cx = 0, cy = 0, cw = 0, ch = 0;
+			orcCardRect(0, 3, &cx, &cy, &cw, &ch);
+			hoverIn.tx = (int)(cx + cw * 0.5f);
+			hoverIn.ty = (int)(cy + ch * 0.5f);
+			updateFrame(hoverIn, false);
+			const bool cardUntouched = o.choosing && o.upgrade[CARD_BLADE] == 0;
+			o.choosing = false;
+
+			sGame.start(MODE_ZEN);
+			sGame.phase = PHASE_PLAY;
+			sGame.objs[0] = {};
+			sGame.objs[0].on = true;
+			sGame.objs[0].kind = OBJ_FRUIT;
+			sGame.objs[0].fruit = 0;
+			sGame.objs[0].x = kFieldW * 0.5f;
+			sGame.objs[0].y = kFieldH * 0.5f;
+			sGame.objs[0].radius = 28.0f;
+			sBlade.reset();
+			Input h1 = {};
+			h1.hoverSlice = true;
+			h1.tx = (int)(kFieldW * 0.5f - 40.0f);
+			h1.ty = (int)(kFieldH * 0.5f);
+			updateFrame(h1, false);
+			Input h2 = h1;
+			h2.tx = (int)(kFieldW * 0.5f + 40.0f);
+			updateFrame(h2, false);
+			const bool bladeSliced = sBlade.active && !sGame.objs[0].on;
+			sBlade.reset();
+			gSave.sliceNoHold = wasNoHold;
+			sScreen = wasScr;
+			labCheck(diagUntouched && cardUntouched && bladeSliced,
+			         "Slice Without Holding triggers gameplay blade slicing without clicking dialogue or upgrade cards");
+		}
+
+		// 3D prop meshes (drain, crown, power-ups) load cleanly when 3D art is active.
+		{
+			const u8 wasArt = gSave.artStyle;
+			gSave.artStyle = ART_3D;
+			for (int i = 0; i < 5; i++) m3d::sync();
+			const bool m3dOk = (!m3d::usable() || (m3d::ready() && m3d::MESH_COUNT == 43)) &&
+			                   m3d::MESH_PW_FREEZE + 6 == m3d::MESH_PW_TIME;
+			char md[64];
+			snprintf(md, sizeof md, "usable=%d ready=%d count=%d", (int)m3d::usable(), (int)m3d::ready(), m3d::MESH_COUNT);
+			gSave.artStyle = wasArt;
+			for (int i = 0; i < 5; i++) m3d::sync();
+			labCheck(m3dOk, "Updated 3D model bundle (drain, crown, and 7 power-ups) loads cleanly", md);
+		}
+
+#if !PORT_3DS
+		// Universal vector logo + per-letter rainbow Easter egg.
+		{
+			const int tris = gfx::vectorLogoTriCount();
+			const u32 cA0 = gfx::logoLetterColor(0, 0.5f, true, 0.0f);
+			const u32 cA1 = gfx::logoLetterColor(4, 0.5f, true, 0.0f);
+			const u32 cA2 = gfx::logoLetterColor(0, 0.5f, true, 0.6f);
+			const Screen wasScr = sScreen;
+			const u8 wasTrans = gSave.transitions;
+			gSave.transitions = 0;
+			sScreen = SCREEN_TITLE;
+			sSliding = false;
+			sFade = 0;
+			sQuitT = -1;
+			sQuitHold = 0;
+			sLogoRainbow = false;
+			sLogoLastScreen = SCREEN_TITLE;
+			sLogoBox = {200.0f, 66.0f, 1.0f, true};
+			float sx = 0, sy = 0;
+			gfx::topToCorner(200.0f, 66.0f, &sx, &sy);
+			Input click = {};
+			click.touching = true;
+			click.tx = (int)(sx + 0.5f);
+			click.ty = (int)(sy + 0.5f);
+			updateFrame(click, false);
+			const bool toggledOn = sLogoRainbow;
+			updateFrame(click, false);
+			const bool toggledOff = !sLogoRainbow;
+			updateFrame(click, false);
+			const bool reOn = sLogoRainbow;
+			goTo(SCREEN_MODES, 1);
+			const bool resetOnScreenChange = !sLogoRainbow;
+			sScreen = wasScr;
+			sLogoLastScreen = wasScr;
+			gSave.transitions = wasTrans;
+			labCheck(tris > 500 && cA0 != cA1 && cA0 != cA2 && toggledOn && toggledOff && reOn && resetOnScreenChange,
+			         "Universal vector logo shifts per-letter rainbow hue on click and resets on second click or screen change");
+		}
+#endif
 	}
 }
 
