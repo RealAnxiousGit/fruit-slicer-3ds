@@ -209,6 +209,7 @@ int main() {
 	cfguInit();
 	u8 model = CFG_MODEL_3DS;
 	if (R_SUCCEEDED(CFGU_GetSystemModel(&model))) gHas3dScreen = model != CFG_MODEL_2DS && model != CFG_MODEL_N2DSXL;
+	gRng.s = (u32)osGetTime() | 1;
 
 	if (!app::init()) {
 		// Without romfs there is nothing to draw; bail out instead of crashing.

@@ -1,6 +1,7 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 #if defined(__ANDROID__) || defined(__linux__)
 #include <unistd.h>
 #endif
@@ -296,8 +297,10 @@ void saveLoad() {
 	gSave.leaderboardName[sizeof gSave.leaderboardName - 1] = 0;
 	gSave.streetPassMsg[sizeof gSave.streetPassMsg - 1] = 0;
 	if (!gSave.streetPassMsg[0]) snprintf(gSave.streetPassMsg, sizeof gSave.streetPassMsg, "Hello! :)");
-	if (gSave.leaderboardId == 0) {
-		gSave.leaderboardId = ((u64)gRng.next() << 32) | (u64)(gRng.next() | 1u);
+	if (gSave.leaderboardId == 0 || gSave.leaderboardId == 0xB891808280036841ull) {
+		const u64 t = (u64)time(nullptr) * 0x9E3779B97F4A7C15ull;
+		gSave.leaderboardId = (((u64)gRng.next() << 32) | (u64)(gRng.next() | 1u)) ^ t;
+		if (gSave.leaderboardId == 0) gSave.leaderboardId = 1ull;
 	}
 	for (u8& t : gSave.bossTrackLast)
 		if (t > kTrackCount) t = 0;

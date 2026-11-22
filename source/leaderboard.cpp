@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "port_api.h"
 
@@ -24,6 +25,59 @@ struct PendingReq {
 	int limit;
 };
 static PendingReq sPending = {};
+static int sActiveMode = -1;
+static bool sActiveEndless = false;
+static u32 sActiveScore = 0;
+static u64 sLoadStartMs = 0;
+
+static void mergeLocalBest(BoardView& v, int mode, bool endless, u32 runScore) {
+	if (mode < 0 || mode >= MODE_COUNT) return;
+	const char* slug = modeSlug(mode, endless);
+	if (slug && !v.mode[0]) snprintf(v.mode, sizeof v.mode, "%s", slug);
+	const u32 savedBest = (mode == MODE_ORCHARD && endless) ? (u32)gSave.endlessBestRoom : gSave.best[mode];
+	const u32 best = runScore > savedBest ? runScore : savedBest;
+	if (best == 0 && !gSave.leaderboardName[0]) return;
+	char myPid[24], myName[8];
+	formatPlayerId(gSave.leaderboardId, myPid, sizeof myPid);
+	cleanName(gSave.leaderboardName[0] ? gSave.leaderboardName : "YOU", myName, sizeof myName);
+	int idx = -1;
+	for (int i = 0; i < v.count; i++) {
+		if (v.entries[i].playerId[0] && strcmp(v.entries[i].playerId, myPid) == 0) {
+			idx = i;
+			break;
+		}
+	}
+	if (idx >= 0) {
+		if (best > v.entries[idx].score) v.entries[idx].score = best;
+		snprintf(v.entries[idx].name, sizeof v.entries[idx].name, "%s", myName);
+		snprintf(v.entries[idx].platform, sizeof v.entries[idx].platform, "%s", platformTag());
+	} else if (v.count < 100) {
+		Entry& e = v.entries[v.count++];
+		snprintf(e.name, sizeof e.name, "%s", myName);
+		snprintf(e.platform, sizeof e.platform, "%s", platformTag());
+		e.score = best;
+		snprintf(e.playerId, sizeof e.playerId, "%s", myPid);
+		if (v.total < v.count) v.total = v.count;
+	}
+	for (int i = 1; i < v.count; i++) {
+		for (int j = i; j > 0 && v.entries[j].score > v.entries[j - 1].score; j--) {
+			const Entry tmp = v.entries[j];
+			v.entries[j] = v.entries[j - 1];
+			v.entries[j - 1] = tmp;
+		}
+	}
+	for (int i = 0; i < v.count; i++) {
+		if (v.entries[i].playerId[0] && strcmp(v.entries[i].playerId, myPid) == 0) {
+			v.yourRank = i + 1;
+			v.yourScore = v.entries[i].score;
+			break;
+		}
+	}
+	if (v.yourScore < best) v.yourScore = best;
+	if (v.yourRank <= 0 && v.yourScore > 0) v.yourRank = v.count > 0 ? v.count : 1;
+	if (v.total < v.yourRank) v.total = v.yourRank;
+	v.status = STATUS_READY;
+}
 
 const char* modeSlug(int mode, bool endless) {
 	if (mode == MODE_ORCHARD && endless) return "orchard_endless";
@@ -308,6 +362,9 @@ bool parseResponse(const char* json, BoardView* out) {
 }
 
 static bool dispatchNow(const PendingReq& req) {
+	sActiveMode = req.mode;
+	sActiveEndless = req.endless;
+	sActiveScore = req.score;
 	const char* slug = modeSlug(req.mode, req.endless);
 	if (!slug) {
 		sView.status = STATUS_OFFLINE;
@@ -321,7 +378,9 @@ static bool dispatchNow(const PendingReq& req) {
 	if (req.submit) {
 		snprintf(url, sizeof url, "%s/v1/scores", base);
 		if (!buildSubmitJson(req.mode, req.endless, req.score, gSave.leaderboardName, gSave.leaderboardId, req.testFlag, body, sizeof body)) {
-			sView.status = STATUS_OFFLINE;
+			sView = {};
+			mergeLocalBest(sView, sActiveMode, sActiveEndless, sActiveScore);
+			if (sView.status != STATUS_READY) sView.status = STATUS_OFFLINE;
 			return false;
 		}
 		bodyPtr = body;
@@ -333,19 +392,27 @@ static bool dispatchNow(const PendingReq& req) {
 		    base, slug, pid, lim, req.testFlag ? "&test=1" : "");
 	}
 	if (!port::lbRequest(url, bodyPtr)) {
-		sView.status = STATUS_OFFLINE;
+		sView = {};
+		mergeLocalBest(sView, sActiveMode, sActiveEndless, sActiveScore);
+		if (sView.status != STATUS_READY) sView.status = STATUS_OFFLINE;
 		return false;
 	}
-	sView.status = STATUS_LOADING;
+	sView = {};
+	mergeLocalBest(sView, sActiveMode, sActiveEndless, sActiveScore);
+	if (sView.status != STATUS_READY) sView.status = STATUS_LOADING;
+	sLoadStartMs = (u64)time(nullptr);
 	sView.lastWasSubmit = req.submit;
 	snprintf(sView.mode, sizeof sView.mode, "%s", slug);
 	return true;
 }
 
 static void enqueue(const PendingReq& req) {
-	if (sView.status == STATUS_LOADING && port::lbPoll() == 0) {
+	if (sActiveMode >= 0 && port::lbPoll() == 0) {
 		sPending = req;
 		sPending.active = true;
+		sView = {};
+		mergeLocalBest(sView, req.mode, req.endless, req.score);
+		if (sView.status != STATUS_READY) sView.status = STATUS_LOADING;
 		return;
 	}
 	sPending.active = false;
@@ -361,22 +428,35 @@ void submit(int mode, bool endless, u32 score, bool testFlag) {
 }
 
 void tick() {
-	if (sView.status != STATUS_LOADING) return;
 	const int state = port::lbPoll();
-	if (state == 0) return;
+	if (state == 0) {
+		if (sView.status == STATUS_LOADING && sLoadStartMs > 0 && (u64)time(nullptr) - sLoadStartMs >= 3) {
+			sView = {};
+			mergeLocalBest(sView, sActiveMode, sActiveEndless, sActiveScore);
+			if (sView.status != STATUS_READY) sView.status = STATUS_OFFLINE;
+		}
+		return;
+	}
+	if (sActiveMode < 0) return;
 
 	if (state > 0) {
 		BoardView next = {};
 		const bool lastSubmit = sView.lastWasSubmit;
 		if (parseResponse(port::lbText(), &next)) {
+			mergeLocalBest(next, sActiveMode, sActiveEndless, sActiveScore);
 			sView = next;
 			sView.lastWasSubmit = lastSubmit;
 		} else {
-			sView.status = STATUS_OFFLINE;
+			sView = {};
+			mergeLocalBest(sView, sActiveMode, sActiveEndless, sActiveScore);
+			if (sView.status != STATUS_READY) sView.status = STATUS_OFFLINE;
 		}
 	} else {
-		sView.status = STATUS_OFFLINE;
+		sView = {};
+		mergeLocalBest(sView, sActiveMode, sActiveEndless, sActiveScore);
+		if (sView.status != STATUS_READY) sView.status = STATUS_OFFLINE;
 	}
+	sActiveMode = -1;
 
 	if (sPending.active) {
 		PendingReq next = sPending;

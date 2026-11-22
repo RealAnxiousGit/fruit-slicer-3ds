@@ -2605,13 +2605,15 @@ static bool updateModePages(Input& keys, bool wasTouching) {
 }
 
 static const Button kNameButtons[] = {{40, 150, 110, 44, "OK"}, {170, 150, 110, 44, "Cancel"}};
+static const Button kNameButtonsPortrait[] = {{40, 14, 110, 44, "OK"}, {170, 14, 110, 44, "Cancel"}};
 
 // Typing a Pass and Play name or StreetPass greeting over the list.
 static void updateNameEntry(const Input& in, bool wasTouching) {
 	char typed[48];
 	int result = port::textPoll(typed, sizeof typed);
 	if (result == 0) {
-		int t = touchButtons(kNameButtons, 2, in, wasTouching, sNameFocus);
+		const Button* btns = (!PORT_TWO_SCREENS && gfx::isPortrait()) ? kNameButtonsPortrait : kNameButtons;
+		int t = touchButtons(btns, 2, in, wasTouching, sNameFocus);
 		if (in.repeat & (KEY_LEFT | KEY_RIGHT)) sNameFocus ^= 1;
 		if (in.down & KEY_A) t = sNameFocus;
 		if (in.down & KEY_B) t = 1;
@@ -5226,15 +5228,14 @@ static void onResultEntered() {
 	const bool endless = false;
 	if (!gSave.leaderboardName[0]) {
 #ifndef AUTOTEST
-		if (sGame.score > 0 || sGame.best > 0) {
-			sLbTypingName = true;
-			sLbNameFocus = 0;
-			port::textStart("", 6);
-			return;
-		}
-#endif
+		sLbTypingName = true;
+		sLbNameFocus = 0;
+		port::textStart("", 6);
+		return;
+#else
 		lb::fetch(sGame.mode, endless);
 		return;
+#endif
 	}
 	if (sGame.newBest) lb::submit(sGame.mode, endless, sGame.score);
 	else lb::fetch(sGame.mode, endless);
@@ -5244,7 +5245,8 @@ static void updateLbNameEntry(const Input& in, bool wasTouching) {
 	char typed[32];
 	int result = port::textPoll(typed, sizeof typed);
 	if (result == 0) {
-		int t = touchButtons(kNameButtons, 2, in, wasTouching, sLbNameFocus);
+		const Button* btns = (!PORT_TWO_SCREENS && gfx::isPortrait()) ? kNameButtonsPortrait : kNameButtons;
+		int t = touchButtons(btns, 2, in, wasTouching, sLbNameFocus);
 		if (in.repeat & (KEY_LEFT | KEY_RIGHT)) sLbNameFocus ^= 1;
 		if (in.down & KEY_A) t = sLbNameFocus;
 		if (in.down & KEY_B) t = 1;
@@ -5383,6 +5385,17 @@ static void drawTopContent(Screen screen) {
 		}
 		case SCREEN_SECTION: {
 			const Section& sec = kSections[sSection];
+			if (!PORT_TWO_SCREENS && gfx::isPortrait() && (sPassTyping >= 0 || sSpTypingMsg) && screen == sScreen) {
+				char typed[48];
+				port::textPoll(typed, sizeof typed - 1);
+				gfx::setDepth(1.0f);
+				drawLogo(200, 50, 0.56f);
+				topPanel(40, 118, 320, 108);
+				gfx::setDepth(0.7f);
+				gfx::text(sSpTypingMsg ? "StreetPass greeting" : "Type a name", 200, 130, 0.48f, COL_ACCENT, ALIGN_CENTER);
+				drawTypingWithCursor(typed, 200, 166, sSpTypingMsg ? 0.44f : 0.6f, 272, sSpTypingMsg ? COL_CREAM : passColor(sPassTyping));
+				break;
+			}
 			int f = sFocus[SCREEN_SECTION];
 			const Row* r = f >= 0 ? &sec.rows[f] : nullptr;
 			const float pOff = gfx::isPortrait() ? 12.0f : 0.0f;
@@ -5616,6 +5629,18 @@ static void drawTopContent(Screen screen) {
 		}
 		case SCREEN_RESULT: {
 			float in = clampf(sGame.phaseT * 4, 0, 1);
+			if (!PORT_TWO_SCREENS && gfx::isPortrait() && sLbTypingName && screen == sScreen && sPassTurn < 0 && sGame.mode != MODE_PRACTICE) {
+				char typed[32];
+				port::textPoll(typed, sizeof typed - 1);
+				const float py = 128.0f;
+				gfx::setDepth(0.5f);
+				gfx::sign(sprites_plank_idx, 40, py, 320, 104, withAlpha(COL_PLANK, in));
+				gfx::setDepth(1.0f);
+				gfx::text("Leaderboard Name", 200, py + 12, 0.50f, COL_ACCENT, ALIGN_CENTER);
+				gfx::text("Max 6 characters", 200, py + 34, 0.34f, COL_DIM, ALIGN_CENTER);
+				drawTypingWithCursor(typed, 200, py + 58, 0.58f, 280, COL_CREAM);
+				break;
+			}
 			const int resTracks = (sGame.mode == MODE_BOSSRUSH || sGame.mode == MODE_ORCHARD) ? sGame.orc.newTracks : 0;
 			const float resCoinY = (sGame.mode == MODE_BOSSRUSH || sGame.mode == MODE_ORCHARD) ? (resTracks > 0 ? 168.0f : 152.0f) : 148.0f;
 			const float resExtraY = (sGame.mode == MODE_BOSSRUSH || sGame.mode == MODE_ORCHARD) ? (resTracks > 0 ? 190.0f : 178.0f) : 174.0f;
@@ -6146,13 +6171,18 @@ static void drawBottomContent(Screen screen) {
 			drawHeader(kSections[sSection].title);
 			drawBackArrow(sFocus[SCREEN_SECTION] < 0, sPressed == 0);
 			if ((sPassTyping >= 0 || sSpTypingMsg) && screen == sScreen) {
-				char typed[48];
-				port::textPoll(typed, sizeof typed - 1);
-				gfx::rect(0, 0, 320, 240, rgba(30, 18, 10, 170));
-				gfx::sign(sprites_plank_idx, 20, 60, 280, 146, COL_PLANK);
-				gfx::text(sSpTypingMsg ? "StreetPass greeting" : "Type a name", 160, 72, 0.48f, COL_ACCENT, ALIGN_CENTER);
-				drawTypingWithCursor(typed, 160, 108, sSpTypingMsg ? 0.44f : 0.6f, 256, sSpTypingMsg ? COL_CREAM : passColor(sPassTyping));
-				for (int i = 0; i < 2; i++) drawSign(kNameButtons[i], kNameButtons[i].label, sNameFocus == i, sPressed == i, 0.5f);
+				if (!PORT_TWO_SCREENS && gfx::isPortrait()) {
+					gfx::rect(0, 0, 320, 240, rgba(30, 18, 10, 170));
+					for (int i = 0; i < 2; i++) drawSign(kNameButtonsPortrait[i], kNameButtonsPortrait[i].label, sNameFocus == i, sPressed == i, 0.5f);
+				} else {
+					char typed[48];
+					port::textPoll(typed, sizeof typed - 1);
+					gfx::rect(0, 0, 320, 240, rgba(30, 18, 10, 170));
+					gfx::sign(sprites_plank_idx, 20, 60, 280, 146, COL_PLANK);
+					gfx::text(sSpTypingMsg ? "StreetPass greeting" : "Type a name", 160, 72, 0.48f, COL_ACCENT, ALIGN_CENTER);
+					drawTypingWithCursor(typed, 160, 108, sSpTypingMsg ? 0.44f : 0.6f, 256, sSpTypingMsg ? COL_CREAM : passColor(sPassTyping));
+					for (int i = 0; i < 2; i++) drawSign(kNameButtons[i], kNameButtons[i].label, sNameFocus == i, sPressed == i, 0.5f);
+				}
 			}
 #if PORT_HAS_DISPLAY
 			if (sRevertT > 0 && screen == sScreen) {
@@ -6332,16 +6362,20 @@ static void drawBottomContent(Screen screen) {
 				const Button pb = practiceEndButton(1);
 				drawSign(pb, pb.label, f == 1, sPressed == 1, 0.56f, -1, fruitFor(pb.label));
 			} else if (lbPrompt) {
-				char typed[32];
-				port::textPoll(typed, sizeof typed - 1);
+				if (!PORT_TWO_SCREENS && gfx::isPortrait()) {
+					for (int i = 0; i < 2; i++) drawSign(kNameButtonsPortrait[i], kNameButtonsPortrait[i].label, sLbNameFocus == i, sPressed == i, 0.5f);
+				} else {
+					char typed[32];
+					port::textPoll(typed, sizeof typed - 1);
 #if PORT_TWO_SCREENS
-				gfx::rect(0, 0, 320, 240, rgba(30, 18, 10, 175));
+					gfx::rect(0, 0, 320, 240, rgba(30, 18, 10, 175));
 #endif
-				gfx::sign(sprites_plank_idx, 20, 56, 280, 152, COL_PLANK);
-				gfx::text("Leaderboard Name", 160, 68, 0.48f, COL_ACCENT, ALIGN_CENTER);
-				gfx::text("Max 6 characters", 160, 88, 0.34f, COL_DIM, ALIGN_CENTER);
-				drawTypingWithCursor(typed, 160, 110, 0.56f, 248, COL_CREAM);
-				for (int i = 0; i < 2; i++) drawSign(kNameButtons[i], kNameButtons[i].label, sLbNameFocus == i, sPressed == i, 0.5f);
+					gfx::sign(sprites_plank_idx, 20, 56, 280, 152, COL_PLANK);
+					gfx::text("Leaderboard Name", 160, 68, 0.48f, COL_ACCENT, ALIGN_CENTER);
+					gfx::text("Max 6 characters", 160, 88, 0.34f, COL_DIM, ALIGN_CENTER);
+					drawTypingWithCursor(typed, 160, 110, 0.56f, 248, COL_CREAM);
+					for (int i = 0; i < 2; i++) drawSign(kNameButtons[i], kNameButtons[i].label, sLbNameFocus == i, sPressed == i, 0.5f);
+				}
 			} else {
 				const bool elig = lbEligible();
 				const int shown = elig ? kResultCount : kResultCount - 1;
@@ -7272,7 +7306,11 @@ static void updateFrame(const Input& in, bool wasTouching) {
 				fadeThen(toModes);
 			} else if (elig && t == kResultTopIdx) {
 				sResultBoard = !sResultBoard;
-				if (sResultBoard && (lb::view().status == lb::STATUS_IDLE || lb::view().status == lb::STATUS_OFFLINE)) {
+				if (sResultBoard && !gSave.leaderboardName[0]) {
+					sLbTypingName = true;
+					sLbNameFocus = 0;
+					port::textStart("", 6);
+				} else if (sResultBoard && (lb::view().status == lb::STATUS_IDLE || lb::view().status == lb::STATUS_OFFLINE)) {
 					lb::fetch(sGame.mode, false);
 				}
 			}

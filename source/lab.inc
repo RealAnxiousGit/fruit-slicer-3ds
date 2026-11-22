@@ -1050,6 +1050,17 @@ static void labLeaderboard() {
 		labCheck(false, "Reset Leaderboard Name row missing from Scores and Data");
 	}
 	sArmed = -1;
+	snprintf(gSave.leaderboardName, sizeof gSave.leaderboardName, "NICK");
+	const u32 oldBest = gSave.best[MODE_CLASSIC];
+	gSave.best[MODE_CLASSIC] = 350;
+	lb::clearView();
+	lb::fetch(MODE_CLASSIC, false);
+	for (int f = 0; f < 120 && lb::view().status == lb::STATUS_LOADING; f++) lb::tick();
+	const lb::BoardView& lv = lb::view();
+	labCheck(lv.status == lb::STATUS_READY && lv.count >= 1 && lv.yourRank >= 1 && lv.yourScore >= 350 &&
+	         strcmp(lv.entries[lv.yourRank - 1].name, "NICK") == 0,
+	         "Top 10 view always includes player name and best score even when offline");
+	gSave.best[MODE_CLASSIC] = oldBest;
 	snprintf(gSave.leaderboardName, sizeof gSave.leaderboardName, "%s", savedName);
 }
 
