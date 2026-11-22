@@ -1240,6 +1240,9 @@ void Game::bossUpdate(float dt) {
 		return;
 	}
 	// Drifts about between attacks, and floats back up after a flop/slam.
+	b.baseY = fieldMidY();
+	b.x = clampBossVisX(b.x, b.radius);
+	if (b.drainOn) b.drainX = clampf(b.drainX, 44.0f, kFieldW - 44.0f);
 	if (b.attack != MEL_FLOP && b.attack != MEL_CHARGE && b.attack != KING_GIANT && b.attack != PINE_SLAM && b.attack != PINE_WHIRL && b.attack != CHILI_RUSH && b.attack != DUR_SLAM && b.attack != DUR_SPIN && b.attack != LEM_BLITZ && b.attack != LEM_LEMONADE && b.attack != APP_CRUSH) {
 		const float speed = (b.id == BOSS_KING ? 0.9f : (b.id == BOSS_CHILI || b.id >= BOSS_DURIAN ? 1.15f : 0.65f)) * lv.bossSpeed * (b.enraged ? 1.22f : 1.0f);
 		const float tx = kFieldW * 0.5f + sinf(b.t * speed) * kFieldW * 0.28f;

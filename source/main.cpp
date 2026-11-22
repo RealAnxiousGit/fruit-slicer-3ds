@@ -542,6 +542,11 @@ static int modeList(int page, Button* out) {
 static const Button kOnlyBack[] = {kBack};
 static const Button kHowtoButtons[] = {kBack, {20, 188, 134, 48, "Practice"}, {166, 188, 134, 48, "Guides"}};
 static const Button kPracticeEndButtons[] = {kBack, {90, 96, 140, 56, "Let's Play"}};
+static Button practiceEndButton(int i) {
+	Button b = kPracticeEndButtons[i];
+	if (i > 0 && gfx::isPortrait()) b.y = 44.0f;
+	return b;
+}
 // Beat Slice's track list: a row is a tap (or Up and Down), and Play is a fruit like any other.
 static const Button kBeatButtons[] = {kBack, {216, 46, 96, 76, "Play"}};
 static constexpr int kBeatRows = 5;
@@ -573,6 +578,14 @@ static const Button kResultButtons[] = {kBack, {20, 122, 134, 52, "Again"}, {166
 static constexpr int kResultCount = 5;
 static constexpr int kResultTopIdx = 4;
 #endif
+static bool lbEligible();
+static Button resultButton(int i, bool singleResult = true) {
+	Button b = kResultButtons[i];
+	if (i <= 0) return b;
+	if (singleResult && i == 3 && !lbEligible()) b.x = 93.0f;  // centre Share when Top 10 is hidden
+	if (singleResult && gfx::isPortrait()) b.y -= 32.0f;
+	return b;
+}
 static bool sResultBoard = false;
 static bool sLbTypingName = false;
 static int sLbNameFocus = 0;
@@ -582,7 +595,7 @@ static float sCardNoteT;
 static const Button kPauseSign = {2, kFieldTop + 5, 36, 36, nullptr};  // in field units: top-left, cleanly below score bar & Frenzy meter
 static const Button kInvSign = {40, kFieldTop + 5, 36, 36, nullptr};   // mobile: opens Inventory in Orchard Blast
 #endif
-static const Button kPauseButtons[] = {kBack, {56, 26, 208, 60, "Resume"}, {56, 94, 208, 60, "Options"}, {56, 162, 208, 60, "Main Menu"}};
+static const Button kPauseButtons[] = {kBack, {56, 20, 208, 58, "Resume"}, {56, 86, 208, 58, "Options"}, {56, 152, 208, 58, "Main Menu"}};
 static const Button kPauseOrchardButtons[] = {kBack, {56, 18, 208, 48, "Resume"}, {56, 72, 208, 48, "Options"}, {56, 126, 208, 48, "Start Over"}, {56, 180, 208, 48, "Main Menu"}};
 static const Button kStartOverConfirmBtns[2] = {{54, 144, 96, 32, "Yes"}, {170, 144, 96, 32, "No"}};
 static bool sPauseStartOverConfirm = false;
@@ -1644,11 +1657,13 @@ static int optionButtons() {
 	for (int i = 0; i < n; i++) {
 		Button b;
 		const int rows = (n + 1) / 2;
-		const float y0 = n == 6 ? (46 + (194 - (rows * 48 - 4)) * 0.5f) : 46.0f;
-		if (n <= 3) b = {36, 46 + (194 - (n * 48 - 4)) * 0.5f + 48.0f * i, 248, 44, nullptr};
-		else if (n == 4) b = {i & 1 ? 164.0f : 8.0f, 70 + 74.0f * (i / 2), 148, 60, nullptr};
-		else if (i == n - 1 && (n & 1)) b = {86, y0 + 48.0f * (i / 2), 148, 44, nullptr};
-		else b = {i & 1 ? 164.0f : 8.0f, y0 + 48.0f * (i / 2), 148, 44, nullptr};
+		const float bh = rows >= 4 ? 42.0f : 52.0f;
+		const float step = rows >= 4 ? 46.0f : 56.0f;
+		const float y0 = 48.0f + fmaxf(0.0f, (186.0f - (rows * step - (step - bh))) * 0.5f);
+		if (n <= 3) b = {44.0f, 50.0f + (186.0f - (n * 54.0f - 6.0f)) * 0.5f + 54.0f * i, 232.0f, 48.0f, nullptr};
+		else if (n == 4) b = {i & 1 ? 162.0f : 22.0f, 54.0f + 66.0f * (i / 2), 136.0f, 56.0f, nullptr};
+		else if (i == n - 1 && (n & 1)) b = {92.0f, y0 + step * (i / 2), 136.0f, bh, nullptr};
+		else b = {i & 1 ? 162.0f : 22.0f, y0 + step * (i / 2), 136.0f, bh, nullptr};
 		b.label = kSections[visible[i]].title;
 		sOptionButtons[i + 1] = b;
 		sOptionSection[i + 1] = visible[i];
@@ -5273,12 +5288,13 @@ static void drawTopContent(Screen screen) {
 	switch (screen) {
 		case SCREEN_LOADING:
 			break;
-		case SCREEN_TITLE:
+		case SCREEN_TITLE: {
+			const float pShift = gfx::isPortrait() ? 12.0f : 0.0f;
 			gfx::setDepth(1.2f);
-			drawLogo(200, 66 + sinf(sTime * 1.6f) * 2);
+			drawLogo(200, 66 + pShift + sinf(sTime * 1.6f) * 2);
 			gfx::setDepth(1.4f);
-			drawSplash(304, 122 + sinf(sTime * 1.6f) * 2);
-			drawHero(200, 172, 1.25f, 0.8f);
+			drawSplash(304, 122 + pShift + sinf(sTime * 1.6f) * 2);
+			drawHero(200, 172 + (gfx::isPortrait() ? 14.0f : 0.0f), 1.25f, 0.8f);
 #if PORT_TWO_SCREENS
 			{
 				// What the chosen sign below does, since the signs themselves sit on the other screen.
@@ -5293,6 +5309,7 @@ static void drawTopContent(Screen screen) {
 				gfx::text(PORT_NO_SOUND_TEXT, 200, 222, 0.34f, rgba(255, 190, 150), ALIGN_CENTER);
 			}
 			break;
+		}
 		case SCREEN_MODES: {
 			const int f = sFocus[SCREEN_MODES];
 			const int mode = f >= 1 ? modeAt(sModePage, f) : -1;
@@ -5345,20 +5362,22 @@ static void drawTopContent(Screen screen) {
 			int n = optionButtons();
 			int f = sFocus[SCREEN_OPTIONS];
 			const Section* sec = f >= 1 && f < n ? &kSections[sOptionSection[f]] : nullptr;
+			const float logoY = gfx::isPortrait() ? 64.0f : 50.0f;
+			const float panelY = gfx::isPortrait() ? 142.0f : 112.0f;
 			gfx::setDepth(1.0f);
-			drawLogo(200, 50, 0.62f);
+			drawLogo(200, logoY, 0.62f);
 			if (!sec) {
-				topPanel(48, 112, 304, 62);
+				topPanel(48, panelY, 304, 62);
 				gfx::setDepth(0.7f);
-				gfx::text("Options", 200, 120, 0.5f, COL_ACCENT, ALIGN_CENTER);
-				gfx::text(sOptionsFromPause ? "Back to the game" : "Back to the title", 200, 146, 0.38f, COL_CREAM, ALIGN_CENTER);
+				gfx::text("Options", 200, panelY + 8, 0.5f, COL_ACCENT, ALIGN_CENTER);
+				gfx::text(sOptionsFromPause ? "Back to the game" : "Back to the title", 200, panelY + 34, 0.38f, COL_CREAM, ALIGN_CENTER);
 			} else {
 				const bool twoLines = sec->hint2[0] != 0;
-				topPanel(40, 112, 320, twoLines ? 80.0f : 64.0f);
+				topPanel(40, panelY, 320, twoLines ? 80.0f : 64.0f);
 				gfx::setDepth(0.7f);
-				gfx::text(sec->title, 200, 118, 0.5f, COL_ACCENT, ALIGN_CENTER);
-				gfx::text(sec->hint1, 200, 146, 0.38f, COL_CREAM, ALIGN_CENTER);
-				if (twoLines) gfx::text(sec->hint2, 200, 164, 0.38f, COL_CREAM, ALIGN_CENTER);
+				gfx::text(sec->title, 200, panelY + 6, 0.5f, COL_ACCENT, ALIGN_CENTER);
+				gfx::text(sec->hint1, 200, panelY + 34, 0.38f, COL_CREAM, ALIGN_CENTER);
+				if (twoLines) gfx::text(sec->hint2, 200, panelY + 52, 0.38f, COL_CREAM, ALIGN_CENTER);
 			}
 			break;
 		}
@@ -5366,20 +5385,21 @@ static void drawTopContent(Screen screen) {
 			const Section& sec = kSections[sSection];
 			int f = sFocus[SCREEN_SECTION];
 			const Row* r = f >= 0 ? &sec.rows[f] : nullptr;
+			const float pOff = gfx::isPortrait() ? 12.0f : 0.0f;
 			if (r && (r->value == &gSave.artStyle || r->value == &gSave.detail || r->value == &gSave.sliceStyle || r->value == &gSave.depth)) {
-				drawHero(200, 50, 1.2f, 1.0f);
+				drawHero(200, 50 + pOff, 1.2f, 1.0f);
 			} else if (r && r->value == &gSave.board) {
 				gfx::setDepth(0.6f);
-				gfx::image(SHEET_BOARD, 0, 142, 8, 116, 87);
+				gfx::image(SHEET_BOARD, 0, 142, 8 + pOff, 116, 87);
 			} else if (r && (r->value == &gSave.blade || r->value == &gSave.trail)) {
 				gfx::setDepth(0.6f);
 				sPreviewBlade.draw();
 			} else if (kSections[sSection].id == SID_DATA) {
 				gfx::setDepth(0.6f);
 				snprintf(buf, sizeof buf, "FRUIT SLICED %lu", (unsigned long)gSave.totalFruit);
-				gfx::text(buf, 200, 20, 0.5f, COL_CREAM, ALIGN_CENTER);
+				gfx::text(buf, 200, 20 + pOff, 0.5f, COL_CREAM, ALIGN_CENTER);
 				snprintf(buf, sizeof buf, "BEST COMBO %lu", (unsigned long)gSave.bestCombo);
-				gfx::text(buf, 200, 50, 0.5f, COL_CREAM, ALIGN_CENTER);
+				gfx::text(buf, 200, 50 + pOff, 0.5f, COL_CREAM, ALIGN_CENTER);
 			} else if (kSections[sSection].id == SID_STREETPASS) {
 				topPanel(48, 10, 304, 78);
 				gfx::setDepth(0.7f);
@@ -5391,52 +5411,56 @@ static void drawTopContent(Screen screen) {
 			} else {
 				// No preview for this row: the logo fills the space above the hint, as on the Options screen.
 				gfx::setDepth(1.0f);
-				drawLogo(200, 50, 0.62f);
+				drawLogo(200, 50 + pOff, 0.62f);
 			}
 			if (!r) {
-				topPanel(48, 118, 304, 62);
+				const float sy = 118.0f + (gfx::isPortrait() ? 16.0f : 0.0f);
+				topPanel(48, sy, 304, 62);
 				gfx::setDepth(0.7f);
-				gfx::text(sec.title, 200, 125, 0.52f, COL_ACCENT, ALIGN_CENTER);
-				gfx::text("Back to Options", 200, 151, 0.40f, COL_CREAM, ALIGN_CENTER);
+				gfx::text(sec.title, 200, sy + 7, 0.52f, COL_ACCENT, ALIGN_CENTER);
+				gfx::text("Back to Options", 200, sy + 33, 0.40f, COL_CREAM, ALIGN_CENTER);
 			} else if (rowDisabled(*r)) {
-				topPanel(30, 100, 340, 94);
+				const float sy = 100.0f + (gfx::isPortrait() ? 16.0f : 0.0f);
+				topPanel(30, sy, 340, 94);
 				gfx::setDepth(0.7f);
-				gfx::text(r->label, 200, 106, 0.56f, COL_ACCENT, ALIGN_CENTER);
-				gfx::text("This console has no 3D screen,", 200, 142, 0.38f, COL_CREAM, ALIGN_CENTER);
-				gfx::text("so depth has no effect here.", 200, 160, 0.38f, COL_CREAM, ALIGN_CENTER);
+				gfx::text(r->label, 200, sy + 6, 0.56f, COL_ACCENT, ALIGN_CENTER);
+				gfx::text("This console has no 3D screen,", 200, sy + 42, 0.38f, COL_CREAM, ALIGN_CENTER);
+				gfx::text("so depth has no effect here.", 200, sy + 60, 0.38f, COL_CREAM, ALIGN_CENTER);
 			} else if (r->value == &gSave.bossMusic) {
-				topPanel(30, 100, 340, 122);
+				const float sy = 100.0f + (gfx::isPortrait() ? 12.0f : 0.0f);
+				topPanel(30, sy, 340, 122);
 				gfx::setDepth(0.7f);
-				gfx::text(r->label, 200, 106, 0.56f, COL_ACCENT, ALIGN_CENTER);
+				gfx::text(r->label, 200, sy + 6, 0.56f, COL_ACCENT, ALIGN_CENTER);
 				if (*r->value == 0) {
-					gfx::text("Off: Boss fights keep playing", 200, 138, 0.38f, COL_CREAM, ALIGN_CENTER);
-					gfx::text("your regular Game Music.", 200, 156, 0.38f, COL_CREAM, ALIGN_CENTER);
+					gfx::text("Off: Boss fights keep playing", 200, sy + 38, 0.38f, COL_CREAM, ALIGN_CENTER);
+					gfx::text("your regular Game Music.", 200, sy + 56, 0.38f, COL_CREAM, ALIGN_CENTER);
 				} else if (*r->value == 1) {
-					gfx::text("Auto: Plays undiscovered boss", 200, 138, 0.38f, COL_CREAM, ALIGN_CENTER);
-					gfx::text("themes & shuffles owned tracks.", 200, 156, 0.38f, COL_CREAM, ALIGN_CENTER);
+					gfx::text("Auto: Plays undiscovered boss", 200, sy + 38, 0.38f, COL_CREAM, ALIGN_CENTER);
+					gfx::text("themes & shuffles owned tracks.", 200, sy + 56, 0.38f, COL_CREAM, ALIGN_CENTER);
 				} else {
 					const int t = *r->value - 2;
 					const bool custom = t >= kTrackCount;
-					gfx::text(custom ? "Custom Song (All Modes)" : "Boss Track (Shop)", 200, 138, 0.38f, COL_ACCENT, ALIGN_CENTER);
-					gfx::text("Plays during every boss fight.", 200, 156, 0.38f, COL_CREAM, ALIGN_CENTER);
+					gfx::text(custom ? "Custom Song (All Modes)" : "Boss Track (Shop)", 200, sy + 38, 0.38f, COL_ACCENT, ALIGN_CENTER);
+					gfx::text("Plays during every boss fight.", 200, sy + 56, 0.38f, COL_CREAM, ALIGN_CENTER);
 				}
 				rowValueText(*r, buf, sizeof buf);
-				gfx::text(buf, 200, 190, 0.5f, COL_CREAM, ALIGN_CENTER);
+				gfx::text(buf, 200, sy + 90, 0.5f, COL_CREAM, ALIGN_CENTER);
 			} else if (r->value == &gSave.menuTrack || r->value == &gSave.gameTrack) {
-				topPanel(30, 100, 340, 122);
+				const float sy = 100.0f + (gfx::isPortrait() ? 12.0f : 0.0f);
+				topPanel(30, sy, 340, 122);
 				gfx::setDepth(0.7f);
-				gfx::text(r->label, 200, 106, 0.56f, COL_ACCENT, ALIGN_CENTER);
+				gfx::text(r->label, 200, sy + 6, 0.56f, COL_ACCENT, ALIGN_CENTER);
 				if (*r->value == 0) {
-					gfx::text("Auto: Loopable tracks loop 3 times,", 200, 138, 0.38f, COL_CREAM, ALIGN_CENTER);
-					gfx::text("full songs play once before next.", 200, 156, 0.38f, COL_CREAM, ALIGN_CENTER);
+					gfx::text("Auto: Loopable tracks loop 3 times,", 200, sy + 38, 0.38f, COL_CREAM, ALIGN_CENTER);
+					gfx::text("full songs play once before next.", 200, sy + 56, 0.38f, COL_CREAM, ALIGN_CENTER);
 				} else {
 					const int t = *r->value - 1;
 					const bool isSong = audio::isSongTrack(t);
-					gfx::text(isSong ? "Category: Song (Full track)" : "Category: Loopable (Short loop)", 200, 138, 0.38f, COL_ACCENT, ALIGN_CENTER);
-					gfx::text(isSong ? "Plays once before next in Auto." : "Loops 3 times before next in Auto.", 200, 156, 0.38f, COL_CREAM, ALIGN_CENTER);
+					gfx::text(isSong ? "Category: Song (Full track)" : "Category: Loopable (Short loop)", 200, sy + 38, 0.38f, COL_ACCENT, ALIGN_CENTER);
+					gfx::text(isSong ? "Plays once before next in Auto." : "Loops 3 times before next in Auto.", 200, sy + 56, 0.38f, COL_CREAM, ALIGN_CENTER);
 				}
 				rowValueText(*r, buf, sizeof buf);
-				gfx::text(buf, 200, 190, 0.5f, COL_CREAM, ALIGN_CENTER);
+				gfx::text(buf, 200, sy + 90, 0.5f, COL_CREAM, ALIGN_CENTER);
 			} else {
 				rowValueText(*r, buf, sizeof buf);
 				const bool hasL2 = r->line2[0] != 0;
@@ -5444,15 +5468,17 @@ static void drawTopContent(Screen screen) {
 				const bool hasVal = buf[0] != 0;
 				const float valY = extraStylus ? 196.0f : (hasL2 ? 188.0f : 168.0f);
 				const float bottomY = hasVal ? (valY + 30.0f) : (extraStylus ? 198.0f : (hasL2 ? 182.0f : 164.0f));
-				topPanel(30, 100, 340, bottomY - 100.0f);
+				const float topShift = gfx::isPortrait() ? fmaxf(0.0f, fminf(16.0f, 234.0f - bottomY)) : 0.0f;
+				const float sy = 100.0f + topShift;
+				topPanel(30, sy, 340, bottomY - 100.0f);
 				gfx::setDepth(0.7f);
-				gfx::text(r->label, 200, 106, 0.56f, COL_ACCENT, ALIGN_CENTER);
-				gfx::text(r->line1, 200, 138, 0.38f, COL_CREAM, ALIGN_CENTER);
-				if (hasL2) gfx::text(r->line2, 200, 156, 0.38f, COL_CREAM, ALIGN_CENTER);
+				gfx::text(r->label, 200, sy + 6, 0.56f, COL_ACCENT, ALIGN_CENTER);
+				gfx::text(r->line1, 200, sy + 38, 0.38f, COL_CREAM, ALIGN_CENTER);
+				if (hasL2) gfx::text(r->line2, 200, sy + 56, 0.38f, COL_CREAM, ALIGN_CENTER);
 #if PORT_3DS
-				if (extraStylus) gfx::text("Also calibrate in System Settings.", 200, 174, 0.34f, COL_DIM, ALIGN_CENTER);
+				if (extraStylus) gfx::text("Also calibrate in System Settings.", 200, sy + 74, 0.34f, COL_DIM, ALIGN_CENTER);
 #endif
-				if (hasVal) gfx::text(buf, 200, valY, 0.5f, COL_CREAM, ALIGN_CENTER);
+				if (hasVal) gfx::text(buf, 200, valY + topShift, 0.5f, COL_CREAM, ALIGN_CENTER);
 			}
 			break;
 		}
@@ -5512,8 +5538,8 @@ static void drawTopContent(Screen screen) {
 			break;
 		case SCREEN_HOWTO:
 			gfx::setDepth(1.0f);
-			drawLogo(200, 50, 0.62f);
-			drawHero(200, 164, 1.2f, 0.8f);
+			drawLogo(200, gfx::isPortrait() ? 64.0f : 50.0f, 0.62f);
+			drawHero(200, gfx::isPortrait() ? 178.0f : 164.0f, 1.2f, 0.8f);
 			break;
 		case SCREEN_GUIDES:
 			drawGuidesTop();
@@ -5542,7 +5568,7 @@ static void drawTopContent(Screen screen) {
 				// Coins saved, with what this run has made so far waiting to be added.
 				const bool hasRun = sGame.runCoins() > 0;
 				const float ph = hasRun ? 124.0f : 104.0f;
-				const float py = gfx::isPortrait() ? (230.0f - ph) : (240.0f - ph) * 0.5f;
+				const float py = gfx::isPortrait() ? (234.0f - ph) : (240.0f - ph) * 0.5f;
 				topPanel(44, py, 312, ph);
 				gfx::setDepth(1.8f);
 				gfx::text("PAUSED", 200, py + 12, 0.96f, COL_CREAM, ALIGN_CENTER);
@@ -5609,33 +5635,33 @@ static void drawTopContent(Screen screen) {
 				resH = 136.0f;
 			}
 			resH = clampf(resH, 136.0f, 224.0f);
-			const float resY = sCardFrame ? 8.0f : (240.0f - resH) * 0.5f;
+			const float resY = sCardFrame ? 8.0f : (gfx::isPortrait() ? (234.0f - resH) : (240.0f - resH) * 0.5f);
 			const float dy = resY - 8.0f;
 			gfx::setDepth(0.5f);
 			gfx::sign(sprites_plank_idx, 28, resY, 344, resH, withAlpha(COL_PLANK, in));
 			gfx::setDepth(1.0f);
 			if (sResultBoard && !sCardFrame && lbEligible()) {
-				gfx::text("ONLINE TOP 10", 200, 14, 0.48f, COL_ACCENT, ALIGN_CENTER);
-				gfx::text(modeName(sGame.mode), 48, 34, 0.33f, COL_CREAM);
+				gfx::text("ONLINE TOP 10", 200, 14 + dy, 0.48f, COL_ACCENT, ALIGN_CENTER);
+				gfx::text(modeName(sGame.mode), 48, 34 + dy, 0.33f, COL_CREAM);
 				if (gSave.leaderboardName[0]) {
 					snprintf(buf, sizeof buf, "YOU: %s", gSave.leaderboardName);
-					gfx::text(buf, 352, 34, 0.32f, COL_DIM, ALIGN_RIGHT);
+					gfx::text(buf, 352, 34 + dy, 0.32f, COL_DIM, ALIGN_RIGHT);
 				}
-				gfx::rect(44, 48, 312, 1, withAlpha(COL_DIM, 0.35f));
+				gfx::rect(44, 48 + dy, 312, 1, withAlpha(COL_DIM, 0.35f));
 				const lb::BoardView& v = lb::view();
 				if (v.status == lb::STATUS_LOADING) {
-					gfx::text("Connecting to leaderboard...", 200, 112, 0.40f, COL_CREAM, ALIGN_CENTER);
+					gfx::text("Connecting to leaderboard...", 200, 112 + dy, 0.40f, COL_CREAM, ALIGN_CENTER);
 				} else if (v.status != lb::STATUS_READY) {
-					gfx::text("Leaderboard offline or unreachable.", 200, 102, 0.39f, COL_CREAM, ALIGN_CENTER);
-					gfx::text("Check internet connection and try again.", 200, 124, 0.33f, COL_DIM, ALIGN_CENTER);
+					gfx::text("Leaderboard offline or unreachable.", 200, 102 + dy, 0.39f, COL_CREAM, ALIGN_CENTER);
+					gfx::text("Check internet connection and try again.", 200, 124 + dy, 0.33f, COL_DIM, ALIGN_CENTER);
 				} else if (v.count == 0) {
-					gfx::text("No scores uploaded yet!", 200, 112, 0.40f, COL_CREAM, ALIGN_CENTER);
+					gfx::text("No scores uploaded yet!", 200, 112 + dy, 0.40f, COL_CREAM, ALIGN_CENTER);
 				} else {
 					char myPid[24];
 					lb::formatPlayerId(gSave.leaderboardId, myPid, sizeof myPid);
 					for (int i = 0; i < v.count && i < 10; i++) {
 						const lb::Entry& e = v.entries[i];
-						const float ry = 53.0f + i * 14.5f;
+						const float ry = 53.0f + dy + i * 14.5f;
 						const bool isYou = e.playerId[0] && strcmp(e.playerId, myPid) == 0;
 						const u32 col = isYou ? COL_ACCENT : COL_CREAM;
 						snprintf(buf, sizeof buf, "%2d. %s", i + 1, e.name);
@@ -5648,11 +5674,11 @@ static void drawTopContent(Screen screen) {
 					if (v.yourRank > 0) {
 						char lbBuf[72];
 						snprintf(lbBuf, sizeof lbBuf, "YOUR RANK %d OF %d   BEST %lu", v.yourRank, v.total > 0 ? v.total : v.yourRank, (unsigned long)v.yourScore);
-						gfx::text(lbBuf, 200, 204, 0.33f, COL_ACCENT, ALIGN_CENTER);
+						gfx::text(lbBuf, 200, 204 + dy, 0.33f, COL_ACCENT, ALIGN_CENTER);
 					} else if (!gSave.leaderboardName[0]) {
-						gfx::text("SET NAME ON NEXT BEST SCORE", 200, 204, 0.32f, COL_DIM, ALIGN_CENTER);
+						gfx::text("SET NAME ON NEXT BEST SCORE", 200, 204 + dy, 0.32f, COL_DIM, ALIGN_CENTER);
 					} else {
-						gfx::text("BEAT YOUR BEST TO POST TO TOP 10", 200, 204, 0.32f, COL_DIM, ALIGN_CENTER);
+						gfx::text("BEAT YOUR BEST TO POST TO TOP 10", 200, 204 + dy, 0.32f, COL_DIM, ALIGN_CENTER);
 					}
 				}
 				break;
@@ -6286,7 +6312,10 @@ static void drawBottomContent(Screen screen) {
 				snprintf(score, sizeof score, "%lu", (unsigned long)sPassScores[order[i]]);
 				gfx::text(score, 286, y + 5, 0.42f, COL_CREAM, ALIGN_RIGHT);
 			}
-			for (int i = 1; i < 3; i++) drawSign(kResultButtons[i], kResultButtons[i].label, f == i, sPressed == i, 0.56f, -1, fruitFor(kResultButtons[i].label));
+			for (int i = 1; i < 3; i++) {
+				const Button b = resultButton(i, false);
+				drawSign(b, b.label, f == i, sPressed == i, 0.56f, -1, fruitFor(b.label));
+			}
 			break;
 		}
 		case SCREEN_RESULT: {
@@ -6299,8 +6328,10 @@ static void drawBottomContent(Screen screen) {
 			if (sPassTurn >= 0) {
 				kPassResultButtons[1].label = sPassTurn + 1 < passCount() ? "Next Player" : "See Results";
 				drawSign(kPassResultButtons[1], kPassResultButtons[1].label, f == 1, sPressed == 1, 0.56f, -1, fruitFor(kPassResultButtons[1].label));
-			} else if (sGame.mode == MODE_PRACTICE) drawSign(kPracticeEndButtons[1], kPracticeEndButtons[1].label, f == 1, sPressed == 1, 0.56f, -1, fruitFor(kPracticeEndButtons[1].label));
-			else if (lbPrompt) {
+			} else if (sGame.mode == MODE_PRACTICE) {
+				const Button pb = practiceEndButton(1);
+				drawSign(pb, pb.label, f == 1, sPressed == 1, 0.56f, -1, fruitFor(pb.label));
+			} else if (lbPrompt) {
 				char typed[32];
 				port::textPoll(typed, sizeof typed - 1);
 #if PORT_TWO_SCREENS
@@ -6315,11 +6346,12 @@ static void drawBottomContent(Screen screen) {
 				const bool elig = lbEligible();
 				const int shown = elig ? kResultCount : kResultCount - 1;
 				for (int i = 1; i < shown; i++) {
-					const char* lbl = (i == kResultTopIdx && sResultBoard) ? "Summary" : kResultButtons[i].label;
+					const Button rb = resultButton(i);
+					const char* lbl = (i == kResultTopIdx && sResultBoard) ? "Summary" : rb.label;
 					const float sc = (i == kResultTopIdx || (!PORT_3DS && i == 3)) ? 0.50f : 0.56f;
-					drawSign(kResultButtons[i], lbl, f == i, sPressed == i, sc, -1, fruitFor(lbl));
+					drawSign(rb, lbl, f == i, sPressed == i, sc, -1, fruitFor(lbl));
 				}
-				if (sCardNoteT > 0 && sCardNote) gfx::text(sCardNote, 160, 186, 0.34f, withAlpha(COL_CREAM, clampf(sCardNoteT, 0, 1)), ALIGN_CENTER);
+				if (sCardNoteT > 0 && sCardNote) gfx::text(sCardNote, 160, gfx::isPortrait() ? 156.0f : 186.0f, 0.34f, withAlpha(COL_CREAM, clampf(sCardNoteT, 0, 1)), ALIGN_CENTER);
 			}
 			break;
 		}
@@ -7156,7 +7188,8 @@ static void updateFrame(const Input& in, bool wasTouching) {
 			break;
 		case SCREEN_PASS_BOARD: {
 			if (blocked) break;
-			int t = menuInput(kResultButtons, 3, SCREEN_PASS_BOARD, in, wasTouching);
+			Button passBtns[3] = {resultButton(0, false), resultButton(1, false), resultButton(2, false)};
+			int t = menuInput(passBtns, 3, SCREEN_PASS_BOARD, in, wasTouching);
 			if (in.down & KEY_B) {
 				audio::click();
 				t = 0;
@@ -7189,7 +7222,8 @@ static void updateFrame(const Input& in, bool wasTouching) {
 			if (sGame.phaseT <= (in.touching || wasTouching ? 0.7f : 0.25f)) break;
 			if (sGame.mode == MODE_PRACTICE) {
 				// The last lesson: slicing a menu fruit, which goes on to Pick a Game.
-				int t = menuInput(kPracticeEndButtons, 2, SCREEN_RESULT, in, wasTouching);
+				Button pBtns[2] = {practiceEndButton(0), practiceEndButton(1)};
+				int t = menuInput(pBtns, 2, SCREEN_RESULT, in, wasTouching);
 				if (in.down & KEY_B) {
 					audio::click();
 					t = 0;
@@ -7216,7 +7250,7 @@ static void updateFrame(const Input& in, bool wasTouching) {
 			const int btnCount = elig ? kResultCount : kResultCount - 1;
 			if (sFocus[SCREEN_RESULT] >= btnCount) sFocus[SCREEN_RESULT] = btnCount - 1;
 			Button resultBtns[kResultCount];
-			for (int i = 0; i < kResultCount; i++) resultBtns[i] = kResultButtons[i];
+			for (int i = 0; i < kResultCount; i++) resultBtns[i] = resultButton(i);
 			if (!PORT_TWO_SCREENS) resultBtns[0] = {};
 			int t = menuInput(resultBtns, btnCount, SCREEN_RESULT, in, wasTouching);
 			if (elig && (in.down & KEY_Y)) {
@@ -7525,6 +7559,25 @@ void app::notifySuspended() {
 	if (sGame.keepBestSoFar()) sDirty = true;
 	if (sDirty) saveWrite();
 	sDirty = false;
+}
+
+void app::notifyResized() {
+	sBlade = {};
+	sMenuBlade = {};
+	sPressed = -1;
+	sTouchMode = TOUCH_NONE;
+	sTouchRow = -1;
+	sTouchMoved = false;
+	sShopList.drag = {};
+	sJournalList.drag = {};
+	sCreditDrag = false;
+	sOrcPassiveDrag = false;
+#if !PORT_3DS
+	sLogoBox.valid = false;
+#endif
+	sScroll = clampf(sScroll, 0.0f, maxScroll());
+	sCreditScroll = clampf(sCreditScroll, 0.0f, creditMaxScroll());
+	sOrcPassiveScroll = clampf(sOrcPassiveScroll, 0.0f, orcPassiveMaxScroll(orcInvLayout()));
 }
 
 bool app::inFieldView() { return sScreen == SCREEN_GAME; }

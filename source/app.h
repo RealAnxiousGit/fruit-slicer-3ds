@@ -10,5 +10,6 @@ void showLoading();    // runs the loading screen until everything has arrived
 bool frame(Input& in, int steps = 1);
 void shutdown();
 void notifySuspended();  // the game was interrupted, so pause it
+void notifyResized();    // the window resized or rotated; clear stale drags and clamp scrolls
 bool inFieldView();      // touch coordinates are in the field rather than the menu layout
 }  // namespace app

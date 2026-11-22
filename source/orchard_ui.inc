@@ -119,8 +119,8 @@ static OrcCardLayout orcCardLayout(int n, bool withReroll = true) {
 	return L;
 }
 
-static void orcCardRect(int i, int n, float* x, float* y, float* w, float* h) {
-	const OrcCardLayout L = orcCardLayout(n);
+static void orcCardRect(int i, int n, float* x, float* y, float* w, float* h, bool withReroll = true) {
+	const OrcCardLayout L = orcCardLayout(n, withReroll);
 	int row = 0, col = i, rowCount = n;
 	if (L.twoRows) {
 		if (i < 3) {
@@ -265,19 +265,25 @@ static const char* const kInvButtons[INVB_COUNT] = {"Resume", "Swap Slots", "Dro
 
 struct OrcInvLayout {
 	bool runCol, stacked;
-	float top, bottom;            // the content area
-	float sx, sy, sw;             // Stats
-	float cx, cy, cw;             // Charms
-	float rx, ry, rw;             // Run
-	float row;                    // a Stats row
+	float headerY, subY, top, bottom;  // header and content area
+	float detailsY, btnY;              // details strip and bottom action buttons
+	float panelX, panelY, panelW, panelH;
+	float sx, sy, sw;  // Stats
+	float cx, cy, cw;  // Charms
+	float rx, ry, rw;  // Run
+	float row;         // a Stats row
 };
 
 static OrcInvLayout orcInvLayout() {
 	OrcInvLayout L = {};
 	L.runCol = kFieldW >= 380;
 	L.stacked = !L.runCol && kFieldH >= 380;
+	L.headerY = kFieldTop + 1;
+	L.subY = kFieldTop + 21;
 	L.top = kFieldTop + 26 + (L.runCol ? 0 : 12);
 	L.bottom = (PORT_3DS || (!L.runCol && !L.stacked)) ? kFieldH - 72 : kFieldH - 64;
+	L.detailsY = (PORT_3DS || (!L.runCol && !L.stacked)) ? kFieldH - 70.0f : kFieldH - 63.0f;
+	L.btnY = kFieldH - 28.0f;
 	const float pad = 8;
 	if (L.runCol) {
 		const float w = kFieldW - pad * 4;
@@ -289,17 +295,41 @@ static OrcInvLayout orcInvLayout() {
 		L.rx = L.cx + L.cw + pad;
 		L.sy = L.cy = L.ry = L.top;
 	} else if (L.stacked) {
+		const float minTop = touchUiActive() ? (kFieldTop + 44.0f) : (kFieldTop + 6.0f);
+		const float maxBot = kFieldH - 8.0f;
+		const float avail = fmaxf(250.0f, maxBot - minTop);
+		const float headerH = 36.0f;
+		L.row = clampf((avail - 238.0f) / 9.0f, 9.2f, 11.5f);
+		const float statsH = 28.0f + 9.0f * L.row;
+		const float gapSC = 8.0f;
+		const float passiveH = 52.0f;
+		const float charmsH = 75.0f + passiveH;
+		const float gapCD = 6.0f;
+		const float detailsH = 38.0f;
+		const float btnH = 24.0f;
+		const float totalH = headerH + statsH + gapSC + charmsH + gapCD + detailsH + btnH;
+		const float blockY = minTop + fmaxf(0.0f, (avail - totalH) * 0.5f);
+		L.headerY = blockY;
+		L.subY = blockY + 18.0f;
+		L.top = L.sy = blockY + headerH;
+		L.cy = L.sy + statsH + gapSC;
+		L.bottom = L.cy + charmsH;
+		L.detailsY = L.bottom + gapCD;
+		L.btnY = L.detailsY + detailsH;
+		L.panelX = 3.0f;
+		L.panelY = fmaxf(minTop - 4.0f, blockY - 6.0f);
+		L.panelW = kFieldW - 6.0f;
+		L.panelH = fminf(kFieldH - 4.0f - L.panelY, totalH + 12.0f);
 		L.sw = L.cw = kFieldW - pad * 2;
 		L.sx = L.cx = pad;
-		L.sy = L.top;
-		L.cy = L.top + 14 + 14 + 9 * 11 + 8;
+		return L;
 	} else {
 		L.sw = L.cw = (kFieldW - pad * 3) * 0.5f;
 		L.sx = pad;
 		L.cx = pad * 2 + L.sw;
 		L.sy = L.cy = L.top;
 	}
-	const float statsH = (L.stacked ? L.cy - 8 : L.bottom) - L.sy - 28;
+	const float statsH = L.bottom - L.sy - 28;
 	L.row = clampf(statsH / 9, 8.5f, 11.0f);
 	return L;
 }
@@ -343,7 +373,7 @@ static int orcInvItems(OrcInvItem* out) {
 	}
 	const float gap = 6, w = clampf((kFieldW - 16 - gap * 3) / INVB_COUNT, 50, 96);
 	const float x0 = (kFieldW - (w * INVB_COUNT + gap * (INVB_COUNT - 1))) * 0.5f;
-	for (int b = 0; b < INVB_COUNT; b++) out[n++] = {INV_BUTTON, (u8)b, x0 + b * (w + gap), kFieldH - 28, w, 24};
+	for (int b = 0; b < INVB_COUNT; b++) out[n++] = {INV_BUTTON, (u8)b, x0 + b * (w + gap), L.btnY, w, 24};
 	return n;
 }
 
@@ -356,8 +386,8 @@ struct OrcInvDetails {
 static OrcInvDetails orcInvDetailsLayout() {
 	const OrcInvLayout L = orcInvLayout();
 	if (PORT_3DS || (!L.runCol && !L.stacked))
-		return {kFieldH - 70.0f, kFieldH - 59.0f, PORT_3DS ? 0.27f : 0.25f, PORT_3DS ? 0.25f : 0.23f, 9.0f, PORT_3DS ? 0.24f : 0.22f, false};
-	return {kFieldH - 63.0f, kFieldH - 54.0f, 0.25f, 0.22f, 8.0f, 0.21f, true};
+		return {L.detailsY, L.detailsY + 11.0f, PORT_3DS ? 0.27f : 0.25f, PORT_3DS ? 0.25f : 0.23f, 9.0f, PORT_3DS ? 0.24f : 0.22f, false};
+	return {L.detailsY, L.detailsY + 9.0f, 0.25f, 0.22f, 8.0f, 0.21f, true};
 }
 static float orcInvDetailsBottom(int card) {
 	const OrcInvDetails D = orcInvDetailsLayout();
@@ -409,13 +439,17 @@ static void drawOrcInventory() {
 	const int n = orcInvItems(items);
 	char buf[96];
 	gfx::rect(kFillX, kFillX, kFillW, kFillW, rgba(20, 12, 8, 200));
-	gfx::text("INVENTORY", kFieldW * 0.5f, kFieldTop + 1, 0.46f, rgba(255, 230, 140), ALIGN_CENTER);
+	if (L.stacked) {
+		drawPlank(L.panelX, L.panelY, L.panelW, L.panelH, false, false);
+		gfx::rect(L.panelX + 4, L.panelY + 4, L.panelW - 8, L.panelH - 8, rgba(16, 10, 8, 165));
+	}
+	gfx::text("INVENTORY", kFieldW * 0.5f, L.headerY, 0.46f, rgba(255, 230, 140), ALIGN_CENTER);
 	const u32 head = rgba(255, 210, 150);
 	const int room = o.room;
 	const int mins = (int)sGame.elapsed / 60, secs = (int)sGame.elapsed % 60;
 	if (!L.runCol) {
 		snprintf(buf, sizeof buf, "Room %d   Level %d   %d:%02d   %d sliced", room, o.level, mins, secs, sGame.sliced);
-		orcFit(buf, kFieldW * 0.5f, kFieldTop + 21, 0.30f, kFieldW - 16, COL_CREAM);
+		orcFit(buf, kFieldW * 0.5f, L.subY, 0.30f, kFieldW - 16, COL_CREAM);
 	}
 	// Stats: HP, then each upgrade with its level as pips.
 	gfx::text("Stats", L.sx, L.sy, 0.33f, head);
@@ -784,7 +818,7 @@ static bool tapped(const Input& in, bool wasTouching, float x, float y, float w,
 }
 
 // Boss Rush's build signs, before the first boss.
-static void rushBuildRect(int i, float* x, float* y, float* w, float* h) { orcCardRect(i, BUILD_COUNT, x, y, w, h); }
+static void rushBuildRect(int i, float* x, float* y, float* w, float* h) { orcCardRect(i, BUILD_COUNT, x, y, w, h, false); }
 
 static void drawRushPick() {
 	const float openK = gSave.transitions && !gSave.calmFx ? clampf(sOrcOpenT / 0.24f, 0.0f, 1.0f) : 1.0f;
@@ -918,10 +952,10 @@ struct Room50CutsceneBox {
 
 static Room50CutsceneBox room50CutsceneBox(const char* line = nullptr) {
 	static char sLastText[256] = {};
-	static float sLastFieldW = -1.0f;
+	static float sLastFieldW = -1.0f, sLastFieldH = -1.0f;
 	static u8 sLastLarge = 255;
 	static Room50CutsceneBox sCachedBox;
-	if (line && sLastFieldW == kFieldW && sLastLarge == gSave.largeText && strcmp(line, sLastText) == 0) {
+	if (line && sLastFieldW == kFieldW && sLastFieldH == kFieldH && sLastLarge == gSave.largeText && strcmp(line, sLastText) == 0) {
 		return sCachedBox;
 	}
 	Room50CutsceneBox B;
@@ -949,6 +983,7 @@ static Room50CutsceneBox room50CutsceneBox(const char* line = nullptr) {
 	if (line) {
 		snprintf(sLastText, sizeof sLastText, "%s", line);
 		sLastFieldW = kFieldW;
+		sLastFieldH = kFieldH;
 		sLastLarge = gSave.largeText;
 		sCachedBox = B;
 	}

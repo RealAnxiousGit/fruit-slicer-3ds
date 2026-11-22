@@ -193,8 +193,9 @@ static void oggStartDecode() {
 	unsigned frames = 0;
 	sOggDec = songdec::open(sOgg, (int)sOggSize, &ch, &rate, &frames);
 	if (!sOggDec || ch < 1 || ch > 2 || rate < 8000 || rate > 96000 || frames == 0 || frames > (unsigned)rate * 600) {
-		fprintf(stderr, "[audio] skipping a track that can't be decoded\n");
+		fprintf(stderr, "[audio] skipping a track that can't be decoded (track %d, size %u, ch %d, rate %d, frames %u)\n", sCurrent, sOggSize, ch, rate, frames);
 		oggDrop();
+		sCurrent = MUSIC_NONE;
 		return;
 	}
 	sMusicClip.samples = frames;
@@ -202,7 +203,10 @@ static void oggStartDecode() {
 	sMusicClip.channels = (u32)ch;
 	sMusicClip.pcm = audioport::alloc(frames * ch * 2);
 	sOggDecoded = 0;
-	if (!sMusicClip.pcm) oggDrop();
+	if (!sMusicClip.pcm) {
+		oggDrop();
+		sCurrent = MUSIC_NONE;
+	}
 }
 #endif
 
@@ -427,6 +431,7 @@ static void loadFailed() {
 	sStarted = false;
 	if (sMusicClip.pcm) audioport::release(sMusicClip.pcm);
 	sMusicClip.pcm = nullptr;
+	sCurrent = MUSIC_NONE;
 }
 
 static bool loading() {
@@ -467,11 +472,16 @@ void update(float dt) {
 		u32 want = left < kOggReadPerFrame ? left : kOggReadPerFrame;
 		size_t got = port::assetRead(sOgg + sLoadDone, want, sLoadFile);
 		sLoadDone += got;
-		if (got != want || sLoadDone >= sOggSize) {
+		if (sLoadDone >= sOggSize) {
 			port::assetClose(sLoadFile);
 			sLoadFile = nullptr;
-			if (got == want) oggStartDecode();
-			else oggDrop();
+			oggStartDecode();
+		} else if (got == 0) {
+			fprintf(stderr, "[audio] short ogg read %u/%u (track %d)\n", sLoadDone, sOggSize, sCurrent);
+			port::assetClose(sLoadFile);
+			sLoadFile = nullptr;
+			oggDrop();
+			sCurrent = MUSIC_NONE;
 		}
 	} else if (sOggDec) {
 		const u32 from = sOggDecoded;
@@ -515,15 +525,20 @@ void update(float dt) {
 		}
 	}
 #else
-		u32 left = sMusicClip.samples * frameBytes - sLoadDone;
+		const u32 total = sMusicClip.samples * frameBytes;
+		u32 left = total - sLoadDone;
 		u32 want = left < kReadPerFrame ? left : kReadPerFrame;
 		size_t got = port::assetRead((u8*)sMusicClip.pcm + sLoadDone, want, sLoadFile);
 		sLoadDone += got;
-		if (got != want || sLoadDone >= sMusicClip.samples * frameBytes) {
+		if (sLoadDone >= total) {
 			port::assetClose(sLoadFile);
 			sLoadFile = nullptr;
-			if (got == want) arrived(from, sMusicClip.samples);
-			else loadFailed();
+			arrived(from, sMusicClip.samples);
+		} else if (got == 0) {
+			fprintf(stderr, "[audio] short pcm read %u/%u (track %d)\n", sLoadDone, total, sCurrent);
+			port::assetClose(sLoadFile);
+			sLoadFile = nullptr;
+			loadFailed();
 		} else {
 			arrived(from, sLoadDone / frameBytes);
 		}
@@ -694,6 +709,9 @@ static void startTrack(int track, bool autoPick = false, int context = MUSIC_NON
 		// Still arriving, so the hardware never saw this one.
 		port::assetClose(sLoadFile);
 		sLoadFile = nullptr;
+#if FS_OGG
+		if (sOgg || sOggDec) oggDrop();
+#endif
 		if (sMusicClip.pcm) audioport::release(sMusicClip.pcm);
 		sMusicClip.pcm = nullptr;
 	}
@@ -727,6 +745,7 @@ static void startTrack(int track, bool autoPick = false, int context = MUSIC_NON
 				sLoadDone = 0;
 				return;
 			}
+			fprintf(stderr, "[audio] failed to stage %s (size=%ld)\n", path, size);
 			port::assetClose(ogg);
 		}
 	}
@@ -804,6 +823,7 @@ static void bossCancel() {
 
 void bossMusic(int track) {
 	if (!sReady || track < 0 || track >= trackCount()) return;
+	fprintf(stderr, "[audio] boss track %d requested (stage=%d)\n", track, sBossStage);
 	sBossTrack = track;
 	if (sBossStage == BOSS_PLAYING) {
 		startTrack(track, false, sContext);

@@ -2318,6 +2318,129 @@ static void labFinish(Input& in) {
 				labCheck(noPhantom && tapWorks && labelHit && cornerMiss && clearsPause,
 				         "Touch tap activates menu buttons, ignores held transition, hits labels, and portrait Practice clears Pause");
 			}
+			// Portrait Inventory centering/bounds, orientation-switch invariants, Options spacing, and boss music playback.
+			{
+#if !PORT_3DS
+				const float wasW = gFieldW, wasH = gFieldH;
+				const InputMode wasMode = gInputMode;
+				const u8 wasLarge = gSave.largeText;
+				const int savedPassives = sGame.orc.passiveCount;
+				gInputMode = INPUT_TOUCH;
+
+				bool invOk = true;
+				const float aspects[2] = {9.0f / 20.0f, 9.0f / 16.0f};
+				for (int ai = 0; ai < 2; ai++) {
+					gfx::fieldFor(aspects[ai], &gFieldW, &gFieldH);
+					const OrcInvLayout L = orcInvLayout();
+					const float minTop = kFieldTop + 44.0f;
+					const float avail = (kFieldH - 8.0f) - minTop;
+					const float usedH = (L.btnY + 24.0f) - L.headerY;
+					const float topGap = L.headerY - minTop;
+					const float botGap = (kFieldH - 8.0f) - (L.btnY + 24.0f);
+					const bool sym = avail > usedH ? fabsf(topGap - botGap) <= 2.5f : L.headerY >= minTop - 0.1f;
+					gSave.largeText = 1;
+					applyAccessibility();
+					const float detBot = orcInvDetailsBottom(CARD_BLADE);
+					gSave.largeText = wasLarge;
+					applyAccessibility();
+					sGame.orc.passiveCount = 18;
+					const float pScrollMax = orcPassiveMaxScroll(L);
+					sGame.orc.passiveCount = savedPassives;
+					if (!L.stacked || L.headerY < minTop - 0.1f || !sym || L.detailsY - L.bottom > 12.0f || detBot >= L.btnY || pScrollMax <= 0.0f) {
+						invOk = false;
+					}
+				}
+				labCheck(invOk, "Portrait Inventory centers vertically, clears touch signs, avoids voids, and fits Larger Text");
+
+				gFieldW = 240.0f;
+				gFieldH = 427.0f;
+				const Room50CutsceneBox b1 = room50CutsceneBox(kRoom50Lines[0]);
+				gFieldH = 533.0f;
+				const Room50CutsceneBox b2 = room50CutsceneBox(kRoom50Lines[0]);
+				float rx = 0, ry = 0, rw = 0, rh = 0;
+				rushBuildRect(0, &rx, &ry, &rw, &rh);
+				const OrcCardLayout rushL = orcCardLayout(BUILD_COUNT, false);
+
+				const Mode wasModeG = sGame.mode;
+				const auto wasPhaseG = sGame.phase;
+				const Orchard wasOrc = sGame.orc;
+				sGame.mode = MODE_ORCHARD;
+				sGame.phase = PHASE_PLAY;
+				sGame.orc.choosing = false;
+				sGame.orc.cutscene = false;
+				sGame.orc.resumePrompt = false;
+				sGame.orc.bossRoom = true;
+				sGame.orc.resumeT = 0;
+				sGame.orc.stillT = 0;
+				sGame.orc.boss.id = BOSS_LEMON;
+				sGame.orc.boss.attack = ATK_NONE;
+				sGame.orc.boss.lemonadeOn = true;
+				sGame.orc.boss.lemLevel = 0.5f;
+				sGame.orc.boss.on = true;
+				sGame.orc.boss.beaten = false;
+				sGame.orc.boss.enterT = 0;
+				sGame.orc.boss.roarT = 0;
+				sGame.orc.boss.dazeT = 0;
+				sGame.orc.boss.radius = 28.0f;
+				sGame.orc.boss.x = 400.0f;
+				sGame.orc.boss.drainOn = true;
+				sGame.orc.boss.drainX = 390.0f;
+				sGame.update(sBlade);
+				const bool bossClamped = sGame.orc.boss.x <= gFieldW - 36.0f && sGame.orc.boss.drainX <= gFieldW - 44.0f &&
+				                         fabsf(sGame.orc.boss.baseY - (kFieldTop + (kFieldH - kFieldTop) * 0.36f)) < 0.01f;
+				char od[128];
+				snprintf(od, sizeof od, "dy=%.1f ry=%.1f/%.1f bx=%.1f drainX=%.1f baseY=%.1f",
+				         (double)(b2.y - b1.y), (double)ry, (double)rushL.cardTop,
+				         (double)sGame.orc.boss.x, (double)sGame.orc.boss.drainX, (double)sGame.orc.boss.baseY);
+				sGame.orc = wasOrc;
+				sGame.mode = wasModeG;
+				sGame.phase = wasPhaseG;
+
+				labCheck(fabsf(b2.y - b1.y - 106.0f) < 0.5f && fabsf(ry - rushL.cardTop) < 0.01f && bossClamped,
+				         "Orientation switches invalidate cached dialogue height, align Rush cards, and clamp boss bounds", od);
+
+				gFieldW = wasW;
+				gFieldH = wasH;
+				gInputMode = wasMode;
+#endif
+				bool optOk = true;
+				const bool wasFromPause = sOptionsFromPause;
+				for (int fp = 0; fp < 2; fp++) {
+					sOptionsFromPause = (fp == 1);
+					const int n = optionButtons();
+					for (int i = 1; i < n; i++) {
+						const Button& a = sOptionButtons[i];
+						if (a.x < 0 || a.x + a.w > 320.0f || a.y < 44.0f || a.y + a.h > 236.0f) optOk = false;
+						for (int j = i + 1; j < n; j++) {
+							const Button& b = sOptionButtons[j];
+							if (a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y) optOk = false;
+						}
+					}
+				}
+				sOptionsFromPause = wasFromPause;
+				optionButtons();
+				labCheck(optOk, "Options buttons stay inside bounds without overlap in full and pause views");
+
+				bool bossFilesOk = true;
+				int firstBossTrack = -1;
+				for (int t = 0; t < kTrackCount; t++) {
+					if (trackBoss(t) >= 0) {
+						if (firstBossTrack < 0) firstBossTrack = t;
+						if (!audio::trackFileThere(t)) bossFilesOk = false;
+					}
+				}
+				bool bossPlaysOk = true;
+				if (audio::available() && firstBossTrack >= 0) {
+					audio::music(MUSIC_PLAY);
+					for (int f = 0; f < 40; f++) audio::update(kDt);
+					audio::bossMusic(firstBossTrack);
+					for (int f = 0; f < 160; f++) audio::update(kDt);
+					bossPlaysOk = audio::bossMusicOn() && audio::currentTrack() == firstBossTrack;
+					audio::bossMusicEnd();
+					for (int f = 0; f < 160; f++) audio::update(kDt);
+				}
+				labCheck(bossFilesOk && bossPlaysOk, "Every boss track asset exists and bossMusic enters playback without dropping");
+			}
 		}
 		step = 1;
 #if PORT_3DS
