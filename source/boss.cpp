@@ -108,6 +108,9 @@ void Game::bossHitSlice(float x, float y, float dx, float dy) {
 		for (auto& s : orc.shots) s.on = false;
 		orc.bossesBeaten++;
 		gSave.bossesBeaten |= 1u << b.id;
+		if (!orc.bossTookHit) gSave.achFlags2 |= (1 << 1);
+		if (b.id >= kFirstMilestoneBoss) gSave.achFlags2 |= (1 << 3);
+		if (mode == MODE_BOSSRUSH && orc.bossesBeaten >= 5) gSave.achFlags2 |= (1 << 2);
 		u8 newlyFound = 0;
 		bossUnlockAllTracks(b.id, &newlyFound);
 		orc.newTracks += newlyFound;
@@ -163,6 +166,7 @@ void Game::bossStart(int id, bool royal) {
 	b.id = (u8)id;
 	b.on = true;
 	orc.bossRoom = true;
+	orc.bossTookHit = false;
 	b.guard = true;
 	b.phase = 1;
 	b.royal = royal;

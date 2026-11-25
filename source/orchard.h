@@ -220,6 +220,8 @@ struct Orchard {
 	float slotOn[kSlots];    // seconds a reusable charm still runs
 	int rerolls;
 	int paidRerolls;         // coin-purchased rerolls this run (price increments +15 per purchase)
+	int totalRerolls;        // total rerolls used this run (free + paid)
+	bool bossTookHit;        // true once player takes damage during current boss fight
 	u32 coinsSpent;          // coins spent from this run's gathered coins on rerolls
 	bool luckyPit;           // the next level-up shows 5 cards
 	// Room 50 first-encounter retro dialogue cutscene & Dev Room/Level Skip prompt.

@@ -1550,6 +1550,7 @@ void Game::trickEffect(const Obj& o, float dx, float dy) {
 			}
 			audio::play(SFX_GOLD, 0.9f, pan);
 			addRing(o.x, o.y, rgba(255, 170, 220), 2.0f, 0.3f);
+			gSave.achFlags |= (1 << 2);
 			setCallout("PINATA!", rgba(255, 170, 220));
 			showCaption("Pinata broken! Grab the coins.");
 			break;

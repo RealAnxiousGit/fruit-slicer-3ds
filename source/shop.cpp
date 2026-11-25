@@ -82,6 +82,7 @@ BuyResult shopBuy(int tab, int i) {
 	u32 price = shopItem(tab, i).price;
 	if (gSave.coins < price) return BUY_SHORT;
 	gSave.coins -= price;
+	gSave.coinsSpentShop += price;
 	*kTabs[tab].owned |= 1u << (kTabs[tab].firstBit + i);
 	return BUY_DONE;
 }

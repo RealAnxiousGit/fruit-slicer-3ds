@@ -686,7 +686,69 @@ static void labMenus() {
 		}
 		case 67:
 			labExpect(SCREEN_RECORDS, "Stats back arrow returns to Records");
+			botTap(kRecordsButtons[3]);
+			sBotMenuStep = 97;
+			return;
+		case 97: {
+			labExpect(SCREEN_ACHIEVEMENTS, "Achievements opens from Records");
+			labCheck(sAchCount == 31, "Achievements lists 31 platform-applicable achievements");
+			labCheck(audio::loaded(SFX_ACH_IN) && audio::loaded(SFX_ACH_JINGLE) && audio::loaded(SFX_ACH_OUT) && audio::loaded(SFX_MYTHIC),
+			         "Achievement & Mythic SFX are loaded cleanly");
+			// Unit-test achievement rules with saved state restored cleanly afterwards.
+			const u64 ach0 = gSave.achievements[0], ach1 = gSave.achievements[1];
+			const u32 coinsWas = gSave.coins, lifeWas = gSave.coinsLifetime, fruitWas = gSave.totalFruit;
+			const u16 roomWas = gSave.orchardBestRoom;
+			const u8 f1Was = gSave.achFlags, f2Was = gSave.achFlags2;
+			gSave.achievements[0] = gSave.achievements[1] = 0;
+			gSave.achFlags2 = 0;
+			gSave.coinsLifetime = 50; gSave.totalFruit = 120; gSave.orchardBestRoom = 25;
+			sAchQHead = sAchQTail = sAchToastPhase = 0; sAchToastId = -1;
+			achRetroactiveCheck();
+			labCheck(achHas(ACH_OOH_SHINY) && achHas(ACH_FRUIT_JUICE) && achHas(ACH_QUARTER_MILESTONE) &&
+			         sAchQHead == sAchQTail && gSave.coins == coinsWas + 15 + 20 + 50,
+			         "Retroactive 2.0.0 save silently unlocks earned achievements and grants universal Shop coins");
+			const Screen scrWas = sScreen;
+			const bool mixWas = sGame.mixed;
+			const Mode modeWas = sGame.mode;
+			sScreen = SCREEN_GAME; sGame.mode = MODE_CLASSIC; sGame.mixed = true;
+			sAchAllowInLab = true;
+			labCheck(!achCheckAllowed(ACH_COMBO_MASTER) && achCheckAllowed(ACH_MIX_IT_UP) && achCheckAllowed(ACH_MIXOLOGIST),
+			         "Mixer runs block non-Mixer achievements while allowing Mix It Up and Mixologist");
+			sGame.mixed = false;
+			achUnlock(ACH_COMBO_MASTER);
+			achUnlock(ACH_CLASSIC_LEGEND);
+			updateAchToast(0.01f);
+			const bool toastStarted = sAchToastPhase == 1 && sAchToastId == ACH_COMBO_MASTER;
+			updateAchToast(0.60f);
+			const bool toastHeld = sAchToastPhase == 2;
+			updateAchToast(4.60f);
+			const bool toastOut = sAchToastPhase == 3;
+			updateAchToast(0.60f);
+			updateAchToast(0.01f);
+			const bool toastNext = sAchToastPhase == 1 && sAchToastId == ACH_CLASSIC_LEGEND;
+			labCheck(toastStarted && toastHeld && toastOut && toastNext,
+			         "Wide-banner achievement toast steps slide-in -> hold -> slide-out and pops FIFO queue");
+			for (int i = 0; i < ACH_COUNT; i++) {
+				if (i != ACH_COMPLETIONIST && i != ACH_ARCADE_ACE && achInPlatform(i))
+					gSave.achievements[i / 64] |= (1ULL << (i % 64));
+			}
+			achUnlock(ACH_ARCADE_ACE);
+			labCheck(achHas(ACH_COMPLETIONIST), "Completionist auto-unlocks once all other platform achievements are earned");
+			sAchAllowInLab = false;
+			sAchQHead = sAchQTail = sAchToastPhase = 0; sAchToastId = -1;
+			sScreen = scrWas; sGame.mixed = mixWas; sGame.mode = modeWas;
+			gSave.achievements[0] = ach0; gSave.achievements[1] = ach1;
+			gSave.coins = coinsWas; gSave.coinsLifetime = lifeWas; gSave.totalFruit = fruitWas;
+			gSave.orchardBestRoom = roomWas; gSave.achFlags = f1Was; gSave.achFlags2 = f2Was;
+			saveWrite();
 			botTap(kBack);
+			sBotMenuStep = 98;
+			return;
+		}
+		case 98:
+			labExpect(SCREEN_RECORDS, "Achievements back arrow returns to Records");
+			botTap(kBack);
+			sBotMenuStep = 68;
 			return;
 		case 68:
 			labExpect(SCREEN_TITLE, "Records back arrow returns to Title");

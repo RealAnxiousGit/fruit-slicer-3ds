@@ -131,6 +131,13 @@ void saveDefaults(bool keepScores, int section) {
 		gSave.streetPassPrompted = 0;
 		snprintf(gSave.streetPassMsg, sizeof gSave.streetPassMsg, "Hello! :)");
 		if (!keepScores) gSave.seenRoom50Cutscene = 0;
+		if (!keepScores) {
+			gSave.achievements[0] = gSave.achievements[1] = 0;
+			gSave.coinsSpentShop = 0;
+			gSave.mythicsUnlocked = 0;
+			gSave.maxJuggleAir = 0;
+			gSave.achFlags = gSave.achFlags2 = 0;
+		}
 	}
 }
 

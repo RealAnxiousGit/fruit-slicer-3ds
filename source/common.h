@@ -193,6 +193,12 @@ struct Settings {
 	u8 bossTrackLastEx[4];   // per boss (indices 4..7), last track (+1) heard
 	// 2.1 Records, Appearance, Oscilloscope, Achievements & Mythics (appended cleanly).
 	u8 oscStyle;             // 0 Rainbow, 1 Simple White, 2 Simple Green, 3 Bloomin' Blue
+	u64 achievements[2];     // 2.1.0 achievement bitmask (32+ achievements)
+	u32 coinsSpentShop;      // 2.1.0 cumulative Shop coins spent
+	u32 mythicsUnlocked;     // 2.1.0 Mythic Orchard Blast charms unlocked in pool
+	u16 maxJuggleAir;        // 2.1.0 best simultaneous airborne fruits in Juggle
+	u8 achFlags;             // 2.1.0 persisted achievement trigger flags (logo/mod/pinata/reroll/secondWind/scores)
+	u8 achFlags2;            // 2.1.0 persisted achievement trigger flags (combo/boss/mixer/retroDone)
 };
 static_assert(MODE_COUNT + 1 <= kMaxModes, "more modes than the save holds");
 static_assert(MODE_JUGGLE - MODE_ORCHARD + 2 <= 8, "howToSeen has a bit for each how-to");

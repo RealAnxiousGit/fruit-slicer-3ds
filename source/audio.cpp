@@ -40,6 +40,7 @@ static const char* const kSfxFiles[SFX_COUNT] = {
 	"clang", "open", "roar", "bossin", "victory", "pop",
 	"laugh", "chuckle", "whoosh", "launch", "levelup",
 	"boss_blip", "train_whistle", "bubbles",
+	"ach_in", "ach_jingle", "ach_out", "mythic_drop",
 };
 static_assert(sizeof kSfxFiles / sizeof kSfxFiles[0] == SFX_COUNT, "every sound needs a file name");
 // How much of the mix one sound may take. A new sound is turned down if the ones still playing have

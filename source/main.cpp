@@ -2545,6 +2545,7 @@ static void drawShopPreview() {
 static void topPanel(float x, float y, float w, float h);
 #include "appearance.inc"
 #include "radio.inc"
+#include "achievements.inc"
 
 // Moves dir pages along, wrapping past either end. The old page slides out as the new one comes in.
 static void turnModePage(int dir) {
@@ -5506,14 +5507,15 @@ static void drawTopContent(Screen screen) {
 			drawRadioTop();
 			break;
 		case SCREEN_ACHIEVEMENTS:
+			drawAchievementsTop();
+			break;
 		case SCREEN_MODS:
 			topPanel(30, 108, 340, 80);
 			gfx::setDepth(1.0f);
 			drawLogo(200, 54, 0.62f);
 			gfx::setDepth(0.7f);
-			gfx::text(screen == SCREEN_ACHIEVEMENTS ? "Achievements" : "Mods", 200, 122, 0.56f, COL_ACCENT, ALIGN_CENTER);
-			fitText(screen == SCREEN_ACHIEVEMENTS ? "32 Achievements coming in Milestone C."
-			        : "Texture, Audio & Visual Mods coming in Milestone D.", 200, 154, 0.34f, 316, COL_CREAM);
+			gfx::text("Mods", 200, 122, 0.56f, COL_ACCENT, ALIGN_CENTER);
+			fitText("Texture, Audio & Visual Mods coming in Milestone D.", 200, 154, 0.34f, 316, COL_CREAM);
 			break;
 		case SCREEN_JOURNAL:
 			drawJournalTop();
@@ -6230,7 +6232,7 @@ static void drawBottomContent(Screen screen) {
 			break;
 		case SCREEN_ACHIEVEMENTS:
 			drawMenuBack();
-			drawStubScreen("Achievements", "32 milestones & coin rewards", "Coming next in Milestone C.", SCREEN_RECORDS, sFocus[SCREEN_ACHIEVEMENTS]);
+			drawAchievements();
 			break;
 		case SCREEN_MODS:
 			drawMenuBack();
@@ -6625,6 +6627,8 @@ static void updateFrame(const Input& in, bool wasTouching) {
 			sLogoRainbow = !sLogoRainbow;
 			if (sLogoRainbow) sLogoRainbowT = 0.0f;
 			audio::play(SFX_CLICK, 0.7f, 0.0f, sLogoRainbow ? 1.25f : 0.88f);
+			gSave.achFlags |= (1 << 0);
+			achUnlock(ACH_LETS_PARTY);
 		}
 	}
 #endif
@@ -6978,7 +6982,7 @@ static void updateFrame(const Input& in, bool wasTouching) {
 			if (t == 0) goTo(SCREEN_TITLE, -1);
 			else if (t == 1) openAppearance();
 			else if (t == 2) openRadio();
-			else if (t == 3) goTo(SCREEN_ACHIEVEMENTS, 1);
+			else if (t == 3) openAchievements();
 			else if (t == 4) {
 				sFocus[SCREEN_JOURNAL] = 1;
 				goTo(SCREEN_JOURNAL, 1);
@@ -7003,7 +7007,7 @@ static void updateFrame(const Input& in, bool wasTouching) {
 			if (!blocked) updateRadio(in, wasTouching);
 			break;
 		case SCREEN_ACHIEVEMENTS:
-			if (!blocked) updateStubScreen(SCREEN_ACHIEVEMENTS, SCREEN_RECORDS, in, wasTouching);
+			if (!blocked) updateAchievements(in, wasTouching);
 			break;
 		case SCREEN_MODS:
 			if (!blocked) updateStubScreen(SCREEN_MODS, SCREEN_TITLE, in, wasTouching);
@@ -7411,6 +7415,8 @@ static void updateFrame(const Input& in, bool wasTouching) {
 		default:
 			break;
 	}
+	updateAchToast(kDt);
+	achPollProgress();
 }
 
 static void drawStickPoint();
@@ -7441,6 +7447,8 @@ static void drawFrame() {
 			gfx::rect(0, 0, 400, 240, rgba(0, 0, 0, (u8)(clampf(sFade, 0, 1) * 255)));
 		}
 		if (sShowDebug) drawDebug();
+		gfx::setDepth(1.5f);
+		drawAchToast(0, 0, 400);
 	}
 	gfx::beginBottom();
 	if (sSliding) {
@@ -7558,6 +7566,12 @@ static void drawFrame() {
 		gfx::rect(200 - w / 2 - 8, 214, w + 16, 22, rgba(30, 18, 10, 190));
 		gfx::text(note, 200, 216, 0.36f, COL_CREAM, ALIGN_CENTER);
 	}
+	{
+		float wx, wy, ww, wh;
+		gfx::beginCorner();
+		gfx::windowArea(&wx, &wy, &ww, &wh);
+		drawAchToast(wx, wy, ww);
+	}
 	if (sFade > 0) gfx::fadeAll(clampf(sFade, 0, 1));
 	gfx::endFrame();
 }
@@ -7620,6 +7634,7 @@ void app::showLoading() {
 
 bool app::init() {
 	saveLoad();
+	achRetroactiveCheck();
 #ifdef UPDATE_TEST
 	update::boot("0.9.0");  // a test build that believes it's old, so the real updater has a release to fetch
 #else

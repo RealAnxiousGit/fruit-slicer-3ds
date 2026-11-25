@@ -1388,6 +1388,39 @@ def build_audio():
         place(bub, b_sw * b_env, at, rng_bub.uniform(0.55, 1.0))
     write_pcm("bubbles", norm(reverb_tail(bub, 0.35, 0.15), 0.72), s)
 
+    # 2.1.0 Achievement toast SFX: slow swoosh-in, retro pixel jingle, slow swoosh-out, and Mythic drop fanfare.
+    rng_ach = np.random.default_rng(210)
+    # ach_in: soft airy rising swoosh (~0.48s)
+    dur_sw = 0.48
+    t_sw = np.arange(n_of(dur_sw)) / s
+    noise_in = rng_ach.normal(0.0, 1.0, len(t_sw))
+    env_in = np.sin(np.pi * (t_sw / dur_sw)) ** 1.3 * (0.3 + 0.7 * (t_sw / dur_sw))
+    tone_in = np.sin(2 * np.pi * np.cumsum(320.0 + 380.0 * (t_sw / dur_sw)) / s)
+    write_pcm("ach_in", norm((noise_in * 0.28 + tone_in * 0.55) * env_in, 0.55), s)
+
+    # ach_jingle: bright 4-note retro pixel arpeggio (~0.62s)
+    jin = np.zeros(n_of(0.62))
+    for i, midi in enumerate((76, 80, 83, 88)):
+        nt = 0.18 if i < 3 else 0.34
+        lt = np.arange(n_of(nt)) / s
+        f = mtof(midi)
+        sq = np.tanh(2.5 * np.sin(2 * np.pi * f * lt)) + 0.35 * np.sin(4 * np.pi * f * lt)
+        env = np.exp(-lt / (0.08 if i < 3 else 0.14)) * np.minimum(1.0, lt / 0.004)
+        place(jin, sq * env, i * 0.075, 0.65)
+    write_pcm("ach_jingle", norm(reverb_tail(jin, 0.25, 0.12), 0.72), s)
+
+    # ach_out: soft falling swoosh (~0.48s)
+    noise_out = rng_ach.normal(0.0, 1.0, len(t_sw))
+    env_out = np.sin(np.pi * (t_sw / dur_sw)) ** 1.3 * (1.0 - 0.65 * (t_sw / dur_sw))
+    tone_out = np.sin(2 * np.pi * np.cumsum(680.0 - 360.0 * (t_sw / dur_sw)) / s)
+    write_pcm("ach_out", norm((noise_out * 0.26 + tone_out * 0.50) * env_out, 0.52), s)
+
+    # mythic_drop: shimmering mythic fanfare (~1.1s)
+    myt = np.zeros(n_of(1.1))
+    for i, midi in enumerate((72, 76, 79, 84, 88, 91)):
+        place(myt, bell(mtof(midi), 0.55), i * 0.055, 0.75)
+    write_pcm("mythic_drop", norm(reverb_tail(myt, 0.65, 0.24), 0.80), s)
+
     # Original tracks: all slow, soft and major-leaning.
     menu = [[60, 64, 67, 71, 74], [57, 60, 64, 67, 71], [65, 69, 72, 76], [55, 59, 62, 67, 69]]
     play = [[62, 66, 69, 73], [59, 62, 66, 69], [67, 71, 74, 78], [64, 67, 71, 74]]

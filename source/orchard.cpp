@@ -800,6 +800,7 @@ void Game::orcHurt(int damage, float x, float y, const char* what) {
 	if (orc.lastStandT > 0 && hp < 1) hp = 1;
 	orc.hp = hp;
 	orc.damageTaken += d;
+	if (orc.boss.on && !orc.boss.beaten) orc.bossTookHit = true;
 	orc.hurtFlash = 1;
 	strikePulse = 1;
 	audio::play(SFX_STRIKE, 0.9f, fieldPan(x));
@@ -928,6 +929,8 @@ void Game::orcOffer() {
 
 void Game::orcReroll() {
 	if (!orcCanReroll()) return;
+	orc.totalRerolls++;
+	if (orc.totalRerolls >= 5) gSave.achFlags |= (1 << 3);
 	if (orc.rerolls > 0) {
 		orc.rerolls--;
 	} else if (mode == MODE_ORCHARD) {
