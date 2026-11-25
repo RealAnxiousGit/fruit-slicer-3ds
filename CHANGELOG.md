@@ -1,5 +1,22 @@
 # Changelog
 
+## 2.1.0
+
+**Records, Radio, Achievements, Mods & Orchard Blast Rebalance.** Saves from 2.0.0 carry over seamlessly and silently unlock retroactive achievements on first boot.
+
+### New
+
+- **Records Hub & Appearance:** moved Stats and Fruit Journal into **Records** alongside **Appearance** (Boards, Sceneries, Skins, Splats, Trails, Blades, and 4 free Oscilloscope styles: `Rainbow`, `Simple White`, `Simple Green`, `Bloomin' Blue`), **Radio**, and **Achievements**.
+- **Radio:** full-track music gallery for default and Shop-unlocked tracks with a Grid/List dropdown, search bar, Menu+Game / Boss theme equipping, and `Select` live Oscilloscope visualizer.
+- **Achievements:** 30 3DS-applicable achievements (including StreetPass Challenge `A New Foe!`) with bespoke icons, black-silhouette locked state, top-screen wide-banner slide-in toasts, and universal Shop coin rewards (`+15` to `+100`).
+- **Mods Menu:** supports extracted folders and `.zip` archives on `sdmc:/3ds/FruitSlicer/mods/` (`modTemplate.zip` included) with runtime asset overrides, priority reordering, and LayeredFS fallback.
+- **Orchard Blast 2.1.0 Expansion:** added 12 new passive charms across 6 rarity tiers (`Common`, `Uncommon`, `Rare`, `Epic`, `Legend`, `Mythic`), including 4 boss-drop Mythics (`Orchard Crown`, `Twin Harvest`, `Solar Blade`, `Prismatic Core`) with a 1-in-8 regular / 1-in-4 milestone drop chance, rotating rainbow pinwheel reveal, and permanent save unlock.
+
+### Changed & Fixed
+
+- **Double XP & Rebalance:** renamed `Double Points` to **Double XP** in Orchard Blast (`2×` XP per fruit), tuned **Easy** (`30` HP, gentler throws, generous XP) and **Normal** (`25` HP, smoother Rooms 1–10) while keeping **Hard/Insane** strict, and added 1 starter Reroll on all runs.
+- **3DS Small-Text Readability:** enlarged cramped labels across Orchard Blast, Radio, Mods, and Achievements.
+
 ## 2.0.0
 
 **Fruit Slicer 3DS: Orchard Blast.** Saves from 1.0 and 1.1 carry over: your best scores, coins, shop unlocks and settings are kept.

@@ -2,7 +2,7 @@
 
 A free, fan-made fruit-slicing arcade game for the Nintendo 3DS. Swipe the touch screen to cut fruit out of the air, chain combos, draft roguelike upgrades, battle seeded bosses, and stay away from the bombs.
 
-**Version 2.0.0.** Tested on a real New 2DS XL and in the Azahar emulator. Old 3DS hardware and the look of stereoscopic 3D are still unconfirmed, so reports are welcome.
+**Version 2.1.0.** Tested on a real New 2DS XL and in the Azahar emulator. Old 3DS hardware and the look of stereoscopic 3D are still unconfirmed, so reports are welcome.
 
 <p>
   <img src="docs/screenshots/title.png" width="150" alt="Title screen with the logo on top and a menu of fruit to slice below">
@@ -64,7 +64,11 @@ Pick a Game shows six signs a page. The arrows beside the signs, or left and rig
 
 **Difficulty:** speed, gravity, wave size and bomb frequency all rise with time and score, at a different pace in each mode.
 
-## Coins, Shop, Journal and Stats
+## Coins, Shop, Records and Mods
+
+**Records:** a dedicated hub right next to Shop and Options housing **Stats**, **Fruit Journal**, **Appearance** (Boards, Sceneries, Fruit Skins, Splats, Blade Trails, Blades, plus 4 free Oscilloscope styles: `Rainbow`, `Simple White`, `Simple Green`, and `Bloomin' Blue`), **Radio** (full-track preview & equip music gallery with Grid/List toggle, search bar, and `Select` live Oscilloscope visualizer), and **Achievements** (30 platform achievements including StreetPass Challenge, with top-screen wide-banner toasts, Shop coin rewards, and silent retroactive unlocks for 2.0.0 saves).
+
+**Mods:** supports extracted folders and `.zip` archives on `sdmc:/3ds/FruitSlicer/mods/` (`modTemplate.zip` included) with runtime asset overrides, priority reordering, and LayeredFS fallback.
 
 **Coins** spin through the air now and then. Slicing one is worth 5 points and 5 coins, and every 100 points of a run pays 1 more. A coin is never a strike, and a missed one costs nothing.
 
