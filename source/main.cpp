@@ -1438,13 +1438,10 @@ static const Row kMixerRows[] = {
 	{ROW_CHOICE, "Double Bombs", &gSave.mixer[MIX_DOUBLE_BOMBS], 0, 1, kOffOn, 0, 0, ACT_NONE, "Twice the bombs in every wave.", "Zen stays bomb-free."},
 	{ROW_CHOICE, "Sides Only", &gSave.mixer[MIX_SIDES], 0, 1, kOffOn, 0, 0, ACT_NONE, "Fruit only comes in", "from the left and right."},
 };
-static Row kAudioRows[] = {  // not const: Menu and Game Music grow with the Custom Music folder
+static Row kAudioRows[] = {
 	{ROW_SLIDER, "Sound Effects", &gSave.sfx, 0, 100, nullptr, 0, 100, ACT_NONE, "Slices, combos and bombs.", ""},
 	{ROW_SLIDER, "Music", &gSave.music, 0, 100, nullptr, 0, 100, ACT_NONE, "Menu and game music.", ""},
 	{ROW_SLIDER, "Menu Sounds", &gSave.menuSfx, 0, 100, nullptr, 0, 100, ACT_NONE, "The tap when you press a sign.", ""},
-	{ROW_CHOICE, "Menu Music", &gSave.menuTrack, 0, kTrackCount, kTrackRowNames, 0, 0, ACT_NONE, "What plays in the menus. Auto", "shuffles every regular or custom song."},
-	{ROW_CHOICE, "Game Music", &gSave.gameTrack, 0, kTrackCount, kTrackRowNames, 0, 0, ACT_NONE, "What plays during a game. Auto", "shuffles regular/custom; Zen stays calm."},
-	{ROW_CHOICE, "Boss Music", &gSave.bossMusic, 0, kTrackCount + 1, kBossTrackRowNames, 0, 0, ACT_NONE, "Auto unlocks and shuffles owned", "boss tracks, or pick a boss/custom song."},
 	{ROW_ACTION, "Latency Test", nullptr, 0, 0, nullptr, 0, 0, ACT_LATENCY, "Slice in time with a metronome", "to set Beat Timing for you."},
 	{ROW_SLIDER, "Beat Timing", &gSave.beatLatency, 0, 200, nullptr, 0, 0, ACT_NONE, "Moves the Beat Slice beat. Raise it", "if your slices land late."},
 	{ROW_ACTION, "Reset Audio", nullptr, 0, 0, nullptr, 0, 0, ACT_RESET_AUDIO, "Puts these back to their defaults.", ""},
@@ -2547,6 +2544,7 @@ static void drawShopPreview() {
 
 static void topPanel(float x, float y, float w, float h);
 #include "appearance.inc"
+#include "radio.inc"
 
 // Moves dir pages along, wrapping past either end. The old page slides out as the new one comes in.
 static void turnModePage(int dir) {
@@ -5505,16 +5503,17 @@ static void drawTopContent(Screen screen) {
 			drawAppearancePreview();
 			break;
 		case SCREEN_RADIO:
+			drawRadioTop();
+			break;
 		case SCREEN_ACHIEVEMENTS:
 		case SCREEN_MODS:
 			topPanel(30, 108, 340, 80);
 			gfx::setDepth(1.0f);
 			drawLogo(200, 54, 0.62f);
 			gfx::setDepth(0.7f);
-			gfx::text(screen == SCREEN_RADIO ? "Radio" : (screen == SCREEN_ACHIEVEMENTS ? "Achievements" : "Mods"), 200, 122, 0.56f, COL_ACCENT, ALIGN_CENTER);
-			fitText(screen == SCREEN_RADIO ? "Full Radio & Oscilloscope coming in Milestone B."
-			        : (screen == SCREEN_ACHIEVEMENTS ? "32 Achievements coming in Milestone C."
-			        : "Texture, Audio & Visual Mods coming in Milestone D."), 200, 154, 0.34f, 316, COL_CREAM);
+			gfx::text(screen == SCREEN_ACHIEVEMENTS ? "Achievements" : "Mods", 200, 122, 0.56f, COL_ACCENT, ALIGN_CENTER);
+			fitText(screen == SCREEN_ACHIEVEMENTS ? "32 Achievements coming in Milestone C."
+			        : "Texture, Audio & Visual Mods coming in Milestone D.", 200, 154, 0.34f, 316, COL_CREAM);
 			break;
 		case SCREEN_JOURNAL:
 			drawJournalTop();
@@ -6227,7 +6226,7 @@ static void drawBottomContent(Screen screen) {
 			break;
 		case SCREEN_RADIO:
 			drawMenuBack();
-			drawStubScreen("Radio", "Music gallery & Oscilloscope", "Coming next in Milestone B.", SCREEN_RECORDS, sFocus[SCREEN_RADIO]);
+			drawRadio();
 			break;
 		case SCREEN_ACHIEVEMENTS:
 			drawMenuBack();
@@ -6978,7 +6977,7 @@ static void updateFrame(const Input& in, bool wasTouching) {
 			}
 			if (t == 0) goTo(SCREEN_TITLE, -1);
 			else if (t == 1) openAppearance();
-			else if (t == 2) goTo(SCREEN_RADIO, 1);
+			else if (t == 2) openRadio();
 			else if (t == 3) goTo(SCREEN_ACHIEVEMENTS, 1);
 			else if (t == 4) {
 				sFocus[SCREEN_JOURNAL] = 1;
@@ -7001,7 +7000,7 @@ static void updateFrame(const Input& in, bool wasTouching) {
 			break;
 		}
 		case SCREEN_RADIO:
-			if (!blocked) updateStubScreen(SCREEN_RADIO, SCREEN_RECORDS, in, wasTouching);
+			if (!blocked) updateRadio(in, wasTouching);
 			break;
 		case SCREEN_ACHIEVEMENTS:
 			if (!blocked) updateStubScreen(SCREEN_ACHIEVEMENTS, SCREEN_RECORDS, in, wasTouching);

@@ -58,4 +58,6 @@ int trackCount();            // the game's tracks, then any custom songs (Window
 bool trackHasBeat(int track); // a custom song only once its beat has been found
 float musicLength();         // seconds in the playing track, or -1 while it is still loading
 bool isSongTrack(int track);  // false for short loopable tracks, true for full-length songs
+void playRadioTrack(int track);  // previews/loops a full track in Radio without mutating saved choices
+bool oscSamples(float* out, int count);  // fills normalized [-1, 1] waveform samples around current playback
 }  // namespace audio

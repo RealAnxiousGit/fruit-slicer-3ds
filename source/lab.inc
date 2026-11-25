@@ -772,7 +772,44 @@ static void labMenus() {
 		}
 		case 55: sBotMenuStep = 17; labExpect(SCREEN_TITLE, "Shop back arrow cuts its berry and goes back"); botTap(kTitleButtons[1]); return;
 		case 17: labExpect(SCREEN_OPTIONS, "Options opens"); botTap(optionButtonFor(SID_AUDIO)); return;
-		case 18: labExpect(SCREEN_SECTION, "Audio section opens"); botTapXY((int)((kTrackX0 + kTrackX1) / 2), (int)firstRowY); return;
+		case 18: labExpect(SCREEN_SECTION, "Audio section opens"); {
+			const u8 prevMenu = gSave.menuTrack, prevGame = gSave.gameTrack, prevBoss = gSave.bossMusic;
+			const u32 prevOwned = gSave.ownedTracks;
+			openRadio();
+			labCheck(sScreen == SCREEN_RADIO, "Radio opens");
+			RadioEntry rlist[64];
+			const int nAll = radioBuildList(rlist, 64);
+			labCheck(nAll >= 9 && rlist[0].isAuto, "Radio lists Auto (Shuffle) plus all 8 default tracks");
+			snprintf(sRadioQuery, sizeof sRadioQuery, "orchard");
+			const int nFilt = radioBuildList(rlist, 64);
+			labCheck(nFilt >= 1 && nFilt < nAll && ciContains(rlist[0].title, "Orchard"), "Radio search filters by title");
+			sRadioQuery[0] = 0;
+			labCheck(radioBuildList(rlist, 64) == nAll, "Clearing Radio search restores full track list");
+			sRadioGrid = true;
+			sRadioGrid = false;
+			radioEquipEntry({1, false, false, kTrackRowNames[2], ""});
+			labCheck(gSave.menuTrack == 2 && gSave.gameTrack == 2, "Equipping a regular Radio track sets both Menu and Game Music");
+			gSave.ownedTracks = 0xFFFFFFFFu;
+			int bossTr = -1;
+			for (int t = 0; t < kTrackCount; t++) if (trackBoss(t) >= 0) { bossTr = t; break; }
+			if (bossTr >= 0) {
+				radioEquipEntry({bossTr, false, true, kTrackRowNames[bossTr + 1], ""});
+				labCheck(gSave.bossMusic == (u8)(bossTr + 2) && gSave.menuTrack == 2, "Equipping a boss Radio track sets Boss Music only");
+			}
+			float oscBuf[64];
+			audio::oscSamples(oscBuf, 64);
+			sRadioOsc = true;
+			labCheck(sRadioOsc, "Radio Oscilloscope toggles on");
+			sRadioOsc = false;
+			radioPreviewEntry({3, false, false, kTrackRowNames[4], ""});
+			leaveRadio();
+			labCheck(sScreen == SCREEN_RECORDS && gSave.menuTrack == 2, "Leaving Radio restores Records without overwriting equipped track on preview");
+			gSave.menuTrack = prevMenu; gSave.gameTrack = prevGame; gSave.bossMusic = prevBoss; gSave.ownedTracks = prevOwned;
+			saveWrite();
+			audio::reapply();
+			goTo(SCREEN_SECTION, 1);
+			sSection = sectionIndex(SID_AUDIO);
+		} botTapXY((int)((kTrackX0 + kTrackX1) / 2), (int)firstRowY); return;
 		case 19: botTap(kBack); return;
 		case 20:
 			labExpect(SCREEN_OPTIONS, "section back arrow cuts its berry and goes back");
@@ -1341,27 +1378,24 @@ static void labV2Fixes() {
 
 	// 5. Audio Boss Music choice separation, Orchard Pause Start Over modal, Stats Global Top 100 tab/controls, Card non-overlap, and Guides accuracy.
 	{
-		// Track separation between Menu/Game rows vs Boss Music row.
-		const Row* menuRow = nullptr;
-		const Row* bossRow = nullptr;
+		// Options -> Audio no longer has Menu/Game/Boss Music rows, and Radio classifies boss tracks separately.
+		bool audioCleaned = true;
 		for (const Row& r : kAudioRows) {
-			if (r.value == &gSave.menuTrack) menuRow = &r;
-			if (r.value == &gSave.bossMusic) bossRow = &r;
+			if (r.value == &gSave.menuTrack || r.value == &gSave.gameTrack || r.value == &gSave.bossMusic)
+				audioCleaned = false;
 		}
 		const u32 ownedWas = gSave.ownedTracks;
 		gSave.ownedTracks = 0xFFFFFFFFu;
-		bool sepOk = menuRow && bossRow;
-		int customBossTrack = 2 + kTrackCount;  // custom slot 0
-		if (sepOk) {
-			for (int t = 0; t < kTrackCount; t++) {
-				const bool isBoss = trackBoss(t) >= 0;
-				if (choiceLocked(*menuRow, 1 + t) != isBoss) sepOk = false;
-				if (choiceLocked(*bossRow, 2 + t) != !isBoss) sepOk = false;
+		RadioEntry rchk[64];
+		const int rcnt = radioBuildList(rchk, 64);
+		bool sepOk = audioCleaned && rcnt > 9;
+		for (int i = 0; i < rcnt; i++) {
+			if (rchk[i].track >= 0 && rchk[i].track < kTrackCount) {
+				if (rchk[i].isBoss != (trackBoss(rchk[i].track) >= 0)) sepOk = false;
 			}
-			if (choiceLocked(*bossRow, 0) || choiceLocked(*bossRow, 1) || choiceLocked(*bossRow, customBossTrack)) sepOk = false;
 		}
 		gSave.ownedTracks = ownedWas;
-		labCheck(sepOk, "Audio Menu/Game rows exclude built-in Boss Tracks while Boss Music allows Off, Auto, Boss Tracks, and Custom Songs");
+		labCheck(sepOk, "Options->Audio removes track rows while Radio separates Regular/Custom vs Boss tracks");
 
 		// Upgrade card description + footer non-overlap math check across BLADE & all cards.
 		bool cardsClear = true;
@@ -1860,29 +1894,25 @@ static void labFinish(Input& in) {
 				labCheck(beatSong() >= kTrackCount && strcmp(custom::name(beatSong() - kTrackCount), "Lab Song A (2)") == 0,
 				         "a different song with a name already there is added under a new name");
 				{
-					// Menu and Game Music list the custom songs after the game's tracks.
+					// Radio lists the custom songs after the game's tracks, and missing custom songs fall back to Auto.
 					const u8 menuWas = gSave.menuTrack, gameWas = gSave.gameTrack;
-					refreshMusicRows();
-					const Row* menuRow = nullptr;
-					for (const Row& r : kAudioRows)
-						if (r.value == &gSave.menuTrack) menuRow = &r;
-					gSave.menuTrack = 0;
-					adjustRow(*menuRow, -1);  // left from Auto wraps round to the last song
-					char shown[64], d2[120];
-					rowValueText(*menuRow, shown, sizeof shown);
-					snprintf(d2, sizeof d2, "value %d of %d, shows %s, playing %d", gSave.menuTrack, (int)menuRow->hi, shown, audio::currentTrack());
-					labCheck(gSave.menuTrack == kTrackCount + custom::count() && strcmp(shown, "Lab Song B") == 0 && !choiceLocked(*menuRow, gSave.menuTrack) &&
-					         audio::currentTrack() == gSave.menuTrack - 1,
-					         "Menu Music offers the custom songs after the game's tracks, by name, and plays the one chosen", d2);
+					RadioEntry rlist[64];
+					const int rn = radioBuildList(rlist, 64);
+					const RadioEntry* lastCustom = rn > 0 ? &rlist[rn - 1] : nullptr;
+					if (lastCustom && !lastCustom->isAuto) radioEquipEntry(*lastCustom);
+					char d2[120];
+					snprintf(d2, sizeof d2, "value %d, playing %d, last %s", gSave.menuTrack, audio::currentTrack(), lastCustom ? lastCustom->title : "none");
+					labCheck(lastCustom && gSave.menuTrack == kTrackCount + custom::count() && gSave.gameTrack == gSave.menuTrack &&
+					         strcmp(lastCustom->title, "Lab Song B") == 0 && audio::currentTrack() == gSave.menuTrack - 1,
+					         "Radio offers the custom songs after the game's tracks, by name, and plays the one chosen", d2);
 					gSave.menuTrack = (u8)(kTrackCount + kCustomSongsMax);
-					rowValueText(*menuRow, shown, sizeof shown);
 					audio::preview(MUSIC_MENU);
-					snprintf(d2, sizeof d2, "shows %s, playing %d", shown, audio::currentTrack());
-					labCheck(strcmp(shown, "Song not found") == 0 && audio::currentTrack() < kTrackCount,
-					         "a chosen song that left the folder says so and plays Auto meanwhile", d2);
+					snprintf(d2, sizeof d2, "playing %d", audio::currentTrack());
+					labCheck(audio::currentTrack() < kTrackCount,
+					         "a chosen song that left the folder plays Auto meanwhile", d2);
 					gSave.menuTrack = menuWas;
 					gSave.gameTrack = gameWas;
-					refreshMusicRows();
+					audio::reapply();
 				}
 				const char* made[] ={"Lab Song A.wav", "Lab Song A (2).wav", "Lab Song B.ogg"};
 				for (const char* m : made) {

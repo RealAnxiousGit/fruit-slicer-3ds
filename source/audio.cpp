@@ -982,6 +982,45 @@ void musicSpeed(float factor) {
 
 float currentMusicSpeed() { return sMusicSpeedNow; }
 
+void playRadioTrack(int track) {
+	if (!sReady || track < 0 || track >= trackCount()) return;
+	if (sBossStage != BOSS_OFF) bossCancel();
+	if (sCurrent == track && sStarted) {
+		sAutoPick = false;
+		sLoop = true;
+		return;
+	}
+	startTrack(track, false, sContext);
+}
+
+bool oscSamples(float* out, int count) {
+	if (!out || count <= 0) return false;
+	for (int i = 0; i < count; i++) out[i] = 0.0f;
+	if (!sReady || !sMusicClip.pcm || sMusicClip.samples == 0 || sMusicClip.rate == 0 || !sStarted) return false;
+	const float t = audioport::musicTime();
+	if (t < 0.0f) return false;
+	const u32 ch = sMusicClip.channels >= 2 ? 2 : 1;
+	const u32 total = sMusicClip.samples;
+	u32 pos = (u32)((u64)(t * (double)sMusicClip.rate) % total);
+	// Search forward up to 256 frames for a rising zero-crossing so the waveform locks steadily.
+	auto sampleAt = [&](u32 frame) -> float {
+		const u32 idx = (frame % total) * ch;
+		if (ch == 1) return sMusicClip.pcm[idx] / 32768.0f;
+		return (sMusicClip.pcm[idx] + sMusicClip.pcm[idx + 1]) / 65536.0f;
+	};
+	for (u32 off = 0; off < 256 && total > 2; off++) {
+		const float a = sampleAt(pos + off);
+		const float b = sampleAt(pos + off + 1);
+		if (a <= 0.0f && b > 0.0f) {
+			pos = (pos + off) % total;
+			break;
+		}
+	}
+	const u32 step = sMusicClip.rate >= 32000 ? 4 : 2;
+	for (int i = 0; i < count; i++) out[i] = clampf(sampleAt(pos + (u32)i * step), -1.0f, 1.0f);
+	return true;
+}
+
 void fuse(bool on, float pan) {
 	if (!sReady || !sFuse.pcm) return;
 	if (on && gSave.sfx > 0) {
