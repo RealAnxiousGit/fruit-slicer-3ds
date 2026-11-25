@@ -97,6 +97,7 @@ void saveDefaults(bool keepScores, int section) {
 		gSave.sliceStyle = gIsNew3ds ? 1 : 0;
 		gSave.transitions = 1;
 		gSave.seasonalOff = 0;
+		gSave.oscStyle = 0;
 		PORT_RESET_VISUALS
 	}
 	if (section == SEC_ALL || section == SEC_GAMEPLAY) {

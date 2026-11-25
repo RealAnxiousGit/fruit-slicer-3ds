@@ -239,7 +239,7 @@ static void autotestMenus(Input& in) {
 	switch (sBotMenuStep++) {
 		case 0: botTap(kTitleButtons[4]); return;   // How to Play
 		case 1: botTap(kBack); return;
-		case 2: botTap(kTitleButtons[2]); return;   // Fruit Journal
+		case 2: botTap(kTitleButtons[2]); return;   // Records
 		case 3: botTap(kBack); return;
 		case 4: botTap(kTitleButtons[1]); return;   // Options
 		case 5: botTap(optionButtonFor(SID_AUDIO)); return;  // Audio
@@ -247,10 +247,10 @@ static void autotestMenus(Input& in) {
 		case 7: botTapXY((int)((kTrackX0 + kTrackX1) / 2), (int)firstRowY); return;
 		case 8: botTap(kBack); return;
 		case 9: botTap(optionButtonFor(SID_VISUALS)); return;  // Visuals
-		case 10: botTapXY(231, (int)(firstRowY + kRowH)); return;  // Board: next
-		case 11: botTapXY(231, (int)(firstRowY + kRowH * 2)); return;  // Scenery: next
-		case 12: botTapXY(231, (int)(firstRowY + kRowH * 3)); return;  // Blade: next
-		case 13: botTapXY(231, (int)(firstRowY + kRowH * 4)); return;  // Effects: wraps round
+		case 10: botTapXY(231, (int)(firstRowY)); return;  // Art Style: next
+		case 11: botTap(kBack); return;
+		case 12: sBotMenuStep = 15; return;
+		case 13: sBotMenuStep = 15; return;
 		case 14: botTap(kBack); return;
 		case 15: botTap(optionButtonFor(SID_GAMEPLAY)); return;  // Gameplay
 		case 16: botTapXY(231, (int)(firstRowY + kRowH)); return;  // Difficulty

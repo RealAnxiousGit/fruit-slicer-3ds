@@ -627,15 +627,47 @@ static void labMenus() {
 		case 1: labExpect(SCREEN_HOWTO, "How to Play opens"); botTap(kBack); return;
 		case 2: labExpect(SCREEN_TITLE, "How to Play back arrow"); botTap(kTitleButtons[2]); return;
 		case 3:
-			labExpect(SCREEN_JOURNAL, "Journal opens");
+			labExpect(SCREEN_RECORDS, "Records opens from Title");
+			botTap(kRecordsButtons[1]);
+			sBotMenuStep = 65;
+			return;
+		case 65: {
+			labExpect(SCREEN_APPEARANCE, "Appearance opens from Records");
+			appSetTab(APP_BLADES);
+			sAppSel = 1;
+			appSyncPreview();
+			appEquipSelected();
+			labCheck(gSave.blade == 1, "Appearance equips selected Blade");
+			appSetTab(APP_OSC);
+			sAppSel = 3;
+			appSyncPreview();
+			appEquipSelected();
+			labCheck(gSave.oscStyle == 3, "Appearance equips Oscilloscope Bloomin' Blue");
+			appSetTab(APP_BOARDS);
+			sAppSel = 0;
+			appSyncPreview();
+			appEquipSelected();
+			botTap(kBack);
+			return;
+		}
+		case 66:
+			labExpect(SCREEN_RECORDS, "Appearance back arrow returns to Records");
+			botTap(kRecordsButtons[4]);
+			sBotMenuStep = 4;
+			return;
+		case 4:
+			labExpect(SCREEN_JOURNAL, "Journal opens from Records");
 			// The Journal draws 2D pictures whichever art style is chosen; the 3DS used to drop them with 3D art.
 			labCheck(gfx::stickersLoaded(), gSave.artStyle == ART_3D ? "Journal has its fruit pictures with 3D models" : "Journal has its fruit pictures with 2D stickers");
 			labCheck(journalTiles() == progress::journalPages() + BOSS_COUNT && journalIsBoss(journalTiles() - 1) && !journalIsBoss(progress::journalPages() - 1), "the Journal ends with a Bosses page, one sticker per boss");
 			botTap(kBack);
 			return;
-		case 4: labExpect(SCREEN_TITLE, "Journal back arrow cuts its berry and goes back"); botTap(kTitleButtons[3]); return;
-		case 5: {
-			labExpect(SCREEN_STATS, "Stats opens");
+		case 5:
+			labExpect(SCREEN_RECORDS, "Journal back arrow returns to Records");
+			botTap(kRecordsButtons[5]);
+			return;
+		case 6: {
+			labExpect(SCREEN_STATS, "Stats opens from Records");
 			const u16 roomWas = gSave.orchardBestRoom;
 			const u16 endWas = gSave.endlessBestRoom;
 			gSave.orchardBestRoom = 0;
@@ -649,9 +681,26 @@ static void labMenus() {
 			gSave.endlessBestRoom = endWas;
 			labCheck(none == 0 && six == 6 && fourteen == 14, "Stats shows best room across Endless runs and legacy saves");
 			botTap(kBack);
+			sBotMenuStep = 67;
 			return;
 		}
-		case 6: labExpect(SCREEN_TITLE, "Stats back arrow"); botTap(kTitleButtons[6]); return;
+		case 67:
+			labExpect(SCREEN_RECORDS, "Stats back arrow returns to Records");
+			botTap(kBack);
+			return;
+		case 68:
+			labExpect(SCREEN_TITLE, "Records back arrow returns to Title");
+			botTap(kTitleButtons[3]);
+			return;
+		case 69:
+			labExpect(SCREEN_MODS, "Mods opens from Title");
+			botTap(kBack);
+			return;
+		case 70:
+			labExpect(SCREEN_TITLE, "Mods back arrow returns to Title");
+			botTap(kTitleButtons[6]);
+			sBotMenuStep = 7;
+			return;
 		case 7:
 			labExpect(SCREEN_CREDITS, "Credits opens");
 			labCheck(sCreditScroll == 0 && creditMaxScroll() > 200, "Credits opens at the top of a list longer than its sign");

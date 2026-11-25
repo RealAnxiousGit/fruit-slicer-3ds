@@ -191,6 +191,8 @@ struct Settings {
 	u32 spChallengesWon;     // StreetPass challenges beaten
 	u8 seenRoom50Cutscene;   // 1 once Room 50 first-encounter dialogue has played (cleared only on Reset Everything)
 	u8 bossTrackLastEx[4];   // per boss (indices 4..7), last track (+1) heard
+	// 2.1 Records, Appearance, Oscilloscope, Achievements & Mythics (appended cleanly).
+	u8 oscStyle;             // 0 Rainbow, 1 Simple White, 2 Simple Green, 3 Bloomin' Blue
 };
 static_assert(MODE_COUNT + 1 <= kMaxModes, "more modes than the save holds");
 static_assert(MODE_JUGGLE - MODE_ORCHARD + 2 <= 8, "howToSeen has a bit for each how-to");

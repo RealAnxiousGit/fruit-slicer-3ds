@@ -32,7 +32,7 @@ extern "C" u32 __stacksize__ = 96 * 1024;
 #include "custom_music.h"
 #endif
 
-#define VERSION_STRING "2.0.0"
+#define VERSION_STRING "2.1.0"
 
 #if PORT_TWO_SCREENS
 static constexpr float kSlideTop = 400, kSlideBottom = 320;
@@ -42,6 +42,7 @@ static constexpr float kSlideTop = 900, kSlideBottom = 900;
 
 enum Screen {
 	SCREEN_LOADING, SCREEN_TITLE, SCREEN_MODES, SCREEN_OPTIONS, SCREEN_SECTION, SCREEN_CREDITS, SCREEN_HOWTO, SCREEN_GUIDES, SCREEN_SHOP,
+	SCREEN_RECORDS, SCREEN_APPEARANCE, SCREEN_RADIO, SCREEN_ACHIEVEMENTS, SCREEN_MODS,
 	SCREEN_JOURNAL, SCREEN_STATS, SCREEN_BEAT, SCREEN_BEATTOOL, SCREEN_UPDATE,
 	SCREEN_GAME, SCREEN_PAUSE, SCREEN_RESULT, SCREEN_BENCH, SCREEN_PASS_TURN, SCREEN_PASS_BOARD, SCREEN_LATENCY, SCREEN_BOSS_TEST, SCREEN_COUNT
 };
@@ -262,12 +263,12 @@ static void drawTypingWithCursor(const char* typed, float cx, float y, float sca
 static const Button kTitleButtons[] = {
 #if PORT_3DS
 	{40, 14, 240, 80, "Play"},
-	{10, 102, 96, 54, "Options"},  {112, 102, 96, 54, "Journal"}, {214, 102, 96, 54, "Stats"},
+	{10, 102, 96, 54, "Options"},  {112, 102, 96, 54, "Records"}, {214, 102, 96, 54, "Mods"},
 	{10, 166, 96, 46, "How to Play"}, {112, 166, 96, 46, "Shop"}, {214, 166, 96, 46, "Credits"},
 #else
 	// The fruit sit a little higher here, to leave the bottom-left corner to the link icons.
 	{40, 16, 240, 70, "Play"},
-	{10, 88, 96, 50, "Options"},  {112, 88, 96, 50, "Journal"}, {214, 88, 96, 50, "Stats"},
+	{10, 88, 96, 50, "Options"},  {112, 88, 96, 50, "Records"}, {214, 88, 96, 50, "Mods"},
 	{10, 142, 96, 46, "How to Play"}, {112, 142, 96, 46, "Shop"}, {214, 142, 96, 46, "Credits"},
 	// Link icons: not fruit, so a swipe never opens a browser.
 	{8, 198, 38, 38, "GitHub"}, {52, 198, 38, 38, "X"}, {96, 198, 38, 38, "YouTube"},
@@ -680,7 +681,8 @@ static int fruitFor(const char* label) {
 		int fruit;
 	} kMap[] = {
 		{"Play", MF_MELON}, {"Options", MF_ORANGE}, {"Credits", MF_PLUM}, {"How to Play", MF_LEMON}, {"Shop", MF_GOLD},
-		{"Journal", MF_KIWI}, {"Stats", MF_PEACH}, {"Practice", MF_APPLE}, {"Guides", MF_PEAR}, {"Let's Play", MF_MELON}, {"Mixer", MF_COCONUT},
+		{"Journal", MF_KIWI}, {"Stats", MF_PEACH}, {"Records", MF_KIWI}, {"Mods", MF_PEACH}, {"Appearance", MF_APPLE}, {"Radio", MF_ORANGE}, {"Achievements", MF_GOLD},
+		{"Practice", MF_APPLE}, {"Guides", MF_PEAR}, {"Let's Play", MF_MELON}, {"Mixer", MF_COCONUT},
 		{"Resume", MF_APPLE}, {"Main Menu", MF_PEAR}, {"Again", MF_PEACH}, {"Modes", MF_KIWI}, {"Keep", MF_LEMON}, {"Try Again", MF_PEACH}, {"Share", MF_PLUM},
 		{"Audio", MF_APPLE}, {"Visuals", MF_PEACH}, {"Visuals and Display", MF_PEACH}, {"Gameplay and Controls", MF_PINEAPPLE}, {"Accessibility", MF_PEAR}, {"Scores and Data", MF_PLUM},
 		{"StreetPass", MF_MELON}, {"Enable", MF_MELON}, {"Not Now", MF_APPLE}, {"Challenge", MF_MELON},
@@ -726,7 +728,7 @@ static bool isCut(const Button& b) {
 static Blade sMenuBlade;                  // the trail a swipe leaves across the menus
 static bool menuBladeShown() {
 	// Not on Credits: a drag there scrolls the list, and a blade trail would follow it.
-	return sScreen == SCREEN_TITLE || sScreen == SCREEN_MODES || sScreen == SCREEN_OPTIONS || sScreen == SCREEN_HOWTO || sScreen == SCREEN_GUIDES || sScreen == SCREEN_JOURNAL || sScreen == SCREEN_STATS || sScreen == SCREEN_BEAT || sScreen == SCREEN_BEATTOOL || sScreen == SCREEN_UPDATE || sScreen == SCREEN_PAUSE || sScreen == SCREEN_RESULT || sScreen == SCREEN_PASS_TURN || sScreen == SCREEN_PASS_BOARD || sScreen == SCREEN_LATENCY;
+	return sScreen == SCREEN_TITLE || sScreen == SCREEN_MODES || sScreen == SCREEN_OPTIONS || sScreen == SCREEN_RECORDS || sScreen == SCREEN_HOWTO || sScreen == SCREEN_GUIDES || sScreen == SCREEN_JOURNAL || sScreen == SCREEN_STATS || sScreen == SCREEN_BEAT || sScreen == SCREEN_BEATTOOL || sScreen == SCREEN_UPDATE || sScreen == SCREEN_PAUSE || sScreen == SCREEN_RESULT || sScreen == SCREEN_PASS_TURN || sScreen == SCREEN_PASS_BOARD || sScreen == SCREEN_LATENCY;
 }
 
 static bool fruit3D() { return gSave.artStyle == ART_3D && m3d::ready(); }
@@ -1461,12 +1463,6 @@ static const char* const kScaleNames[] = {"75%", "100%", "125%"};
 // Each section shows the rows people change most, and ends in an Advanced page for the fine tuning and resets.
 static const Row kVisualRows[] = {
 	{ROW_CHOICE, "Art Style", &gSave.artStyle, 0, 1, kArtNames, 0, 0, ACT_NONE, "3D models or flat stickers.", PORT_ART_HINT},
-	{ROW_CHOICE, "Board", &gSave.board, 0, kBoardCount - 1, kBoardNames, 0, 0, ACT_NONE, "What you slice over.", ""},
-#if PORT_TWO_SCREENS
-	{ROW_CHOICE, "Scenery", &gSave.scene, 0, kSceneCount - 1, kSceneNames, 0, 0, ACT_NONE, "The view on the top screen.", ""},
-#endif
-	{ROW_CHOICE, "Blade", &gSave.blade, 0, kBladeCount - 1, kBladeNames, 0, 0, ACT_NONE, "The colour of the cutting edge,", "at the front of every slice."},
-	{ROW_CHOICE, "Trail", &gSave.trail, 0, kTrailCount - 1, kTrailNames, 0, 0, ACT_NONE, "What streaks out behind the blade.", "More trails are in the Shop."},
 #if PORT_3DS
 	{ROW_SLIDER, "3D Depth", &gSave.depth, 0, 100, nullptr, 0, 100, ACT_NONE, "How far things stand out,", "with the console's 3D slider."},
 #endif
@@ -1612,10 +1608,10 @@ static constexpr int kFromModes = -2;  // opened from Pick a Game, and goes back
 static const Section kSections[] = {
 	{"Audio", SECTION_ROWS(kAudioRows), SID_AUDIO, -1, true, "Sound, music and menu volume.", ""},
 #if PORT_HAS_DISPLAY
-	{"Visuals and Display", SECTION_ROWS(kVisualRows), SID_VISUALS, -1, true, PORT_VISUALS_HINT, "the screen and graphics quality."},
+	{"Visuals and Display", SECTION_ROWS(kVisualRows), SID_VISUALS, -1, true, "Art style, display, graphics", "quality and advanced visual settings."},
 	{"Advanced Graphics", SECTION_ROWS(kVisualMoreRows), SID_VISUALS_MORE, SID_VISUALS, true, "", ""},
 #else
-	{"Visuals", SECTION_ROWS(kVisualRows), SID_VISUALS, -1, true, PORT_VISUALS_HINT, "depth and speed savers."},
+	{"Visuals", SECTION_ROWS(kVisualRows), SID_VISUALS, -1, true, "Art style, 3D depth and", "speed savers."},
 	{"Advanced Visuals", SECTION_ROWS(kVisualMoreRows), SID_VISUALS_MORE, SID_VISUALS, true, "", ""},
 #endif
 	{"Gameplay and Controls", SECTION_ROWS(kGameplayRows), SID_GAMEPLAY, -1, true, PORT_GAMEPLAY_HINT, "game plays, plus stick slicing."},
@@ -2549,6 +2545,9 @@ static void drawShopPreview() {
 	if (sShopNoteT > 0) gfx::text(sShopNote, 200, 192, 0.40f, withAlpha(COL_CREAM, clampf(sShopNoteT * 2, 0, 1)), ALIGN_CENTER);
 }
 
+static void topPanel(float x, float y, float w, float h);
+#include "appearance.inc"
+
 // Moves dir pages along, wrapping past either end. The old page slides out as the new one comes in.
 static void turnModePage(int dir) {
 	sModeOldPage = sModePage;
@@ -3403,12 +3402,12 @@ static void updateJournal(const Input& in, bool wasTouching) {
 	if (f < 0 || f >= n) f = 1;
 	if (in.down & KEY_B) {
 		audio::click();
-		goTo(SCREEN_TITLE, -1);
+		goTo(SCREEN_RECORDS, -1);
 		return;
 	}
 	bool leave;
 	if (backCut(SCREEN_JOURNAL, in, wasTouching, &leave)) {
-		if (leave) goTo(SCREEN_TITLE, -1);
+		if (leave) goTo(SCREEN_RECORDS, -1);
 		return;
 	}
 	dpadNav(btns, n, in.repeat, f);
@@ -5300,7 +5299,7 @@ static void drawTopContent(Screen screen) {
 #if PORT_TWO_SCREENS
 			{
 				// What the chosen sign below does, since the signs themselves sit on the other screen.
-				static const char* const kWhat[kTitleCount] = {"Pick a game and start slicing.", "Sound, looks, controls and more.", "Every fruit you have sliced.", "Your numbers so far.", "The rules, and a practice run.", "Spend coins on themes, trails and music.", "Who made the game."};
+				static const char* const kWhat[kTitleCount] = {"Pick a game and start slicing.", "Sound, looks, controls and more.", "Appearance, Radio, Achievements, Journal and Stats.", "Enable and order texture and audio mods.", "The rules, and a practice run.", "Spend coins on themes, trails and music.", "Who made the game."};
 				int f = sFocus[SCREEN_TITLE];
 				gfx::setDepth(0.6f);
 				if (f >= 0 && f < kTitleCount) gfx::text(kWhat[f], 200, 204, 0.36f, COL_CREAM, ALIGN_CENTER);
@@ -5498,6 +5497,24 @@ static void drawTopContent(Screen screen) {
 		case SCREEN_SHOP:
 			topPanel(30, 8, 340, sShopNoteT > 0 ? 222.0f : 204.0f);
 			drawShopPreview();
+			break;
+		case SCREEN_RECORDS:
+			drawRecordsTop();
+			break;
+		case SCREEN_APPEARANCE:
+			drawAppearancePreview();
+			break;
+		case SCREEN_RADIO:
+		case SCREEN_ACHIEVEMENTS:
+		case SCREEN_MODS:
+			topPanel(30, 108, 340, 80);
+			gfx::setDepth(1.0f);
+			drawLogo(200, 54, 0.62f);
+			gfx::setDepth(0.7f);
+			gfx::text(screen == SCREEN_RADIO ? "Radio" : (screen == SCREEN_ACHIEVEMENTS ? "Achievements" : "Mods"), 200, 122, 0.56f, COL_ACCENT, ALIGN_CENTER);
+			fitText(screen == SCREEN_RADIO ? "Full Radio & Oscilloscope coming in Milestone B."
+			        : (screen == SCREEN_ACHIEVEMENTS ? "32 Achievements coming in Milestone C."
+			        : "Texture, Audio & Visual Mods coming in Milestone D."), 200, 154, 0.34f, 316, COL_CREAM);
 			break;
 		case SCREEN_JOURNAL:
 			drawJournalTop();
@@ -6200,6 +6217,26 @@ static void drawBottomContent(Screen screen) {
 			drawMenuBack();
 			drawShop();
 			break;
+		case SCREEN_RECORDS:
+			drawMenuBack();
+			drawRecords();
+			break;
+		case SCREEN_APPEARANCE:
+			drawMenuBack();
+			drawAppearance();
+			break;
+		case SCREEN_RADIO:
+			drawMenuBack();
+			drawStubScreen("Radio", "Music gallery & Oscilloscope", "Coming next in Milestone B.", SCREEN_RECORDS, sFocus[SCREEN_RADIO]);
+			break;
+		case SCREEN_ACHIEVEMENTS:
+			drawMenuBack();
+			drawStubScreen("Achievements", "32 milestones & coin rewards", "Coming next in Milestone C.", SCREEN_RECORDS, sFocus[SCREEN_ACHIEVEMENTS]);
+			break;
+		case SCREEN_MODS:
+			drawMenuBack();
+			drawStubScreen("Mods", "Texture, audio & visual mods", "Coming next in Milestone D.", SCREEN_TITLE, sFocus[SCREEN_MODS]);
+			break;
 		case SCREEN_JOURNAL:
 			drawMenuBack();
 			drawJournal();
@@ -6650,11 +6687,10 @@ static void updateFrame(const Input& in, bool wasTouching) {
 				}
 			} else if (t == 1) goTo(SCREEN_OPTIONS, 1);
 			else if (t == 2) {
-				sFocus[SCREEN_JOURNAL] = 1;
-				goTo(SCREEN_JOURNAL, 1);
+				if (sFocus[SCREEN_RECORDS] == 0) sFocus[SCREEN_RECORDS] = 1;
+				goTo(SCREEN_RECORDS, 1);
 			} else if (t == 3) {
-				sStatsTab = 0;
-				goTo(SCREEN_STATS, 1);
+				goTo(SCREEN_MODS, 1);
 			} else if (t == 4) {
 				sFocus[SCREEN_HOWTO] = 1;
 				goTo(SCREEN_HOWTO, 1);
@@ -6933,6 +6969,46 @@ static void updateFrame(const Input& in, bool wasTouching) {
 		case SCREEN_SHOP:
 			if (!blocked) updateShop(in, wasTouching);
 			break;
+		case SCREEN_RECORDS: {
+			if (blocked) break;
+			int t = menuInput(kRecordsButtons, kRecordsCount, SCREEN_RECORDS, in, wasTouching);
+			if (in.down & KEY_B) {
+				audio::click();
+				t = 0;
+			}
+			if (t == 0) goTo(SCREEN_TITLE, -1);
+			else if (t == 1) openAppearance();
+			else if (t == 2) goTo(SCREEN_RADIO, 1);
+			else if (t == 3) goTo(SCREEN_ACHIEVEMENTS, 1);
+			else if (t == 4) {
+				sFocus[SCREEN_JOURNAL] = 1;
+				goTo(SCREEN_JOURNAL, 1);
+			} else if (t == 5) {
+				sStatsTab = 0;
+				goTo(SCREEN_STATS, 1);
+			}
+			break;
+		}
+		case SCREEN_APPEARANCE: {
+			if (!blocked) updateAppearance(in, wasTouching);
+			if (sAppTab == APP_TRAILS || sAppTab == APP_BLADES) {
+				Input fake{};
+				fake.touching = true;
+				fake.tx = (int)(200 + sinf(sTime * 3.1f) * 60);
+				fake.ty = (int)(50 + sinf(sTime * 6.2f) * 30);
+				sPreviewBlade.update(fake);
+			}
+			break;
+		}
+		case SCREEN_RADIO:
+			if (!blocked) updateStubScreen(SCREEN_RADIO, SCREEN_RECORDS, in, wasTouching);
+			break;
+		case SCREEN_ACHIEVEMENTS:
+			if (!blocked) updateStubScreen(SCREEN_ACHIEVEMENTS, SCREEN_RECORDS, in, wasTouching);
+			break;
+		case SCREEN_MODS:
+			if (!blocked) updateStubScreen(SCREEN_MODS, SCREEN_TITLE, in, wasTouching);
+			break;
 		case SCREEN_JOURNAL:
 			if (!blocked) updateJournal(in, wasTouching);
 			break;
@@ -7023,7 +7099,7 @@ static void updateFrame(const Input& in, bool wasTouching) {
 					}
 					if (t == 0 || (in.down & KEY_B)) {
 						if (t != 0) audio::click();
-						goTo(SCREEN_TITLE, -1);
+						goTo(SCREEN_RECORDS, -1);
 					}
 					break;
 				}
@@ -7087,7 +7163,7 @@ static void updateFrame(const Input& in, bool wasTouching) {
 			int t = sGlobalMoved ? -1 : menuInput(kOnlyBack, 1, sScreen, in, wasTouching);
 			if (t == 0 || (in.down & KEY_B)) {
 				if (t != 0) audio::click();
-				goTo(SCREEN_TITLE, -1);
+				goTo(SCREEN_RECORDS, -1);
 			}
 			break;
 		}
