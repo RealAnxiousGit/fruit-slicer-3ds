@@ -1018,7 +1018,22 @@ bool oscSamples(float* out, int count) {
 		}
 	}
 	const u32 step = sMusicClip.rate >= 32000 ? 4 : 2;
-	for (int i = 0; i < count; i++) out[i] = clampf(sampleAt(pos + (u32)i * step), -1.0f, 1.0f);
+	float bassSq = 0.0f;
+	float lpPre = 0.0f;
+	for (u32 i = 0; i < 64; i++) {
+		const float s = sampleAt(pos + i * step);
+		lpPre += 0.08f * (s - lpPre);
+		bassSq += lpPre * lpPre;
+	}
+	const float bassRms = sqrtf(bassSq / 64.0f);
+	const float gain = 1.0f + clampf(bassRms * 2.4f, 0.0f, 1.45f);
+	float lp = lpPre;
+	for (int i = 0; i < count; i++) {
+		const float raw = sampleAt(pos + (u32)i * step);
+		lp += 0.08f * (raw - lp);
+		const float punch = (raw * 0.72f + lp * 0.55f) * gain;
+		out[i] = tanhf(punch * 1.15f);
+	}
 	return true;
 }
 

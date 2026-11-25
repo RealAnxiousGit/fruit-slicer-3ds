@@ -507,7 +507,7 @@ static void updateAchievements(const Input& in, bool wasTouching) {
 
 	static constexpr int kAchCols = 3;
 	const float viewH = 192.0f;
-	const float rowH = 62.0f;
+	const float rowH = 64.0f;
 	const int rows = (sAchCount + kAchCols - 1) / kAchCols;
 	const float maxScroll = clampf(rows * rowH - viewH, 0.0f, 9999.0f);
 
@@ -615,13 +615,13 @@ static void drawAchievements() {
 
 	gfx::setClip(8, 42, 304, 192);
 	static constexpr int kAchCols = 3;
-	const float rowH = 62.0f;
+	const float rowH = 64.0f;
 	for (int i = 0; i < sAchCount; i++) {
 		const int r = i / kAchCols;
 		const int c = i % kAchCols;
 		const float x = 12.0f + c * 100.0f;
 		const float y = 44.0f + r * rowH - sAchScrollDraw;
-		const float w = 96.0f, h = 58.0f;
+		const float w = 96.0f, h = 60.0f;
 		if (y + h < 40.0f || y > 236.0f) continue;
 
 		const int id = sAchIds[i];
@@ -633,12 +633,12 @@ static void drawAchievements() {
 			gfx::rect(x + 1, y + 1, w - 2, 1.5f, COL_ACCENT);
 			gfx::rect(x + 1, y + h - 2.5f, w - 2, 1.5f, COL_ACCENT);
 		}
-		gfx::sprite(SHEET_SPRITES, a.sprIdx, x + w * 0.5f, y + 16.0f, 0.78f, 0.78f, 0.0f,
+		gfx::sprite(SHEET_SPRITES, a.sprIdx, x + w * 0.5f, y + 13.5f, 0.70f, 0.70f, 0.0f,
 		            unl ? WHITE : rgba(0, 0, 0, 255));
-		drawWrappedText(a.title, x + w * 0.5f, y + 30.0f, 0.28f, w - 8.0f, 9.0f, unl ? COL_CREAM : rgba(10, 10, 12, 255), ALIGN_CENTER);
+		drawWrappedText(a.title, x + w * 0.5f, y + 26.0f, 0.27f, w - 8.0f, 8.5f, unl ? COL_CREAM : rgba(10, 10, 12, 255), ALIGN_CENTER);
 		char cbuf[16];
 		snprintf(cbuf, sizeof cbuf, "+%uC", (unsigned)a.coins);
-		fitText(cbuf, x + w * 0.5f, y + 48.5f, 0.26f, w - 10.0f, unl ? COL_ACCENT : rgba(14, 14, 18, 255), ALIGN_CENTER);
+		fitText(cbuf, x + w * 0.5f, y + 44.5f, 0.24f, w - 10.0f, unl ? COL_ACCENT : rgba(14, 14, 18, 255), ALIGN_CENTER);
 	}
 	gfx::clearClip();
 

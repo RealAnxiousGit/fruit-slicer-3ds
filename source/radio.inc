@@ -31,6 +31,8 @@ struct OscVizFruit {
 };
 struct OscVizHalf {
 	bool on;
+	int kind;
+	int part;
 	int sprite;
 	float x, y, vx, vy, rot, vr;
 };
@@ -43,6 +45,10 @@ static OscVizSlash sOscSlashes[6];
 static int sOscBeatIdx = -1;
 static float sOscSpawnT = 0.0f;
 static u32 sOscRng = 0x51A7F00Du;
+#if PORT_CUSTOM_MUSIC
+static char sRadioNote[96] = "";
+static float sRadioNoteT = 0.0f;
+#endif
 
 static float oscRandf(float lo, float hi) {
 	sOscRng = sOscRng * 1664525u + 1013904223u;
@@ -171,8 +177,8 @@ static void openRadio() {
 	sRadioScroll = 0.0f;
 	sRadioScrollDraw = 0.0f;
 	sRadioPreviewTrack = -2;
-	RadioEntry list[64];
-	const int n = radioBuildList(list, 64);
+	RadioEntry list[128];
+	const int n = radioBuildList(list, 128);
 	for (int i = 0; i < n; i++) {
 		if (radioIsEquipped(list[i]) && !list[i].isAuto) {
 			sRadioSel = i;
@@ -207,7 +213,12 @@ static void drawOscLive(float x0, float y0, float w, float h, int style, bool fu
 	const bool live = audio::oscSamples(samples, kPts);
 	const float t = sTime;
 	const float cy = y0 + h * 0.5f;
-	const float amp = h * (fullMode ? 0.40f : 0.36f);
+	float sqSum = 0.0f;
+	if (live) {
+		for (int i = 0; i < kPts; i++) sqSum += samples[i] * samples[i];
+	}
+	const float rms = live ? clampf(sqrtf(sqSum / kPts) * 1.6f, 0.0f, 1.0f) : 0.0f;
+	const float amp = h * (fullMode ? 0.44f : 0.39f);
 	float px = x0, py = cy;
 	const int bl = oscBloomLevel();
 	const bool bloomOn = (style == 3 && bl > 0);
@@ -234,11 +245,12 @@ static void drawOscLive(float x0, float y0, float w, float h, int style, bool fu
 			col = bl >= 2 ? rgba(136, 218, 255, 255) : rgba(92, 188, 255, 255);
 		}
 		if (i > 0) {
+			const float punchW = 1.1f * rms;
 			if (style == 3 && bl >= 2)
-				appSeg(px, py, sx, sy, fullMode ? 14.0f : 9.5f, rgba(48, 130, 255, 52));
+				appSeg(px, py, sx, sy, (fullMode ? 14.0f : 9.5f) + punchW * 2.5f, rgba(48, 130, 255, (u8)(52 + rms * 36.0f)));
 			if (style == 3 && bl >= 1)
-				appSeg(px, py, sx, sy, fullMode ? 7.5f : 5.2f, rgba(64, 150, 255, bl >= 2 ? 115 : 75));
-			appSeg(px, py, sx, sy, fullMode ? 2.6f : 2.0f, col);
+				appSeg(px, py, sx, sy, (fullMode ? 7.5f : 5.2f) + punchW * 1.5f, rgba(64, 150, 255, (u8)((bl >= 2 ? 115 : 75) + rms * 40.0f)));
+			appSeg(px, py, sx, sy, (fullMode ? 2.6f : 2.0f) + punchW, col);
 		}
 		px = sx;
 		py = sy;
@@ -256,24 +268,23 @@ static void updateRadioOscViz(float dt, float w, float h) {
 	const bool beatHit = (beatNow != sOscBeatIdx);
 	if (beatHit) sOscBeatIdx = beatNow;
 
+	int activeWhole = 0;
+	for (const auto& f : sOscFruits) if (f.on) activeWhole++;
 	sOscSpawnT -= dt;
-	if (beatHit || sOscSpawnT <= 0.0f) {
-		sOscSpawnT = beat * 0.65f;
-		const int count = beatHit ? 2 : 1;
-		for (int c = 0; c < count; c++) {
-			for (auto& f : sOscFruits) {
-				if (f.on) continue;
-				f.on = true;
-				f.kind = (int)(sOscRng % 11);
-				sOscRng = sOscRng * 1664525u + 1013904223u;
-				f.x = oscRandf(w * 0.16f, w * 0.84f);
-				f.y = h + 22.0f;
-				f.vx = (w * 0.5f - f.x) * oscRandf(0.25f, 0.55f);
-				f.vy = -sqrtf(2.0f * 360.0f * oscRandf(h * 0.55f, h * 0.82f));
-				f.rot = oscRandf(0.0f, 6.28f);
-				f.vr = oscRandf(-3.5f, 3.5f);
-				break;
-			}
+	if (((beatHit && (beatNow & 1) == 0) || sOscSpawnT <= 0.0f) && activeWhole < 3) {
+		sOscSpawnT = beat * 1.8f;
+		for (auto& f : sOscFruits) {
+			if (f.on) continue;
+			f.on = true;
+			f.kind = (int)(sOscRng % 11);
+			sOscRng = sOscRng * 1664525u + 1013904223u;
+			f.x = oscRandf(w * 0.18f, w * 0.82f);
+			f.y = h + 22.0f;
+			f.vx = (w * 0.5f - f.x) * oscRandf(0.22f, 0.48f);
+			f.vy = -sqrtf(2.0f * 360.0f * oscRandf(h * 0.54f, h * 0.78f));
+			f.rot = oscRandf(0.0f, 6.28f);
+			f.vr = oscRandf(-3.0f, 3.0f);
+			break;
 		}
 	}
 
@@ -302,9 +313,9 @@ static void updateRadioOscViz(float dt, float w, float h) {
 			const float cs = cosf(ang), sn = sinf(ang);
 			for (auto& s : sOscSlashes) {
 				if (s.t <= 0.0f) {
-					s.x0 = f.x - cs * 38.0f; s.y0 = f.y - sn * 38.0f;
-					s.x1 = f.x + cs * 38.0f; s.y1 = f.y + sn * 38.0f;
-					s.t = 0.28f;
+					s.x0 = f.x - cs * 36.0f; s.y0 = f.y - sn * 36.0f;
+					s.x1 = f.x + cs * 36.0f; s.y1 = f.y + sn * 36.0f;
+					s.t = 0.25f;
 					break;
 				}
 			}
@@ -312,13 +323,15 @@ static void updateRadioOscViz(float dt, float w, float h) {
 				for (auto& hf : sOscHalves) {
 					if (hf.on) continue;
 					hf.on = true;
+					hf.kind = f.kind;
+					hf.part = side ? m3d::PART_RIGHT : m3d::PART_LEFT;
 					hf.sprite = f.kind * 3 + 1 + side;
 					hf.x = f.x + (side ? 5.0f : -5.0f);
 					hf.y = f.y;
-					hf.vx = f.vx + (side ? 58.0f : -58.0f);
-					hf.vy = f.vy - 34.0f;
+					hf.vx = f.vx + (side ? 54.0f : -54.0f);
+					hf.vy = f.vy - 30.0f;
 					hf.rot = f.rot;
-					hf.vr = side ? 4.2f : -4.2f;
+					hf.vr = side ? 4.0f : -4.0f;
 					break;
 				}
 			}
@@ -348,18 +361,36 @@ static void drawRadioFullOsc(float w, float h) {
 
 	gfx::clearPanels();
 	gfx::rect(0, 0, w, h, rgba(8, 12, 20, 255));
-	// ~44% opaque tempo-synced fruit-slicing overlay behind the waveform
-	const u32 fruitTint = rgba(255, 255, 255, 112);
-	for (const auto& f : sOscFruits) {
-		if (f.on) gfx::sprite(SHEET_FRUIT, f.kind * 3, f.x, f.y, 1.12f, 1.12f, f.rot, fruitTint);
-	}
-	for (const auto& hf : sOscHalves) {
-		if (hf.on) gfx::sprite(SHEET_FRUIT, hf.sprite, hf.x, hf.y, 1.12f, 1.12f, hf.rot, fruitTint);
+	// Subtle ~22% opaque tempo-synced fruit-slicing overlay matching the active 3D/2D art style
+	if (gSave.artStyle == ART_3D && m3d::ready()) {
+		m3d::begin(w, PORT_TWO_SCREENS ? gfx::stereoPerZ() : 0.0f);
+		if (gSave.skin > 0) m3d::setSkin(&shopSkinLook(gSave.skin - 1));
+		for (const auto& f : sOscFruits) {
+			if (!f.on) continue;
+			m3d::Pose pose = {f.x, f.y, 0.0f, 0.35f, f.rot, f.rot * 0.4f, 0.95f, 0, 0, 0};
+			m3d::draw(m3d::MESH_APPLE + f.kind, m3d::PART_WHOLE, pose);
+		}
+		for (const auto& hf : sOscHalves) {
+			if (!hf.on) continue;
+			m3d::Pose pose = {hf.x, hf.y, 0.0f, 0.35f, hf.rot, hf.rot * 0.4f, 0.95f, 0, 0, 0};
+			m3d::draw(m3d::MESH_APPLE + hf.kind, (m3d::Part)hf.part, pose);
+		}
+		m3d::setSkin(nullptr);
+		m3d::end();
+		gfx::rect(0, 0, w, h, rgba(8, 12, 20, 178));
+	} else {
+		const u32 fruitTint = rgba(255, 255, 255, 72);
+		for (const auto& f : sOscFruits) {
+			if (f.on) gfx::sprite(SHEET_FRUIT, f.kind * 3, f.x, f.y, 0.98f, 0.98f, f.rot, fruitTint);
+		}
+		for (const auto& hf : sOscHalves) {
+			if (hf.on) gfx::sprite(SHEET_FRUIT, hf.sprite, hf.x, hf.y, 0.98f, 0.98f, hf.rot, fruitTint);
+		}
 	}
 	for (const auto& s : sOscSlashes) {
 		if (s.t > 0.0f) {
-			const float a = clampf(s.t / 0.28f, 0.0f, 1.0f);
-			appSeg(s.x0, s.y0, s.x1, s.y1, 4.0f * a, rgba(255, 240, 170, (u8)(115 * a)));
+			const float a = clampf(s.t / 0.25f, 0.0f, 1.0f);
+			appSeg(s.x0, s.y0, s.x1, s.y1, 3.2f * a, rgba(255, 240, 170, (u8)(64 * a)));
 		}
 	}
 
@@ -389,14 +420,71 @@ static void drawRadioTop() {
 	fitText(nowName, 200, 68, 0.44f, 320, COL_CREAM, ALIGN_CENTER);
 	drawOscLive(48, 92, 304, 68, gSave.oscStyle, false);
 	char buf[96];
-	const char* menuStr = gSave.menuTrack == 0 ? "Auto" : (gSave.menuTrack <= kTrackCount ? kTrackRowNames[gSave.menuTrack] : "Custom");
+	const char* menuStr = gSave.menuTrack == 0 ? "Auto"
+		: (gSave.menuTrack <= kTrackCount ? kTrackRowNames[gSave.menuTrack]
+#if PORT_CUSTOM_MUSIC
+		: ((int)gSave.menuTrack - 1 - kTrackCount < custom::count() ? custom::name((int)gSave.menuTrack - 1 - kTrackCount) : "Custom")
+#else
+		: "Custom"
+#endif
+		);
 	const char* bossStr = gSave.bossMusic == 0 ? "Off" : (gSave.bossMusic == 1 ? "Auto" : (gSave.bossMusic <= kTrackCount + 1 ? kTrackRowNames[gSave.bossMusic - 1] : "Custom"));
 	snprintf(buf, sizeof buf, "MENU/GAME: %s", menuStr);
 	fitText(buf, 200, 170, 0.34f, 320, COL_CREAM, ALIGN_CENTER);
 	snprintf(buf, sizeof buf, "BOSS: %s", bossStr);
 	fitText(buf, 200, 186, 0.34f, 320, COL_DIM, ALIGN_CENTER);
+#if PORT_CUSTOM_MUSIC
+	if (custom::importOpen())
+		fitText("Pick your songs in the window that opened.", 200, 203, 0.31f, 324, COL_ACCENT, ALIGN_CENTER);
+	else if (sRadioNoteT > 0.0f)
+		fitText(sRadioNote, 200, 203, 0.31f, 324, COL_ACCENT, ALIGN_CENTER);
+	else
+		gfx::text("TAB / SELECT: OSCILLOSCOPE", 200, 203, 0.32f, COL_ACCENT, ALIGN_CENTER);
+#else
 	gfx::text("TAB / SELECT: OSCILLOSCOPE", 200, 203, 0.32f, COL_ACCENT, ALIGN_CENTER);
+#endif
 }
+
+#if PORT_CUSTOM_MUSIC
+static void radioImportTick() {
+	if (sRadioNoteT > 0.0f) sRadioNoteT -= kDt;
+	char first[128];
+	const int added = custom::importDone(first, sizeof first);
+	if (added == -2) {
+		if (!custom::openFolder()) {
+			snprintf(sRadioNote, sizeof sRadioNote, "%s", custom::folder());
+			sRadioNoteT = 5.0f;
+		}
+		return;
+	}
+	if (added < 0) return;
+	custom::scan();
+	if (added > 0 && first[0]) {
+		const size_t folderLen = strlen(custom::folder());
+		int pickTrack = -1;
+		for (int i = 0; i < custom::count(); i++) {
+			if (strcmp(custom::path(i) + folderLen, first) == 0) {
+				pickTrack = kTrackCount + i;
+				break;
+			}
+		}
+		if (pickTrack >= 0) {
+			RadioEntry list[128];
+			const int n = radioBuildList(list, 128);
+			for (int i = 0; i < n; i++) {
+				if (list[i].track == pickTrack) {
+					sRadioSel = i;
+					radioPreviewEntry(list[i]);
+					break;
+				}
+			}
+		}
+	}
+	if (added == 0) snprintf(sRadioNote, sizeof sRadioNote, "No new songs added.");
+	else snprintf(sRadioNote, sizeof sRadioNote, added == 1 ? "Added 1 song." : "Added %d songs.", added);
+	sRadioNoteT = 4.0f;
+}
+#endif
 
 static bool radioHit(const Button& b, int x, int y) {
 	return x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h;
@@ -422,8 +510,12 @@ static void updateRadio(const Input& in, bool wasTouching) {
 		sRadioScroll = 0.0f;
 	}
 
-	RadioEntry list[64];
-	const int n = radioBuildList(list, 64);
+#if PORT_CUSTOM_MUSIC
+	radioImportTick();
+#endif
+
+	RadioEntry list[128];
+	const int n = radioBuildList(list, 128);
 	if (sRadioSel >= n) sRadioSel = n > 0 ? n - 1 : 0;
 
 	if ((in.down & scopeKey) && !sRadioTyping) {
@@ -462,8 +554,16 @@ static void updateRadio(const Input& in, bool wasTouching) {
 
 	if (in.wheel != 0) sRadioScroll = clampf(sRadioScroll - in.wheel * 28.0f, 0.0f, maxScroll);
 
+#if PORT_CUSTOM_MUSIC
+	const Button importBtn = {122, 10, 56, 22, "IMPORT"};
+	const Button scopeBtn = {182, 10, 56, 22, "SCOPE"};
+	const Button dropBtn = {242, 10, 68, 22, ""};
+	const float dropX = 242.0f, dropW = 68.0f;
+#else
 	const Button scopeBtn = {174, 10, 60, 22, "SCOPE"};
 	const Button dropBtn = {238, 10, 72, 22, ""};
+	const float dropX = 238.0f, dropW = 72.0f;
+#endif
 	const Button searchBtn = {12, 42, 268, 20, ""};
 	const Button clearBtn = {284, 42, 26, 20, "X"};
 
@@ -478,6 +578,19 @@ static void updateRadio(const Input& in, bool wasTouching) {
 			leaveRadio();
 			return;
 		}
+#if PORT_CUSTOM_MUSIC
+		if (radioHit(importBtn, in.tx, in.ty)) {
+			audio::click();
+			sRadioDropOpen = false;
+			if (!custom::importSongs()) {
+				if (!custom::openFolder()) {
+					snprintf(sRadioNote, sizeof sRadioNote, "%s", custom::folder());
+					sRadioNoteT = 5.0f;
+				}
+			}
+			return;
+		}
+#endif
 		if (radioHit(scopeBtn, in.tx, in.ty)) {
 			audio::click();
 			sRadioDropOpen = false;
@@ -491,8 +604,8 @@ static void updateRadio(const Input& in, bool wasTouching) {
 			return;
 		}
 		if (sRadioDropOpen) {
-			const Button optList = {238, 34, 72, 22, "LIST"};
-			const Button optGrid = {238, 56, 72, 22, "GRID"};
+			const Button optList = {dropX, 34, dropW, 22, "LIST"};
+			const Button optGrid = {dropX, 56, dropW, 22, "GRID"};
 			if (radioHit(optList, in.tx, in.ty)) {
 				audio::click();
 				sRadioGrid = false;
@@ -610,12 +723,21 @@ static void drawRadio() {
 	}
 
 	drawBackArrow(false, false);
+#if PORT_CUSTOM_MUSIC
+	gfx::text("RADIO", 56, 12, 0.44f, COL_CREAM, ALIGN_LEFT);
+	drawPlank(122, 10, 56, 22, false, false);
+	gfx::text("IMPORT", 150, 15, 0.30f, COL_ACCENT, ALIGN_CENTER);
+	drawPlank(182, 10, 56, 22, false, false);
+	gfx::text("SCOPE", 210, 15, 0.30f, COL_CREAM, ALIGN_CENTER);
+	drawPlank(242, 10, 68, 22, sRadioDropOpen, false);
+	gfx::text(sRadioGrid ? "GRID v" : "LIST v", 276, 15, 0.30f, COL_ACCENT, ALIGN_CENTER);
+#else
 	gfx::text("RADIO", 58, 11, 0.50f, COL_CREAM, ALIGN_LEFT);
-
 	drawPlank(174, 10, 60, 22, false, false);
 	gfx::text("SCOPE", 204, 15, 0.32f, COL_CREAM, ALIGN_CENTER);
 	drawPlank(238, 10, 72, 22, sRadioDropOpen, false);
 	gfx::text(sRadioGrid ? "GRID v" : "LIST v", 274, 15, 0.32f, COL_ACCENT, ALIGN_CENTER);
+#endif
 
 	// Search Bar (below kBack so zero overlap)
 	drawPlank(12, 42, 268, 20, sRadioTyping, false);
@@ -629,8 +751,8 @@ static void drawRadio() {
 	drawPlank(284, 42, 26, 20, false, false);
 	gfx::text("X", 297, 46, 0.34f, COL_CREAM, ALIGN_CENTER);
 
-	RadioEntry list[64];
-	const int n = radioBuildList(list, 64);
+	RadioEntry list[128];
+	const int n = radioBuildList(list, 128);
 
 	gfx::setClip(10, 66, 300, 168);
 	if (n == 0) {
@@ -652,8 +774,9 @@ static void drawRadio() {
 			drawPlank(x, y, w, h, sel, false);
 			if (eq) gfx::rect(x, y, 3, h, COL_ACCENT);
 
-			const char* kindLbl = list[i].isAuto ? "AUTO" : (list[i].isBoss ? "BOSS" : "REG");
-			const u32 kindCol = list[i].isAuto ? COL_ACCENT : (list[i].isBoss ? rgba(255, 110, 110, 255) : rgba(130, 210, 255, 255));
+			const bool isCust = !list[i].isAuto && !list[i].isBoss && list[i].track >= kTrackCount;
+			const char* kindLbl = list[i].isAuto ? "AUTO" : (list[i].isBoss ? "BOSS" : (isCust ? "CUST" : "REG"));
+			const u32 kindCol = list[i].isAuto ? COL_ACCENT : (list[i].isBoss ? rgba(255, 110, 110, 255) : (isCust ? rgba(140, 245, 190, 255) : rgba(130, 210, 255, 255)));
 			const float kBadgeScale = PORT_3DS ? 0.31f : 0.28f;
 			if (sRadioGrid) {
 				fitText(list[i].title, x + 11, y + 6, 0.34f, w - 22, sel ? COL_ACCENT : COL_CREAM, ALIGN_LEFT);
@@ -669,9 +792,14 @@ static void drawRadio() {
 	gfx::clearClip();
 
 	if (sRadioDropOpen) {
-		drawPlank(238, 34, 72, 22, !sRadioGrid, false);
-		gfx::text("LIST", 274, 39, 0.32f, !sRadioGrid ? COL_ACCENT : COL_CREAM, ALIGN_CENTER);
-		drawPlank(238, 56, 72, 22, sRadioGrid, false);
-		gfx::text("GRID", 274, 61, 0.32f, sRadioGrid ? COL_ACCENT : COL_CREAM, ALIGN_CENTER);
+#if PORT_CUSTOM_MUSIC
+		const float dx = 242.0f, dw = 68.0f;
+#else
+		const float dx = 238.0f, dw = 72.0f;
+#endif
+		drawPlank(dx, 34, dw, 22, !sRadioGrid, false);
+		gfx::text("LIST", dx + dw * 0.5f, 39, 0.32f, !sRadioGrid ? COL_ACCENT : COL_CREAM, ALIGN_CENTER);
+		drawPlank(dx, 56, dw, 22, sRadioGrid, false);
+		gfx::text("GRID", dx + dw * 0.5f, 61, 0.32f, sRadioGrid ? COL_ACCENT : COL_CREAM, ALIGN_CENTER);
 	}
 }

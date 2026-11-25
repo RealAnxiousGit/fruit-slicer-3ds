@@ -2579,13 +2579,25 @@ static void drawShopPreview() {
 	fitText(it.line, 200, 46, 0.39f, 330, COL_CREAM);
 	if (sShopTab == SHOP_THEMES) {
 		gfx::setDepth(0.5f);
-		gfx::image(SHEET_BOARD, 0, 130, 66, 140, 96);
+		gfx::image(SHEET_BOARD, 0, 126, 68, 148, 94);
 	} else if (sShopTab == SHOP_TRAILS) {
 		gfx::setDepth(0.5f);
 		sPreviewBlade.draw();
-	} else if (sShopTab == SHOP_SPLATS || sShopTab == SHOP_SKINS) {
+	} else if (sShopTab == SHOP_SKINS) {
 		gfx::setDepth(0.5f);
-		drawShopIcon(sShopTab, sShopItem, 200, 114);
+		if (gSave.artStyle == ART_3D && m3d::ready()) {
+			m3d::begin(400, gfx::stereoPerZ());
+			m3d::setSkin(&shopSkinLook(sShopItem));
+			m3d::Pose pose = {200, 116, 0, 0.25f, sTime * 1.1f, 0.1f, 1.35f, 0, 0, 0};
+			m3d::draw(m3d::MESH_APPLE, m3d::PART_WHOLE, pose);
+			m3d::setSkin(nullptr);
+			m3d::end();
+		} else {
+			gfx::sprite(SHEET_FRUIT, fruit_apple_idx, 200, 116, 1.35f, 1.35f, 0, shopSkinTint(sShopItem));
+		}
+	} else if (sShopTab == SHOP_SPLATS) {
+		gfx::setDepth(0.5f);
+		gfx::sprite(SHEET_SPRITES, sprites_splat0_idx, 200, 116, 1.55f, 1.55f, 0.2f, shopSplatPreview(sShopItem));
 	} else {
 		const bool isBossSong = trackBoss(kBaseTracks + sShopItem) >= 0;
 		if (isBossSong) gfx::sprite(SHEET_SPRITES, sprites_ic_skull_idx, 200, 82, 0.72f, 0.72f);

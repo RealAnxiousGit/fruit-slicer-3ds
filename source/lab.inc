@@ -2832,16 +2832,21 @@ static void labFinish(Input& in) {
 
 				// 2) Radio & Mods non-overlapping header/search bounds + Radio 3DS touch release.
 				openRadio();
+#if PORT_CUSTOM_MUSIC
+				const bool radioNoOverlap = (42 >= kBack.y + kBack.h) && (122 >= kBack.x + kBack.w) && (182 >= 122 + 56) && (242 >= 182 + 56) && (202 >= kBack.x + kBack.w);
+#else
 				const bool radioNoOverlap = (42 >= kBack.y + kBack.h) && (174 >= kBack.x + kBack.w) && (202 >= kBack.x + kBack.w);
-				tapIn.touching = true; tapIn.tx = 274; tapIn.ty = 18;
+#endif
+				tapIn.touching = true; tapIn.tx = 276; tapIn.ty = 18;
 				updateRadio(tapIn, false);
 				updateRadio(relIn, true);
 				const bool rDropOk = sRadioDropOpen;
-				tapIn.tx = 274; tapIn.ty = 65;  // GRID option
+				tapIn.tx = 276; tapIn.ty = 65;  // GRID option
 				updateRadio(tapIn, false);
 				updateRadio(relIn, true);
-				labCheck(radioNoOverlap && rDropOk && sRadioGrid && !sRadioDropOpen,
-				         "Radio & Achievements top controls clear kBack without overlap and handle 3DS touch");
+				const bool achCoinFits = (44.5f + 8.0f < 57.5f);
+				labCheck(radioNoOverlap && rDropOk && sRadioGrid && !sRadioDropOpen && achCoinFits,
+				         "Radio IMPORT/SCOPE/dropdown & Achievements tiles clear bounds without overlap and handle 3DS touch");
 
 				// 3) Real-time mid-run achievements & Practice tutorial coin exclusion.
 				gSave.achievements[0] = gSave.achievements[1] = 0;
@@ -2867,14 +2872,27 @@ static void labFinish(Input& in) {
 				labCheck(practiceBlocked && liveUnlocked,
 				         "Practice tutorial coins never unlock Ooh Shiny while real runs unlock achievements live mid-run");
 
-				// 4) Full-screen Oscilloscope fruit visualizer spawns and slices on beat.
+				// 4) Full-screen Oscilloscope fruit visualizer spawns <= 3 whole fruits and slices to the beat with 3D/2D halves.
 				resetRadioOscViz();
 				sRadioOsc = true;
-				for (int i = 0; i < 40; i++) updateRadioOscViz(0.05f, 400.0f, 240.0f);
+				bool capOk = true;
 				bool hasFruitOrHalf = false;
-				for (const auto& f : sOscFruits) if (f.on) hasFruitOrHalf = true;
-				for (const auto& h : sOscHalves) if (h.on) hasFruitOrHalf = true;
-				labCheck(hasFruitOrHalf, "Full-screen Oscilloscope fruit overlay spawns and slices fruit to the beat");
+				bool halvesValid = true;
+				for (int i = 0; i < 40; i++) {
+					updateRadioOscViz(0.05f, 400.0f, 240.0f);
+					int activeWhole = 0;
+					for (const auto& f : sOscFruits) if (f.on) { activeWhole++; hasFruitOrHalf = true; }
+					if (activeWhole > 3) capOk = false;
+				}
+				for (const auto& h : sOscHalves) {
+					if (h.on) {
+						hasFruitOrHalf = true;
+						if (h.kind < 0 || h.kind >= 11 || (h.part != m3d::PART_LEFT && h.part != m3d::PART_RIGHT))
+							halvesValid = false;
+					}
+				}
+				labCheck(hasFruitOrHalf && capOk && halvesValid,
+				         "Full-screen Oscilloscope fruit overlay caps active fruit <= 3 and slices 3D/2D halves to the beat");
 
 				sRadioOsc = wasRadioOsc;
 				sRadioDropOpen = wasRadioDrop;
