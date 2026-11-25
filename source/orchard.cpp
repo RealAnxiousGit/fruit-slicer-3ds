@@ -1408,8 +1408,9 @@ void Game::orcSlotRect(int slot, float* x, float* y, float* w, float* h) {
 }
 
 void Game::drawOrchardField() const {
-	drawBoss(true);
+	drawBoss(true, false);
 	drawShots();
+	drawBossShield();
 }
 
 void Game::drawOrchardHud(float x, float y, float w, float u) const {

@@ -1701,7 +1701,7 @@ void Game::drawShots() const {
 	}
 }
 
-void Game::drawBoss(bool solid) const {
+void Game::drawBoss(bool solid, bool withShield) const {
 	(void)solid;
 	const Boss& b = orc.boss;
 	if (!b.on) return;
@@ -1820,7 +1820,7 @@ void Game::drawBoss(bool solid) const {
 		m3d::setSkin(nullptr);
 		m3d::end();
 		gfx::sprite(SHEET_SPRITES, faceIdx, bx, by, art * sx, art * sy, wob, tint);
-		if (showGuard) {
+		if (withShield && showGuard) {
 			const float pulse = 0.72f + 0.28f * sinf(b.t * 5.0f);
 			m3d::begin(kFieldW, gfx::stereoPerZ(), true);
 			m3d::Skin shieldSkin = {0.35f, 0.36f, 0.86f, 1.0f, 0.32f * pulse * alpha, 0.90f};
@@ -1897,6 +1897,26 @@ void Game::drawBoss(bool solid) const {
 		gfx::rect(visX - w * 0.5f, b.y + b.radius * sy + 8, w, 5, rgba(40, 30, 20, 160));
 		gfx::rect(visX - w * 0.5f, b.y + b.radius * sy + 8, w * k, 5, rgba(255, 220, 110));
 	}
+}
+
+void Game::drawBossShield() const {
+	const Boss& b = orc.boss;
+	if (!b.on || b.giant.on || b.hidden || !drawing3D()) return;
+	const bool showGuard = b.guard && !b.beaten && b.enterT <= 0 && b.dazeT <= 0;
+	if (!showGuard) return;
+	const bool milestoneDead = b.beaten && b.id >= kFirstMilestoneBoss;
+	float alpha = 1.0f;
+	if (b.dazeT > 0 && !milestoneDead) alpha *= gSave.calmFx ? 0.55f : (((int)(b.dazeT * 6)) & 1 ? 0.35f : 0.9f);
+	const float grow = b.squash < 0 ? -b.squash * 0.8f : 0.0f;
+	const float visX = clampBossVisX(b.x, b.radius);
+	const float pulse = 0.72f + 0.28f * sinf(b.t * 5.0f);
+	m3d::begin(kFieldW, gfx::stereoPerZ(), true);
+	m3d::Skin shieldSkin = {0.35f, 0.36f, 0.86f, 1.0f, 0.32f * pulse * alpha, 0.90f};
+	m3d::setSkin(&shieldSkin);
+	m3d::Pose spose = {visX, b.y, 30, sinf(b.t * 0.9f) * 0.18f, b.t * 0.65f, 0, b.radius * 1.28f * (1 + grow) / 23.2f, 0, 0, 0};
+	m3d::draw(m3d::MESH_SHIELD, m3d::PART_WHOLE, spose);
+	m3d::setSkin(nullptr);
+	m3d::end();
 }
 
 #ifdef BOSS_TEST_APP

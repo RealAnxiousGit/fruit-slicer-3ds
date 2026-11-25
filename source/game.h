@@ -338,7 +338,8 @@ private:
 	void bossSpawnPieces(int id, float cx, float cy);
 	int bossDamageBase(int base) const;
 	void shotsUpdate(float dt);
-	void drawBoss(bool solid) const;
+	void drawBoss(bool solid, bool withShield = true) const;
+	void drawBossShield() const;
 	void drawShots() const;
 private:
 	int diffIndex() const;            // Daily Fruit always plays on Normal

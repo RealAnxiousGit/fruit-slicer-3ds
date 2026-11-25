@@ -15,6 +15,7 @@ static bool sRadioOsc = false;
 static bool sRadioTyping = false;
 static char sRadioQuery[28] = "";
 static int sRadioSel = 0;
+static int sRadioPreviewIdx = -1;
 static float sRadioScroll = 0.0f;
 static float sRadioScrollDraw = 0.0f;
 static int sRadioPreviewTrack = -2;
@@ -174,6 +175,7 @@ static void openRadio() {
 	sRadioTyping = false;
 	sRadioDrag = false;
 	sRadioSel = 0;
+	sRadioPreviewIdx = -1;
 	sRadioScroll = 0.0f;
 	sRadioScrollDraw = 0.0f;
 	sRadioPreviewTrack = -2;
@@ -547,7 +549,7 @@ static void updateRadio(const Input& in, bool wasTouching) {
 	}
 
 	const float viewH = 168.0f;
-	const float rowH = sRadioGrid ? 44.0f : 29.0f;
+	const float rowH = sRadioGrid ? 50.0f : 34.0f;
 	const int cols = sRadioGrid ? 2 : 1;
 	const int rows = (n + cols - 1) / cols;
 	const float maxScroll = clampf(rows * rowH - viewH, 0.0f, 9999.0f);
@@ -610,6 +612,7 @@ static void updateRadio(const Input& in, bool wasTouching) {
 				audio::click();
 				sRadioGrid = false;
 				sRadioDropOpen = false;
+				sRadioPreviewIdx = -1;
 				sRadioScroll = 0.0f;
 				return;
 			}
@@ -617,6 +620,7 @@ static void updateRadio(const Input& in, bool wasTouching) {
 				audio::click();
 				sRadioGrid = true;
 				sRadioDropOpen = false;
+				sRadioPreviewIdx = -1;
 				sRadioScroll = 0.0f;
 				return;
 			}
@@ -628,6 +632,7 @@ static void updateRadio(const Input& in, bool wasTouching) {
 			if (sRadioTyping) { port::textStop(); sRadioTyping = false; }
 			sRadioScroll = 0.0f;
 			sRadioSel = 0;
+			sRadioPreviewIdx = -1;
 			return;
 		}
 		if (radioHit(searchBtn, in.tx, in.ty)) {
@@ -652,19 +657,6 @@ static void updateRadio(const Input& in, bool wasTouching) {
 		}
 	}
 
-#if PORT_MOUSE
-	if (in.hovering && !in.touching && !sRadioDropOpen && in.tx >= 12 && in.tx <= 308 && in.ty >= 66 && in.ty <= 234) {
-		const float relY = (in.ty - 66.0f) + sRadioScrollDraw;
-		const int r = (int)(relY / rowH);
-		const int c = sRadioGrid ? (in.tx >= 160 ? 1 : 0) : 0;
-		const int idx = r * cols + c;
-		if (idx >= 0 && idx < n && idx != sRadioSel) {
-			sRadioSel = idx;
-			radioPreviewEntry(list[idx]);
-		}
-	}
-#endif
-
 	if (sRadioDrag && !in.touching) {
 		sRadioDrag = false;
 		if (!sRadioMoved && sRadioLastY >= 66 && sRadioLastY <= 234) {
@@ -673,8 +665,14 @@ static void updateRadio(const Input& in, bool wasTouching) {
 			const int c = sRadioGrid ? (sRadioLastX >= 160 ? 1 : 0) : 0;
 			const int idx = r * cols + c;
 			if (idx >= 0 && idx < n) {
-				sRadioSel = idx;
-				radioEquipEntry(list[idx]);
+				if (idx == sRadioSel && sRadioPreviewIdx == idx) {
+					radioEquipEntry(list[idx]);
+				} else {
+					sRadioSel = idx;
+					sRadioPreviewIdx = idx;
+					audio::click(0.45f);
+					radioPreviewEntry(list[idx]);
+				}
 			}
 		}
 	}
@@ -689,6 +687,7 @@ static void updateRadio(const Input& in, bool wasTouching) {
 		if (next >= n) next = n - 1;
 		if (next != sRadioSel) {
 			sRadioSel = next;
+			sRadioPreviewIdx = next;
 			audio::click(0.45f);
 			radioPreviewEntry(list[sRadioSel]);
 			const int row = sRadioSel / cols;
@@ -697,11 +696,43 @@ static void updateRadio(const Input& in, bool wasTouching) {
 			if (topY < sRadioScroll) sRadioScroll = topY;
 			if (botY > sRadioScroll + viewH) sRadioScroll = botY - viewH;
 		}
-		if (in.down & KEY_A) radioEquipEntry(list[sRadioSel]);
+		if (in.down & KEY_A) {
+			if (sRadioPreviewIdx == sRadioSel) radioEquipEntry(list[sRadioSel]);
+			else {
+				sRadioPreviewIdx = sRadioSel;
+				audio::click(0.45f);
+				radioPreviewEntry(list[sRadioSel]);
+			}
+		}
 	}
 
 	sRadioScroll = clampf(sRadioScroll, 0.0f, maxScroll);
 	sRadioScrollDraw += (sRadioScroll - sRadioScrollDraw) * 0.28f;
+}
+
+static void radioWrapTitle(const char* src, int maxChars, char* line1, int cap1, char* line2, int cap2) {
+	line1[0] = 0;
+	line2[0] = 0;
+	if (!src || !src[0]) return;
+	const int len = (int)strlen(src);
+	if (len <= maxChars) {
+		snprintf(line1, cap1, "%s", src);
+		return;
+	}
+	int split = -1;
+	for (int i = maxChars; i >= 1; i--) {
+		if (src[i] == ' ' || src[i] == '-' || src[i] == '_') {
+			split = i;
+			break;
+		}
+	}
+	if (split <= 0) split = maxChars;
+	int n1 = split < cap1 - 1 ? split : cap1 - 1;
+	memcpy(line1, src, n1);
+	line1[n1] = 0;
+	const char* rest = src + split;
+	while (*rest == ' ') rest++;
+	if (*rest) snprintf(line2, cap2, "%s", rest);
 }
 
 static void drawRadio() {
@@ -758,7 +789,7 @@ static void drawRadio() {
 	if (n == 0) {
 		gfx::text("No matching tracks.", 160, 136, 0.38f, COL_DIM, ALIGN_CENTER);
 	} else {
-		const float rowH = sRadioGrid ? 44.0f : 29.0f;
+		const float rowH = sRadioGrid ? 50.0f : 34.0f;
 		const int cols = sRadioGrid ? 2 : 1;
 		for (int i = 0; i < n; i++) {
 			const int r = i / cols;
@@ -766,7 +797,7 @@ static void drawRadio() {
 			const float x = sRadioGrid ? (14.0f + c * 148.0f) : 14.0f;
 			const float y = 66.0f + r * rowH - sRadioScrollDraw;
 			const float w = sRadioGrid ? 144.0f : 292.0f;
-			const float h = sRadioGrid ? 40.0f : 26.0f;
+			const float h = sRadioGrid ? 46.0f : 31.0f;
 			if (y + h < 64.0f || y > 236.0f) continue;
 
 			const bool sel = (i == sRadioSel);
@@ -778,14 +809,29 @@ static void drawRadio() {
 			const char* kindLbl = list[i].isAuto ? "AUTO" : (list[i].isBoss ? "BOSS" : (isCust ? "CUST" : "REG"));
 			const u32 kindCol = list[i].isAuto ? COL_ACCENT : (list[i].isBoss ? rgba(255, 110, 110, 255) : (isCust ? rgba(140, 245, 190, 255) : rgba(130, 210, 255, 255)));
 			const float kBadgeScale = PORT_3DS ? 0.31f : 0.28f;
+			char l1[40], l2[40];
+			radioWrapTitle(list[i].title, sRadioGrid ? 18 : 20, l1, sizeof l1, l2, sizeof l2);
+			const u32 titleCol = sel ? COL_ACCENT : COL_CREAM;
 			if (sRadioGrid) {
-				fitText(list[i].title, x + 11, y + 6, 0.34f, w - 22, sel ? COL_ACCENT : COL_CREAM, ALIGN_LEFT);
-				gfx::text(kindLbl, x + 11, y + 23, kBadgeScale, kindCol);
-				if (eq) gfx::text("IN USE", x + w - 11, y + 23, kBadgeScale, COL_ACCENT, ALIGN_RIGHT);
+				if (l2[0]) {
+					fitText(l1, x + 10, y + 5, 0.31f, w - 20, titleCol, ALIGN_LEFT);
+					fitText(l2, x + 10, y + 17, 0.30f, w - 20, titleCol, ALIGN_LEFT);
+					gfx::text(kindLbl, x + 10, y + 32, kBadgeScale, kindCol);
+					if (eq) gfx::text("IN USE", x + w - 10, y + 32, kBadgeScale, COL_ACCENT, ALIGN_RIGHT);
+				} else {
+					fitText(l1, x + 11, y + 8, 0.34f, w - 22, titleCol, ALIGN_LEFT);
+					gfx::text(kindLbl, x + 11, y + 28, kBadgeScale, kindCol);
+					if (eq) gfx::text("IN USE", x + w - 11, y + 28, kBadgeScale, COL_ACCENT, ALIGN_RIGHT);
+				}
 			} else {
-				fitText(list[i].title, x + 12, y + 7, 0.35f, w - 102, sel ? COL_ACCENT : COL_CREAM, ALIGN_LEFT);
-				if (eq) gfx::text("IN USE", x + w - 52, y + 8, kBadgeScale, COL_ACCENT, ALIGN_RIGHT);
-				gfx::text(kindLbl, x + w - 12, y + 8, kBadgeScale, kindCol, ALIGN_RIGHT);
+				if (l2[0]) {
+					fitText(l1, x + 12, y + 4, 0.32f, w - 102, titleCol, ALIGN_LEFT);
+					fitText(l2, x + 12, y + 16, 0.31f, w - 102, titleCol, ALIGN_LEFT);
+				} else {
+					fitText(l1, x + 12, y + 9, 0.35f, w - 102, titleCol, ALIGN_LEFT);
+				}
+				if (eq) gfx::text("IN USE", x + w - 52, y + 10, kBadgeScale, COL_ACCENT, ALIGN_RIGHT);
+				gfx::text(kindLbl, x + w - 12, y + 10, kBadgeScale, kindCol, ALIGN_RIGHT);
 			}
 		}
 	}

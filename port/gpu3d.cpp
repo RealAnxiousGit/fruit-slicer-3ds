@@ -88,8 +88,10 @@ void setSkin(const m3d::Skin* skin) {
 	C3D_FVUnifSet(GPU_VERTEX_SHADER, sLocSkin, skin ? skin->r : 1, skin ? skin->g : 1, skin ? skin->b : 1, skin ? skin->mix : 0);
 	const float hp = (skin && skin->shine >= 0.99f) ? (shopHoloPhase() * (0.2546479f)) : 0.0f;  // 1.6 / (2*pi)
 	C3D_FVUnifSet(GPU_VERTEX_SHADER, sLocHolo, (skin && skin->shine >= 0.99f) ? 1.0f : 0.0f, hp - floorf(hp), 0, 0);
-	// See-through fruit show only their near side, or their back faces would draw through patchily.
-	C3D_CullFace(skin && skin->alpha < 1 ? GPU_CULL_BACK_CCW : GPU_CULL_NONE);
+	// See-through fruit and shields don't write depth (so shots behind the shield still draw), and show only their near side.
+	const bool translucent = skin && skin->alpha < 0.99f;
+	C3D_DepthTest(true, GPU_GREATER, translucent ? GPU_WRITE_COLOR : GPU_WRITE_ALL);
+	C3D_CullFace(translucent ? GPU_CULL_BACK_CCW : GPU_CULL_NONE);
 }
 
 void end() {

@@ -66,4 +66,8 @@ bool spPopInbox(void* outBuf, int cap, int* outLen);
 bool lbRequest(const char* url, const char* jsonBody);
 int lbPoll();           // 0 working, 1 done, -1 failed
 const char* lbText();   // finished response text, kept until next lbRequest
+
+// Desktop F2 screenshot shortcut (stubbed false on 3DS / non-desktop ports).
+bool screenshotTriggered();
+bool nextScreenshotPath(char* out, int size);
 }  // namespace port

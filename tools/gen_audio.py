@@ -1421,6 +1421,22 @@ def build_audio():
         place(myt, bell(mtof(midi), 0.55), i * 0.055, 0.75)
     write_pcm("mythic_drop", norm(reverb_tail(myt, 0.65, 0.24), 0.80), s)
 
+    # camera: crisp mechanical shutter double-click + bright flash discharge (~0.24s)
+    cam = np.zeros(n_of(0.24))
+    t_sh1 = np.arange(n_of(0.035)) / s
+    sh1 = band(rng_ach.normal(0.0, 1.0, len(t_sh1)), 1200, 7500, s) * np.exp(-t_sh1 / 0.008)
+    sh1 += np.sin(2 * np.pi * (2400.0 * np.exp(-t_sh1 / 0.012)) * t_sh1) * np.exp(-t_sh1 / 0.006) * 0.75
+    place(cam, sh1, 0.0, 0.95)
+    t_sh2 = np.arange(n_of(0.032)) / s
+    sh2 = band(rng_ach.normal(0.0, 1.0, len(t_sh2)), 1500, 8500, s) * np.exp(-t_sh2 / 0.007)
+    sh2 += np.sin(2 * np.pi * (2900.0 * np.exp(-t_sh2 / 0.010)) * t_sh2) * np.exp(-t_sh2 / 0.005) * 0.65
+    place(cam, sh2, 0.048, 0.85)
+    t_fl = np.arange(n_of(0.14)) / s
+    fl = band(rng_ach.normal(0.0, 1.0, len(t_fl)), 2200, 11000, s) * np.exp(-t_fl / 0.032) * 0.35
+    fl += np.sin(2 * np.pi * (5200.0 + 1400.0 * np.exp(-t_fl / 0.04)) * t_fl) * np.exp(-t_fl / 0.025) * 0.12
+    place(cam, fl, 0.010, 0.65)
+    write_pcm("camera", norm(cam, 0.82), s)
+
     # Original tracks: all slow, soft and major-leaning.
     menu = [[60, 64, 67, 71, 74], [57, 60, 64, 67, 71], [65, 69, 72, 76], [55, 59, 62, 67, 69]]
     play = [[62, 66, 69, 73], [59, 62, 66, 69], [67, 71, 74, 78], [64, 67, 71, 74]]

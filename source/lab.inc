@@ -692,8 +692,8 @@ static void labMenus() {
 		case 97: {
 			labExpect(SCREEN_ACHIEVEMENTS, "Achievements opens from Records");
 			labCheck(sAchCount == 31, "Achievements lists 31 platform-applicable achievements");
-			labCheck(audio::loaded(SFX_ACH_IN) && audio::loaded(SFX_ACH_JINGLE) && audio::loaded(SFX_ACH_OUT) && audio::loaded(SFX_MYTHIC),
-			         "Achievement & Mythic SFX are loaded cleanly");
+			labCheck(audio::loaded(SFX_ACH_IN) && audio::loaded(SFX_ACH_JINGLE) && audio::loaded(SFX_ACH_OUT) && audio::loaded(SFX_MYTHIC) && audio::loaded(SFX_CAMERA),
+			         "Achievement, Mythic & Camera SFX are loaded cleanly");
 			// Unit-test achievement rules with saved state restored cleanly afterwards.
 			const u64 ach0 = gSave.achievements[0], ach1 = gSave.achievements[1];
 			const u32 coinsWas = gSave.coins, lifeWas = gSave.coinsLifetime, fruitWas = gSave.totalFruit;
@@ -2893,6 +2893,104 @@ static void labFinish(Input& in) {
 				}
 				labCheck(hasFruitOrHalf && capOk && halvesValid,
 				         "Full-screen Oscilloscope fruit overlay caps active fruit <= 3 and slices 3D/2D halves to the beat");
+
+				// 5) Radio tap-to-preview / second-tap-to-equip, title line-wrapping, custom song LUFS limiter, and StreetPass guard.
+				sRadioGrid = false;
+				sRadioDropOpen = false;
+				gSave.menuTrack = 0;
+				gSave.gameTrack = 0;
+				openRadio();
+				Input hovIn = {}; hovIn.hovering = true; hovIn.tx = 80; hovIn.ty = 120;
+				updateRadio(hovIn, false);
+				const bool hoverIgnored = (sRadioSel == 0 && gSave.gameTrack == 0);
+				Input tapRow1 = {}; tapRow1.touching = true; tapRow1.tx = 80; tapRow1.ty = 110;  // row 1 (Orchard Morning)
+				updateRadio(tapRow1, false);
+				updateRadio(relIn, true);
+				const bool firstTapPreviews = (sRadioSel == 1 && sRadioPreviewIdx == 1 && gSave.gameTrack == 0);
+				updateRadio(tapRow1, false);
+				updateRadio(relIn, true);
+				const bool secondTapEquips = (sRadioSel == 1 && gSave.gameTrack == 1);
+				char wl1[40], wl2[40];
+				radioWrapTitle("Super Long Custom Synthwave Remix Title", 18, wl1, sizeof wl1, wl2, sizeof wl2);
+				const bool wrapOk = (strlen(wl1) > 0 && strlen(wl1) <= 18 && wl2[0] != 0);
+				s16 hotBuf[4096];
+				for (int i = 0; i < 4096; i++) hotBuf[i] = (s16)(31129.0f * sinf(i * 0.08f));
+				audio::normalizeCustomPcm(hotBuf, 0, 4096, 1, 44100, true);
+				int peakAfter = 0;
+				double tailSq = 0.0;
+				for (int i = 0; i < 4096; i++) {
+					int a = hotBuf[i] < 0 ? -hotBuf[i] : hotBuf[i];
+					if (a > peakAfter) peakAfter = a;
+					if (i >= 3072) {
+						double n = hotBuf[i] / 32768.0;
+						tailSq += n * n;
+					}
+				}
+				const double tailRms = sqrt(tailSq / 1024.0);
+				const bool lufsOk = (peakAfter <= 29500 && tailRms >= 0.10 && tailRms <= 0.25);
+#if !PORT_3DS
+				const bool noSpHint = !ciContains(recordsHint(5), "StreetPass");
+#else
+				const bool noSpHint = true;
+#endif
+				char r5Detail[64];
+				snprintf(r5Detail, sizeof r5Detail, "hov=%d p1=%d eq=%d wrap=%d lufs=%d sp=%d",
+				         hoverIgnored, firstTapPreviews, secondTapEquips, wrapOk, lufsOk, noSpHint);
+				labCheck(hoverIgnored && firstTapPreviews && secondTapEquips && wrapOk && lufsOk && noSpHint,
+				         "Radio 2-tap preview/equip, title wrap, custom LUFS limiter, and Universal StreetPass guard work",
+				         r5Detail);
+
+#if !PORT_3DS
+				if (getenv("FRUIT_SLICER_V2F_SHOTS")) {
+					sRadioGrid = false;
+					openRadio();
+					labSnapV2f("v21_radio_list");
+					sRadioGrid = true;
+					labSnapV2f("v21_radio_grid");
+
+					sScreen = SCREEN_RECORDS;
+					sFocus[SCREEN_RECORDS] = 5;
+					labSnapV2f("v21_records_stats");
+
+					sScreen = SCREEN_RESULT;
+					sGame.mode = MODE_ORCHARD;
+					sGame.score = 1234;
+					sGame.best = 1000;
+					sGame.newBest = true;
+					sGame.orc.room = 18;
+					sGame.orc.level = 5;
+					sGame.orc.bossesBeaten = 2;
+					sGame.orc.newTracks = 1;
+					sGame.scoreCommitted = true;
+					sGame.coinsEarned = 85;
+					labSnapV2f("v21_result_orchard");
+
+					const u8 artWas = gSave.artStyle;
+					gSave.artStyle = ART_3D;
+					sScreen = SCREEN_GAME;
+					sGame.mode = MODE_ORCHARD;
+					sGame.phase = PHASE_PLAY;
+					sGame.orc.boss = {};
+					sGame.orc.boss.on = true;
+					sGame.orc.boss.id = BOSS_MELON;
+					sGame.orc.boss.guard = true;
+					sGame.orc.boss.x = 200;
+					sGame.orc.boss.y = 115;
+					sGame.orc.boss.radius = 44;
+					sGame.orc.shots[0] = {};
+					sGame.orc.shots[0].on = true;
+					sGame.orc.shots[0].kind = SHOT_CANNON;
+					sGame.orc.shots[0].x = 200;
+					sGame.orc.shots[0].y = 115;
+					sGame.orc.shots[1] = {};
+					sGame.orc.shots[1].on = true;
+					sGame.orc.shots[1].kind = SHOT_SEED;
+					sGame.orc.shots[1].x = 182;
+					sGame.orc.shots[1].y = 128;
+					labSnapV2f("v21_boss_shield");
+					gSave.artStyle = artWas;
+				}
+#endif
 
 				sRadioOsc = wasRadioOsc;
 				sRadioDropOpen = wasRadioDrop;

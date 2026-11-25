@@ -40,7 +40,7 @@ static const char* const kSfxFiles[SFX_COUNT] = {
 	"clang", "open", "roar", "bossin", "victory", "pop",
 	"laugh", "chuckle", "whoosh", "launch", "levelup",
 	"boss_blip", "train_whistle", "bubbles",
-	"ach_in", "ach_jingle", "ach_out", "mythic_drop",
+	"ach_in", "ach_jingle", "ach_out", "mythic_drop", "camera",
 };
 static_assert(sizeof kSfxFiles / sizeof kSfxFiles[0] == SFX_COUNT, "every sound needs a file name");
 // How much of the mix one sound may take. A new sound is turned down if the ones still playing have
@@ -418,10 +418,50 @@ static void startMixer(u32 avail) {
 	sStartedAt = sClock;
 }
 
+static float sCustomEnv = 0.16f;
+
+void normalizeCustomPcm(s16* pcm, u32 fromFrame, u32 avail, u32 ch, u32 rate, bool reset) {
+	if (reset || fromFrame == 0) sCustomEnv = 0.16f;
+	if (!pcm || avail <= fromFrame || ch == 0) return;
+	// Streaming loudness normalizer (~-14 LUFS, target RMS ~0.16) + soft peak limiter (0.88 ceiling).
+	// Fast attack (~12ms), slow release (~450ms) so bassy drops stay controlled without pumping.
+	const float targetRms = 0.16f;
+	const float atk = rate > 0 ? 1.0f - expf(-1.0f / (rate * 0.012f)) : 0.002f;
+	const float rel = rate > 0 ? 1.0f - expf(-1.0f / (rate * 0.450f)) : 0.0001f;
+	float env = sCustomEnv;
+	for (u32 f = fromFrame; f < avail; f++) {
+		float sq = 0.0f;
+		for (u32 c = 0; c < ch; c++) {
+			const float s = pcm[f * ch + c] / 32768.0f;
+			sq += s * s;
+		}
+		const float rms = sqrtf(sq / ch);
+		env += (rms > env ? atk : rel) * (rms - env);
+		float gain = targetRms / (env > 0.02f ? env : 0.02f);
+		if (gain > 1.25f) gain = 1.25f;
+		for (u32 c = 0; c < ch; c++) {
+			const float x = (pcm[f * ch + c] / 32768.0f) * gain;
+			float y = x;
+			const float ax = fabsf(x);
+			if (ax > 0.70f) {
+				const float over = (ax - 0.70f) / 0.18f;
+				const float lim = 0.70f + 0.18f * tanhf(over);
+				y = x < 0.0f ? -lim : lim;
+			}
+			const int v = (int)(y * 32767.0f);
+			pcm[f * ch + c] = (s16)(v > 32767 ? 32767 : (v < -32768 ? -32768 : v));
+		}
+	}
+	sCustomEnv = env;
+}
+
 // More of the track is here: hand it over, and start the track once there is enough.
 static void arrived(u32 fromFrame, u32 avail) {
-	if (avail > fromFrame)
+	if (avail > fromFrame) {
+		if (sCurrent >= kTrackCount)
+			normalizeCustomPcm(sMusicClip.pcm, fromFrame, avail, sMusicClip.channels, sMusicClip.rate);
 		audioport::ready(sMusicClip.pcm + fromFrame * sMusicClip.channels, (avail - fromFrame) * sMusicClip.channels * 2);
+	}
 	if (sStarted) audioport::musicAvail(sMusicClip.pcm, avail, sMusicClip.samples);
 	else if (avail >= sMusicClip.samples || (!PORT_3DS && avail >= sMusicClip.rate * (kStartAhead + sSeekSec))) startMixer(avail);  // the 3DS waits for all of it
 }

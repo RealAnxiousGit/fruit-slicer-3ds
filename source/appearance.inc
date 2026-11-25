@@ -31,22 +31,30 @@ static void drawRecords() {
 	}
 }
 
-static void drawRecordsTop() {
+static const char* recordsHint(int f) {
 	static const char* const kRecHints[kRecordsCount] = {
 		"Back to the title",
 		"Boards, skins, trails, blades and oscilloscope.",
 		"Listen to unlocked tracks and view waveforms.",
 		"Track milestones and earn bonus coins.",
 		"Every fruit and boss you have sliced.",
+#if PORT_3DS
 		"Personal records, StreetPass and Global Top 100.",
+#else
+		"Personal records and Global Top 100.",
+#endif
 	};
+	return kRecHints[f >= 0 && f < kRecordsCount ? f : 0];
+}
+
+static void drawRecordsTop() {
 	const int f = sFocus[SCREEN_RECORDS];
 	topPanel(30, 108, 340, 82);
 	gfx::setDepth(1.0f);
 	drawLogo(200, 54, 0.62f);
 	gfx::setDepth(0.7f);
 	gfx::text(f >= 1 && f < kRecordsCount ? kRecordsButtons[f].label : "Records", 200, 118, 0.56f, COL_ACCENT, ALIGN_CENTER);
-	drawWrappedText(kRecHints[f >= 0 && f < kRecordsCount ? f : 0], 200, 148, 0.35f, 316, 14.0f, COL_CREAM, ALIGN_CENTER);
+	drawWrappedText(recordsHint(f), 200, 148, 0.35f, 316, 14.0f, COL_CREAM, ALIGN_CENTER);
 }
 
 // ---------------------------------------------------------------- Appearance gallery

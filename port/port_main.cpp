@@ -240,6 +240,8 @@ void testTextFinish(bool accept) {
 	if (sTyping && !sTypeResult) sTypeResult = accept ? 1 : -1;
 }
 #endif
+bool screenshotTriggered() { return false; }
+bool nextScreenshotPath(char*, int) { return false; }
 }  // namespace port
 
 static aptHookCookie sAptCookie;

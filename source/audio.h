@@ -13,7 +13,7 @@ enum Sfx {
 	SFX_CLANG, SFX_OPEN, SFX_ROAR, SFX_BOSSIN, SFX_VICTORY, SFX_POP,
 	SFX_LAUGH, SFX_CHUCKLE, SFX_WHOOSH, SFX_LAUNCH, SFX_LEVELUP,
 	SFX_BOSS_BLIP, SFX_TRAIN_WHISTLE, SFX_BUBBLES,
-	SFX_ACH_IN, SFX_ACH_JINGLE, SFX_ACH_OUT, SFX_MYTHIC,
+	SFX_ACH_IN, SFX_ACH_JINGLE, SFX_ACH_OUT, SFX_MYTHIC, SFX_CAMERA,
 	SFX_COUNT
 };
 enum Music { MUSIC_NONE = -1, MUSIC_MENU, MUSIC_PLAY, MUSIC_ZEN, MUSIC_COUNT };
@@ -61,4 +61,5 @@ float musicLength();         // seconds in the playing track, or -1 while it is 
 bool isSongTrack(int track);  // false for short loopable tracks, true for full-length songs
 void playRadioTrack(int track);  // previews/loops a full track in Radio without mutating saved choices
 bool oscSamples(float* out, int count);  // fills normalized [-1, 1] waveform samples around current playback
+void normalizeCustomPcm(s16* pcm, u32 fromFrame, u32 avail, u32 ch, u32 rate, bool reset = false);
 }  // namespace audio

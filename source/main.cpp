@@ -89,6 +89,11 @@ static float sSlideT = 0;
 static Screen sSlideFrom = SCREEN_TITLE;
 static float sSlideDir = 1;
 static float sFade = 0;       // 0 clear, 1 black
+static float sShotFlashT = 0.0f;
+static bool sShotFlashArmed = false;
+#if !PORT_3DS
+namespace gfx { void requestShot(const char* path); }
+#endif
 static bool sFadingOut = false;
 static void (*sFadeAction)() = nullptr;
 
@@ -5832,33 +5837,34 @@ static void drawTopContent(Screen screen) {
 				snprintf(buf, sizeof buf, sGame.mixed ? "MIXER BEST %lu" : (sGame.assisted ? "ASSISTED BEST %lu" : "BEST %lu"), (unsigned long)sGame.best);
 				gfx::text(buf, 200, 78 + dy, 0.38f, COL_DIM, ALIGN_CENTER);
 			}
+			gfx::rect(68, 98 + dy, 264, 1.5f, withAlpha(COL_DIM, 0.35f));
 			int tracks = 0;
-			float coinY = 152, extraY = 178;
+			float coinY = 150, extraY = 174;
 			if (sGame.mode == MODE_BOSSRUSH) {
 				const Orchard& o = sGame.orc;
 				const Modes12& m = sGame.m12;
 				tracks = o.newTracks;
 				if (o.won) snprintf(buf, sizeof buf, "RUSH CLEARED IN %d:%02d", (int)sGame.elapsed / 60, (int)sGame.elapsed % 60);
 				else snprintf(buf, sizeof buf, "BEAT %d OF %d BOSSES", m.rushStage, kRushStages);
-				gfx::text(buf, 200, 104 + dy, 0.39f, o.won ? rgba(255, 230, 140) : COL_CREAM, ALIGN_CENTER);
+				fitText(buf, 200, 106 + dy, 0.39f, 316, o.won ? rgba(255, 230, 140) : COL_CREAM, ALIGN_CENTER);
 				snprintf(buf, sizeof buf, "BUILD: %s", m.rushBuild < BUILD_COUNT ? kRushBuilds[m.rushBuild].name : "NONE");
-				gfx::text(buf, 200, 124 + dy, 0.35f, COL_DIM, ALIGN_CENTER);
+				fitText(buf, 200, 124 + dy, 0.35f, 316, COL_DIM, ALIGN_CENTER);
 				if (tracks > 0) {
 					snprintf(buf, sizeof buf, "NEW IN THE SHOP: %d BOSS TRACK%s", tracks, tracks == 1 ? "" : "S");
-					gfx::text(buf, 200, 144 + dy, 0.35f, COL_ACCENT, ALIGN_CENTER);
-					coinY = 168; extraY = 190;
+					fitText(buf, 200, 143 + dy, 0.35f, 316, COL_ACCENT, ALIGN_CENTER);
+					coinY = 166; extraY = 188;
 				}
 			} else if (sGame.mode == MODE_ORCHARD) {
 				const Orchard& o = sGame.orc;
 				tracks = o.newTracks;
 				snprintf(buf, sizeof buf, "REACHED ROOM %d", o.room);
-				gfx::text(buf, 200, 104 + dy, 0.39f, rgba(170, 230, 255), ALIGN_CENTER);
-				snprintf(buf, sizeof buf, "LEVEL %d   BOSSES %d   SEED %08X", o.level, o.bossesBeaten, (unsigned)o.runSeed);
-				gfx::text(buf, 200, 124 + dy, 0.33f, COL_DIM, ALIGN_CENTER);
+				fitText(buf, 200, 106 + dy, 0.39f, 316, rgba(170, 230, 255), ALIGN_CENTER);
+				snprintf(buf, sizeof buf, "LEVEL %d   BOSSES %d", o.level, o.bossesBeaten);
+				fitText(buf, 200, 124 + dy, 0.34f, 316, COL_DIM, ALIGN_CENTER);
 				if (tracks > 0) {
 					snprintf(buf, sizeof buf, "NEW IN THE SHOP: %d BOSS TRACK%s", tracks, tracks == 1 ? "" : "S");
-					gfx::text(buf, 200, 144 + dy, 0.35f, COL_ACCENT, ALIGN_CENTER);
-					coinY = 168; extraY = 190;
+					fitText(buf, 200, 143 + dy, 0.35f, 316, COL_ACCENT, ALIGN_CENTER);
+					coinY = 166; extraY = 188;
 				}
 			} else {
 				if (sGame.mode == MODE_BEAT) snprintf(buf, sizeof buf, "SLICED %d   ON THE BEAT %d", sGame.sliced, sGame.beatHits);
@@ -5866,8 +5872,8 @@ static void drawTopContent(Screen screen) {
 				else if (sGame.mode == MODE_SHARP) snprintf(buf, sizeof buf, "ON CALL %d   WRONG %d", sGame.m12.calledHits, sGame.m12.wrongHits);
 				else if (sGame.mode == MODE_JUGGLE) snprintf(buf, sizeof buf, "KNOCKS %d   MOST IN THE AIR %d", sGame.m12.knocks, sGame.m12.bestAir);
 				else snprintf(buf, sizeof buf, "SLICED %d   BEST COMBO %d", sGame.sliced, sGame.bestCombo);
-				gfx::text(buf, 200, 112 + dy, 0.39f, COL_CREAM, ALIGN_CENTER);
-				coinY = 148; extraY = 174;
+				fitText(buf, 200, 112 + dy, 0.39f, 316, COL_CREAM, ALIGN_CENTER);
+				coinY = 150; extraY = 174;
 			}
 			if (sCardFrame) {
 				// The score card: the game's name where the coins go, which are nobody else's business.
@@ -6503,7 +6509,7 @@ static void drawBottomContent(Screen screen) {
 					const float sc = (i == kResultTopIdx || (!PORT_3DS && i == 3)) ? 0.50f : 0.56f;
 					drawSign(rb, lbl, f == i, sPressed == i, sc, -1, fruitFor(lbl));
 				}
-				if (sCardNoteT > 0 && sCardNote) gfx::text(sCardNote, 160, gfx::isPortrait() ? 156.0f : 186.0f, 0.34f, withAlpha(COL_CREAM, clampf(sCardNoteT, 0, 1)), ALIGN_CENTER);
+				if (sCardNoteT > 0 && sCardNote) fitText(sCardNote, 160, gfx::isPortrait() ? 156.0f : 186.0f, 0.34f, 300, withAlpha(COL_CREAM, clampf(sCardNoteT, 0, 1)), ALIGN_CENTER);
 			}
 			break;
 		}
@@ -7569,6 +7575,12 @@ static void drawFrame() {
 			drawAchToast(wx, wy, ww);
 		}
 		if (sFade > 0) gfx::fadeAll(clampf(sFade, 0, 1));
+		if (sShotFlashT > 0.0f) {
+			float fx, fy, fw, fh;
+			gfx::beginCorner();
+			gfx::windowArea(&fx, &fy, &fw, &fh);
+			gfx::rect(fx, fy, fw, fh, rgba(255, 255, 255, (u8)(clampf(sShotFlashT / 0.30f, 0.0f, 1.0f) * 235.0f)));
+		}
 		gfx::endFrame();
 		return;
 	}
@@ -7672,6 +7684,12 @@ static void drawFrame() {
 		drawAchToast(wx, wy, ww);
 	}
 	if (sFade > 0) gfx::fadeAll(clampf(sFade, 0, 1));
+	if (sShotFlashT > 0.0f) {
+		float fx, fy, fw, fh;
+		gfx::beginCorner();
+		gfx::windowArea(&fx, &fy, &fw, &fh);
+		gfx::rect(fx, fy, fw, fh, rgba(255, 255, 255, (u8)(clampf(sShotFlashT / 0.30f, 0.0f, 1.0f) * 235.0f)));
+	}
 	gfx::endFrame();
 }
 #endif
@@ -7984,6 +8002,21 @@ bool app::frame(Input& in, int steps) {
 	const u64 profModels = svcGetSystemTick();
 #endif
 	audio::update(steps * kDt);
+#if !PORT_3DS
+	if (sShotFlashT > 0.0f) sShotFlashT = fmaxf(0.0f, sShotFlashT - steps * kDt);
+	if (sShotFlashArmed) {
+		sShotFlashArmed = false;
+		sShotFlashT = 0.30f;
+	}
+	if (port::screenshotTriggered()) {
+		char shotPath[384];
+		if (port::nextScreenshotPath(shotPath, sizeof shotPath)) {
+			gfx::requestShot(shotPath);
+			audio::play(SFX_CAMERA);
+			sShotFlashArmed = true;
+		}
+	}
+#endif
 #if PORT_3DS && defined(TEST_PROF)
 	const u64 profSync = svcGetSystemTick();
 #endif
