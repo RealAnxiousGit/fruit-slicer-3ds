@@ -448,30 +448,3 @@ static void drawAppearancePreview() {
 	gfx::setDepth(0.7f);
 	gfx::text(inUse ? "Currently Equipped" : "Tap or press A to equip", 200, 186, 0.38f, inUse ? COL_ACCENT : COL_DIM, ALIGN_CENTER);
 }
-
-// ---------------------------------------------------------------- Milestone B/C/D Shells
-static void drawStubScreen(const char* title, const char* line1, const char* line2, Screen backTo, int focus) {
-	drawHeader(title);
-	drawBackArrow(focus == 0, sPressed == 0);
-	gfx::sign(sprites_plank_idx, 22, 68, 276, 108, COL_PLANK);
-	fitText(title, 160, 86, 0.48f, 250, COL_ACCENT);
-	fitText(line1, 160, 118, 0.34f, 252, COL_CREAM);
-	fitText(line2, 160, 138, 0.32f, 252, COL_DIM);
-	(void)backTo;
-}
-
-static void updateStubScreen(Screen screen, Screen backTo, const Input& in, bool wasTouching) {
-	int& f = sFocus[screen];
-	f = 0;
-	if (in.down & KEY_B) {
-		audio::click();
-		goTo(backTo, -1);
-		return;
-	}
-	bool leave;
-	if (backCut(screen, in, wasTouching, &leave)) {
-		if (leave) goTo(backTo, -1);
-		return;
-	}
-	if (menuInput(kOnlyBack, 1, screen, in, wasTouching) == 0) cutBack(screen);
-}

@@ -6,6 +6,7 @@ namespace port {
 struct AssetFile;
 // Read-only game files, by path inside the assets ("audio/click.pcm").
 AssetFile* assetOpen(const char* path);
+AssetFile* assetOpenRaw(const char* path);  // reads romfs directly, bypassing mods
 size_t assetRead(void* out, size_t bytes, AssetFile* f);
 long assetSize(AssetFile* f);
 void assetClose(AssetFile* f);  // also stops a stream on it first

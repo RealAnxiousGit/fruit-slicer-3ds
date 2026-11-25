@@ -1,9 +1,12 @@
 #include "render.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "model3d.h"
+#include "mods.h"
+#include "sprites.h"
 
 namespace gfx {
 u32 drawCalls = 0;
@@ -33,7 +36,16 @@ static constexpr float kZ = 0.5f;
 static constexpr u32 kMaxObjects = 4096;  // text draws each letter twice: its outline, then its fill
 
 static C2D_SpriteSheet load(const char* p) {
-	C2D_SpriteSheet s = C2D_SpriteSheetLoad(p);
+	C2D_SpriteSheet s = nullptr;
+	if (strncmp(p, "romfs:/", 7) == 0) {
+		u8* buf = nullptr;
+		size_t sz = 0;
+		if (mods::readAsset(p + 7, &buf, &sz)) {
+			s = C2D_SpriteSheetLoadFromMem(buf, sz);
+			free(buf);
+		}
+	}
+	if (!s) s = C2D_SpriteSheetLoad(p);
 	if (!s) {
 		fprintf(stderr, "[gfx] failed to load %s\n", p);
 		return nullptr;
@@ -42,6 +54,36 @@ static C2D_SpriteSheet load(const char* p) {
 	C3D_TexSetFilter(first.tex, GPU_LINEAR, GPU_LINEAR);
 	C3D_TexSetWrap(first.tex, GPU_CLAMP_TO_BORDER, GPU_CLAMP_TO_BORDER);
 	return s;
+}
+
+static void retire(C2D_SpriteSheet s);
+
+void reloadAll() {
+	retire(sSheets[SHEET_FONT]);
+	retire(sSheets[SHEET_SPRITES]);
+	retire(sSheets[SHEET_LOGO]);
+	sSheets[SHEET_FONT] = load("romfs:/gfx/font.t3x");
+	sSheets[SHEET_SPRITES] = load("romfs:/gfx/sprites.t3x");
+	sSheets[SHEET_LOGO] = load("romfs:/gfx/logo.t3x");
+	sLoadedScene = -1;
+	sLoadedBoard = -1;
+	sync();
+	sync();
+}
+
+void drawModIcon(int modIdx, float x, float y, float sz) {
+	const mods::ModInfo* m = mods::get(modIdx);
+	if (m && m->hasIcon) {
+		rect(x, y, sz, sz, rgba(32, 48, 72, 255));
+		rect(x, y, sz, 1.5f, COL_ACCENT);
+		rect(x, y + sz - 1.5f, sz, 1.5f, COL_ACCENT);
+		sprite(SHEET_SPRITES, sprites_ic_tree_idx, x + sz * 0.5f, y + sz * 0.5f, sz / 42.0f, sz / 42.0f);
+		return;
+	}
+	rect(x, y, sz, sz, rgba(8, 10, 14, 255));
+	rect(x, y, sz, 1.5f, rgba(90, 96, 110, 220));
+	rect(x, y + sz - 1.5f, sz, 1.5f, rgba(90, 96, 110, 220));
+	text("?", x + sz * 0.5f, y + sz * 0.24f, sz * 0.017f, WHITE, ALIGN_CENTER);
 }
 
 static void retire(C2D_SpriteSheet s) {

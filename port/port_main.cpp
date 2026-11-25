@@ -5,11 +5,15 @@
 #include "adpcm.h"
 #include "app.h"
 #include "common.h"
+#include "mods.h"
 #include "port_api.h"
 
 namespace port {
 struct AssetFile {
 	FILE* f;
+	u8* mem;
+	size_t memSize;
+	size_t memPos;
 	// A stream (music): a lower-priority thread reads into `out` while the game waits for the screen.
 	Thread reader;
 	bool streaming;
@@ -23,16 +27,33 @@ struct AssetFile {
 };
 static AssetFile sAssets[8];
 
-AssetFile* assetOpen(const char* path) {
+AssetFile* assetOpenRaw(const char* path) {
 	char full[96];
 	snprintf(full, sizeof full, "romfs:/%s", path);
 	for (auto& a : sAssets) {
-		if (a.f) continue;
+		if (a.f || a.mem) continue;
 		a = {};
 		a.f = fopen(full, "rb");
 		return a.f ? &a : nullptr;
 	}
 	return nullptr;
+}
+
+AssetFile* assetOpen(const char* path) {
+	u8* buf = nullptr;
+	size_t sz = 0;
+	if (mods::readAudioAsFsa1(path, &buf, &sz)) {
+		for (auto& a : sAssets) {
+			if (a.f || a.mem) continue;
+			a = {};
+			a.mem = buf;
+			a.memSize = sz;
+			a.memPos = 0;
+			return &a;
+		}
+		free(buf);
+	}
+	return assetOpenRaw(path);
 }
 
 static constexpr size_t kStreamChunk = 16 * 1024;  // small, so stopping a stream never waits long
@@ -58,7 +79,15 @@ static void streamMain(void* arg) {
 	while (!a->stop && a->have < a->want) {
 		size_t n = a->want - a->have;
 		if (n > kStreamChunk) n = kStreamChunk;
-		size_t got = fread(a->out + a->have, 1, n, a->f);
+		size_t got = 0;
+		if (a->mem) {
+			size_t avail = a->memPos < a->memSize ? a->memSize - a->memPos : 0;
+			got = n < avail ? n : avail;
+			if (got > 0) memcpy(a->out + a->have, a->mem + a->memPos, got);
+			a->memPos += got;
+		} else {
+			got = fread(a->out + a->have, 1, n, a->f);
+		}
 		__sync_synchronize();  // the bytes are in before the count says so
 		a->have = a->have + got;
 		if (!a->unpackTo) a->done = a->have;
@@ -96,7 +125,15 @@ long streamDone(AssetFile* a) {
 		// No thread to spare: read a piece a frame, as before.
 		size_t n = a->want - a->have;
 		if (n > 24 * 1024) n = 24 * 1024;
-		size_t got = fread(a->out + a->have, 1, n, a->f);
+		size_t got = 0;
+		if (a->mem) {
+			size_t avail = a->memPos < a->memSize ? a->memSize - a->memPos : 0;
+			got = n < avail ? n : avail;
+			if (got > 0) memcpy(a->out + a->have, a->mem + a->memPos, got);
+			a->memPos += got;
+		} else {
+			got = fread(a->out + a->have, 1, n, a->f);
+		}
 		a->have = a->have + got;
 		if (got != n) a->failed = true;
 		else if (!a->unpackTo) a->done = a->have;
@@ -104,8 +141,18 @@ long streamDone(AssetFile* a) {
 	}
 	return a->failed ? -1 : (long)a->done;
 }
-size_t assetRead(void* out, size_t bytes, AssetFile* a) { return fread(out, 1, bytes, a->f); }
+size_t assetRead(void* out, size_t bytes, AssetFile* a) {
+	if (a->mem) {
+		size_t avail = a->memPos < a->memSize ? a->memSize - a->memPos : 0;
+		size_t take = bytes < avail ? bytes : avail;
+		if (take > 0) memcpy(out, a->mem + a->memPos, take);
+		a->memPos += take;
+		return take;
+	}
+	return fread(out, 1, bytes, a->f);
+}
 long assetSize(AssetFile* a) {
+	if (a->mem) return (long)a->memSize;
 	long at = ftell(a->f);
 	fseek(a->f, 0, SEEK_END);
 	long n = ftell(a->f);
@@ -121,8 +168,11 @@ void assetClose(AssetFile* a) {
 		a->reader = nullptr;
 	}
 	a->streaming = false;
-	fclose(a->f);
+	if (a->f) fclose(a->f);
 	a->f = nullptr;
+	if (a->mem) free(a->mem);
+	a->mem = nullptr;
+	a->memSize = a->memPos = 0;
 }
 
 // The Lab keeps its own folder, so a test run never touches a player's save.

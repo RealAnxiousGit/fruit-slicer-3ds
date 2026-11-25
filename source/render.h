@@ -93,6 +93,8 @@ void fieldFor(float aspect, float* w, float* h);
 
 // Test hook: draws both eyes as if the 3D slider were all the way up, even on a 2DS.
 void forceStereo(bool on);
+void reloadAll();
+void drawModIcon(int modIdx, float x, float y, float sz);
 
 // Hardware/GPU additive blend pass for FX_FULL glow, sparks, explosions and blade aura (Universal only).
 #if PORT_3DS

@@ -754,10 +754,96 @@ static void labMenus() {
 			labExpect(SCREEN_TITLE, "Records back arrow returns to Title");
 			botTap(kTitleButtons[3]);
 			return;
-		case 69:
+		case 69: {
 			labExpect(SCREEN_MODS, "Mods opens from Title");
+			char mdir[480], p[540];
+			mods::modsDir(mdir, sizeof mdir);
+			snprintf(p, sizeof p, "%s/README.md", mdir);
+			FILE* fr = fopen(p, "rb");
+			snprintf(p, sizeof p, "%s/modTemplate.zip", mdir);
+			FILE* ft = fopen(p, "rb");
+			labCheck(fr != nullptr && ft != nullptr, "mods::init seeds README.md and modTemplate.zip");
+			if (fr) fclose(fr);
+			if (ft) fclose(ft);
+			labCheck(mods::count() == 0, "mods::rescan ignores modTemplate.zip and empty mods folder");
+
+			// Create test folder mod (with valid icon.png header + corrupt PNG override) & test stored .zip mod (no icon -> '?' fallback).
+			snprintf(p, sizeof p, "%s/lab_folder", mdir);
+#if defined(_WIN32)
+			_mkdir(p);
+#else
+			mkdir(p, 0755);
+#endif
+			snprintf(p, sizeof p, "%s/lab_folder/mod.txt", mdir);
+			if (FILE* f = fopen(p, "wb")) { fputs("name=Lab Folder Mod\nauthor=Lab\nversion=1.0\n", f); fclose(f); }
+			snprintf(p, sizeof p, "%s/lab_folder/icon.png", mdir);
+			if (FILE* f = fopen(p, "wb")) {
+				const u8 fakePng[24] = {0x89,'P','N','G',0x0d,0x0a,0x1a,0x0a, 0,0,0,13,'I','H','D','R', 0,0,0,1, 0,0,0,1};
+				fwrite(fakePng, 1, sizeof fakePng, f); fclose(f);
+			}
+			snprintf(p, sizeof p, "%s/lab_folder/test_mod.txt", mdir);
+			if (FILE* f = fopen(p, "wb")) { fputs("folder", f); fclose(f); }
+
+			// Build a valid stored ZIP in memory for lab_zip.zip (mod.txt + test_mod.txt, no icon.png)
+			u8 zbuf[512]; size_t zp = 0;
+			auto w16 = [&](u16 v) { zbuf[zp++] = (u8)(v & 0xff); zbuf[zp++] = (u8)(v >> 8); };
+			auto w32 = [&](u32 v) { w16((u16)(v & 0xffff)); w16((u16)(v >> 16)); };
+			struct ZEnt { const char* name; const char* data; u32 off; };
+			ZEnt ents[2] = {{"mod.txt", "name=Lab Zip Mod\nauthor=Lab\nversion=2.1\n", 0}, {"test_mod.txt", "zip", 0}};
+			for (auto& e : ents) {
+				e.off = (u32)zp;
+				u16 nl = (u16)strlen(e.name); u32 dl = (u32)strlen(e.data);
+				w32(0x04034b50u); w16(20); w16(0); w16(0); w16(0); w16(0); w32(0); w32(dl); w32(dl); w16(nl); w16(0);
+				memcpy(zbuf + zp, e.name, nl); zp += nl;
+				memcpy(zbuf + zp, e.data, dl); zp += dl;
+			}
+			u32 cdStart = (u32)zp;
+			for (auto& e : ents) {
+				u16 nl = (u16)strlen(e.name); u32 dl = (u32)strlen(e.data);
+				w32(0x02014b50u); w16(20); w16(20); w16(0); w16(0); w16(0); w16(0); w32(0); w32(dl); w32(dl);
+				w16(nl); w16(0); w16(0); w16(0); w16(0); w32(0); w32(e.off);
+				memcpy(zbuf + zp, e.name, nl); zp += nl;
+			}
+			u32 cdSize = (u32)zp - cdStart;
+			w32(0x06054b50u); w16(0); w16(0); w16(2); w16(2); w32(cdSize); w32(cdStart); w16(0);
+			const bool impOk = mods::importZip("lab_zip.zip", zbuf, zp);
+			labCheck(impOk && mods::count() == 2, "Mods detects both extracted folder and .zip mod with valid mod.txt");
+
+			const mods::ModInfo* mf = nullptr; const mods::ModInfo* mz = nullptr;
+			int fi = -1, zi = -1;
+			for (int i = 0; i < mods::count(); i++) {
+				if (strcmp(mods::get(i)->id, "lab_folder") == 0) { mf = mods::get(i); fi = i; }
+				if (strcmp(mods::get(i)->id, "lab_zip.zip") == 0) { mz = mods::get(i); zi = i; }
+			}
+			labCheck(mf && mf->hasIcon && mz && !mz->hasIcon, "Mods loads icon.png and falls back to '?' when icon.png is absent");
+
+			if (fi >= 0 && zi >= 0) {
+				mods::setEnabled(fi, true);
+				mods::setEnabled(zi, true);
+				if (zi > fi) mods::move(zi, -1);  // put lab_zip.zip at #1 above lab_folder
+				u8* ab = nullptr; size_t as = 0;
+				const bool r1 = mods::readAsset("test_mod.txt", &ab, &as);
+				const bool zipWon = r1 && as == 3 && memcmp(ab, "zip", 3) == 0;
+				if (ab) free(ab);
+				mods::rescan();  // verify mods.txt round-trips priority & enabled state
+				ab = nullptr; as = 0;
+				const bool r2 = mods::readAsset("test_mod.txt", &ab, &as);
+				const bool roundOk = r2 && as == 3 && memcmp(ab, "zip", 3) == 0;
+				if (ab) free(ab);
+				labCheck(zipWon && roundOk, "Mod priority #1 overrides #2 and persists across rescan via mods.txt");
+			}
+			// Clean up test mods & restore
+			snprintf(p, sizeof p, "%s/lab_folder/mod.txt", mdir); remove(p);
+			snprintf(p, sizeof p, "%s/lab_folder/icon.png", mdir); remove(p);
+			snprintf(p, sizeof p, "%s/lab_folder/test_mod.txt", mdir); remove(p);
+			snprintf(p, sizeof p, "%s/lab_folder", mdir); rmdir(p);
+			snprintf(p, sizeof p, "%s/lab_zip.zip", mdir); remove(p);
+			snprintf(p, sizeof p, "%s/mods.txt", mdir); remove(p);
+			mods::rescan();
+			mods::clearDirty();
 			botTap(kBack);
 			return;
+		}
 		case 70:
 			labExpect(SCREEN_TITLE, "Mods back arrow returns to Title");
 			botTap(kTitleButtons[6]);

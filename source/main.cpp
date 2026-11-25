@@ -2,6 +2,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#if defined(_WIN32)
+#include <direct.h>
+#define rmdir _rmdir
+#else
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
 
 #include "app.h"
 #include "audio.h"
@@ -13,6 +20,7 @@
 #include "jobs.h"
 #include "leaderboard.h"
 #include "model3d.h"
+#include "mods.h"
 #include "render.h"
 #include "progress.h"
 #include "shop.h"
@@ -2546,6 +2554,7 @@ static void topPanel(float x, float y, float w, float h);
 #include "appearance.inc"
 #include "radio.inc"
 #include "achievements.inc"
+#include "mods_ui.inc"
 
 // Moves dir pages along, wrapping past either end. The old page slides out as the new one comes in.
 static void turnModePage(int dir) {
@@ -5510,12 +5519,7 @@ static void drawTopContent(Screen screen) {
 			drawAchievementsTop();
 			break;
 		case SCREEN_MODS:
-			topPanel(30, 108, 340, 80);
-			gfx::setDepth(1.0f);
-			drawLogo(200, 54, 0.62f);
-			gfx::setDepth(0.7f);
-			gfx::text("Mods", 200, 122, 0.56f, COL_ACCENT, ALIGN_CENTER);
-			fitText("Texture, Audio & Visual Mods coming in Milestone D.", 200, 154, 0.34f, 316, COL_CREAM);
+			drawModsTop();
 			break;
 		case SCREEN_JOURNAL:
 			drawJournalTop();
@@ -6236,7 +6240,7 @@ static void drawBottomContent(Screen screen) {
 			break;
 		case SCREEN_MODS:
 			drawMenuBack();
-			drawStubScreen("Mods", "Texture, audio & visual mods", "Coming next in Milestone D.", SCREEN_TITLE, sFocus[SCREEN_MODS]);
+			drawMods();
 			break;
 		case SCREEN_JOURNAL:
 			drawMenuBack();
@@ -6693,7 +6697,7 @@ static void updateFrame(const Input& in, bool wasTouching) {
 				if (sFocus[SCREEN_RECORDS] == 0) sFocus[SCREEN_RECORDS] = 1;
 				goTo(SCREEN_RECORDS, 1);
 			} else if (t == 3) {
-				goTo(SCREEN_MODS, 1);
+				openMods();
 			} else if (t == 4) {
 				sFocus[SCREEN_HOWTO] = 1;
 				goTo(SCREEN_HOWTO, 1);
@@ -7010,7 +7014,7 @@ static void updateFrame(const Input& in, bool wasTouching) {
 			if (!blocked) updateAchievements(in, wasTouching);
 			break;
 		case SCREEN_MODS:
-			if (!blocked) updateStubScreen(SCREEN_MODS, SCREEN_TITLE, in, wasTouching);
+			if (!blocked) updateMods(in, wasTouching);
 			break;
 		case SCREEN_JOURNAL:
 			if (!blocked) updateJournal(in, wasTouching);
@@ -7633,6 +7637,7 @@ void app::showLoading() {
 }
 
 bool app::init() {
+	mods::init();
 	saveLoad();
 	achRetroactiveCheck();
 #ifdef UPDATE_TEST
