@@ -13,9 +13,31 @@ static float sOrcPassiveDragY;
 static bool sOrcPassiveDragMoved;
 
 static u32 rarityColor(int r) {
-	return r == RARE_LEGEND ? rgba(255, 205, 80) : (r == RARE_RARE ? rgba(120, 190, 255) : rgba(220, 210, 190));
+	switch (r) {
+		case RARE_UNCOMMON: return rgba(108, 232, 134);
+		case RARE_RARE: return rgba(110, 200, 255);
+		case RARE_EPIC: return rgba(196, 118, 255);
+		case RARE_LEGEND: return rgba(255, 205, 80);
+		case RARE_MYTHIC: {
+			const float hue = fmodf(sTime * 0.55f, 1.0f);
+			const float rc = clampf(fabsf(hue * 6.0f - 3.0f) - 1.0f, 0.35f, 1.0f);
+			const float gc = clampf(2.0f - fabsf(hue * 6.0f - 2.0f), 0.35f, 1.0f);
+			const float bc = clampf(2.0f - fabsf(hue * 6.0f - 4.0f), 0.35f, 1.0f);
+			return rgba((u8)(rc * 255), (u8)(gc * 255), (u8)(bc * 255));
+		}
+		default: return rgba(224, 214, 194);
+	}
 }
-static const char* rarityName(int r) { return r == RARE_LEGEND ? "Legendary" : (r == RARE_RARE ? "Rare" : "Common"); }
+static const char* rarityName(int r) {
+	switch (r) {
+		case RARE_UNCOMMON: return "Uncommon";
+		case RARE_RARE: return "Rare";
+		case RARE_EPIC: return "Epic";
+		case RARE_LEGEND: return "Legendary";
+		case RARE_MYTHIC: return "Mythic";
+		default: return "Common";
+	}
+}
 static bool cardUncapped(const CardInfo& info) { return info.kind == KIND_UPGRADE && info.maxLevel >= 255; }
 
 // Text that shrinks to fit a width.
@@ -516,12 +538,12 @@ static void drawOrcInventory() {
 				gfx::sprite(SHEET_SPRITES, cardIcon(card), it.x + 15, it.y + 27, 0.62f, 0.62f);
 				orcFit(kCards[card].name, it.x + 28, it.y + 15, 0.26f, it.w - 31, COL_CREAM, ALIGN_LEFT);
 				if (kCards[card].kind == KIND_SINGLE) {
-					orcFit("Used once", it.x + 28, it.y + 27, 0.24f, it.w - 31, COL_DIM, ALIGN_LEFT);
+					orcFit("Used once", it.x + 28, it.y + 27, PORT_3DS ? 0.27f : 0.24f, it.w - 31, COL_DIM, ALIGN_LEFT);
 				} else if (o.slotCool[it.index] > 0) {
 					snprintf(buf, sizeof buf, "Ready in %ds", (int)ceilf(o.slotCool[it.index]));
-					orcFit(buf, it.x + 28, it.y + 27, 0.24f, it.w - 31, rgba(170, 230, 255), ALIGN_LEFT);
+					orcFit(buf, it.x + 28, it.y + 27, PORT_3DS ? 0.27f : 0.24f, it.w - 31, rgba(170, 230, 255), ALIGN_LEFT);
 				} else {
-					orcFit("Ready", it.x + 28, it.y + 27, 0.24f, it.w - 31, rgba(170, 255, 170), ALIGN_LEFT);
+					orcFit("Ready", it.x + 28, it.y + 27, PORT_3DS ? 0.27f : 0.24f, it.w - 31, rgba(170, 255, 170), ALIGN_LEFT);
 				}
 				break;
 			}
@@ -741,8 +763,56 @@ static void drawRoom50Cutscene();
 static void drawDevSkip();
 #endif
 
+static void drawMythicReveal() {
+	const Orchard& o = sGame.orc;
+	if (o.mythicRevealT <= 0 || o.mythicRevealCard >= CARD_COUNT) return;
+	const float t = o.mythicRevealT;
+	float slide = 0.0f;
+	if (t > 3.0f) {
+		float u = clampf((t - 3.0f) / 0.65f, 0.0f, 1.0f);
+		slide = u * u * (3.0f - 2.0f * u);
+	}
+	const float cx = lerpf(kFieldW * 0.5f, kFieldW - 28.0f, slide);
+	const float cy = lerpf(kFieldH * 0.5f, 24.0f, slide);
+	const float sc = lerpf(1.0f, 0.22f, slide);
+	const float alpha = 1.0f - slide * 0.65f;
+
+	// Rotating rainbow pinwheel rays background
+	const int rays = 16;
+	const float spin = sTime * (gSave.calmFx ? 0.35f : 1.15f);
+	const float rLen = 220.0f * sc;
+	for (int i = 0; i < rays; i++) {
+		if (i & 1) continue;
+		const float a0 = spin + i * (6.28318f / rays);
+		const float a1 = a0 + (6.28318f / rays) * 0.72f;
+		const float hue = fmodf((float)i / rays + sTime * 0.25f, 1.0f);
+		const float rr = clampf(fabsf(hue * 6.0f - 3.0f) - 1.0f, 0.35f, 1.0f);
+		const float gg = clampf(2.0f - fabsf(hue * 6.0f - 2.0f), 0.35f, 1.0f);
+		const float bb = clampf(2.0f - fabsf(hue * 6.0f - 4.0f), 0.35f, 1.0f);
+		const u32 rayCol = rgba((u8)(rr * 255), (u8)(gg * 255), (u8)(bb * 255), (u8)(95 * alpha));
+		gfx::tri(cx, cy, rayCol, cx + cosf(a0) * rLen, cy + sinf(a0) * rLen, withAlpha(rayCol, 0.0f),
+		         cx + cosf(a1) * rLen, cy + sinf(a1) * rLen, withAlpha(rayCol, 0.0f));
+	}
+
+	if (sc > 0.25f) {
+		const float cw = 180.0f * sc, ch = 122.0f * sc;
+		const float x = cx - cw * 0.5f, y = cy - ch * 0.5f;
+		const CardInfo& info = kCards[o.mythicRevealCard];
+		const u32 rim = rarityColor(RARE_MYTHIC);
+		gfx::sign(sprites_plank_idx, x, y, cw, ch, withAlpha(COL_PLANK, alpha));
+		gfx::rect(x + 2, y + 2, cw - 4, 2.0f, rim);
+		gfx::rect(x + 2, y + ch - 4.0f, cw - 4, 2.0f, rim);
+		orcFit("MYTHIC CHARM UNLOCKED!", cx, y + 8 * sc, 0.32f * sc, cw - 16, rim);
+		gfx::sprite(SHEET_SPRITES, cardIcon(o.mythicRevealCard), cx, y + 48 * sc, 1.15f * sc, 1.15f * sc);
+		orcFit(info.name, cx, y + 74 * sc, 0.42f * sc, cw - 16, COL_CREAM);
+		orcFit(info.line1, cx, y + 92 * sc, 0.28f * sc, cw - 16, COL_DIM);
+		orcFit(info.line2, cx, y + 105 * sc, 0.28f * sc, cw - 16, COL_DIM);
+	}
+}
+
 static void drawOrchardMenus() {
 	if (!newModeOn() || !sGame.orchardLike()) return;
+	if (sGame.orc.mythicRevealT > 0) drawMythicReveal();
 	if (sGame.m12.rushPicking) {
 		drawRushPick();
 		return;

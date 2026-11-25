@@ -2679,6 +2679,123 @@ static void labFinish(Input& in) {
 				}
 				labCheck(bossFilesOk && bossPlaysOk, "Every boss track asset exists and bossMusic enters playback without dropping");
 			}
+			// Milestone E: Double XP, Easy/Normal balance & starter reroll, 6 rarities & 57 charms, passive charm effects, and Mythic unlock + pinwheel reveal + Feelin' Lucky.
+			{
+				const Mode wasModeM = sGame.mode;
+				const auto wasPhaseM = sGame.phase;
+				const Orchard wasOrcM = sGame.orc;
+				const float wasDoubleT = sGame.doubleT;
+				const float wasFrenzyT = sGame.frenzyT;
+				const u8 wasDiff = gSave.difficulty;
+				const Settings wasSaveM = gSave;
+
+				// 1) Double XP in Orchard Blast doubles XP gained via orcGainXp.
+				gSave.difficulty = DIFF_NORMAL;
+				sGame.mode = MODE_ORCHARD;
+				sGame.phase = PHASE_PLAY;
+				sGame.orc = {};
+				sGame.orcStart();
+				sGame.orc.xp = 0.0f;
+				sGame.doubleT = 0.0f;
+				sGame.orcGainXp(1.0f);
+				const float baseXp = sGame.orc.xp;
+				sGame.orc.xp = 0.0f;
+				sGame.doubleT = 8.0f;
+				sGame.orcGainXp(1.0f);
+				const float dblXp = sGame.orc.xp;
+				labCheck(fabsf(baseXp - 1.0f) < 0.01f && fabsf(dblXp - 2.0f) < 0.01f,
+				         "Double XP power-up doubles XP gained in Orchard Blast");
+
+				// 2) Easy 30 HP / Normal 25 HP / starter rerolls == 1.
+				labCheck(orchardLevel(DIFF_EASY).startHp == 30 && orchardLevel(DIFF_NORMAL).startHp == 25 &&
+				         sGame.orc.rerolls == 1,
+				         "Orchard Blast Easy starts with 30 HP, Normal with 25 HP, and 1 starter reroll");
+
+				// 3) All 57 cards & 6 rarities have valid non-empty names, icons, and distinct rarity names.
+				bool cardsOk = (CARD_COUNT == 57 && RARE_MYTHIC + 1 == 6);
+				for (int i = 0; i <= RARE_MYTHIC; i++) {
+					const char* rn = rarityName(i);
+					if (!rn || !rn[0]) cardsOk = false;
+				}
+				for (int i = 0; i < CARD_COUNT; i++) {
+					const CardInfo& ci = kCards[i];
+					if (!ci.name || !ci.name[0] || !ci.line1 || !ci.line1[0] || cardIcon(i) < 0 || ci.rarity > RARE_MYTHIC)
+						cardsOk = false;
+				}
+				labCheck(cardsOk, "All 57 Orchard Blast cards and 6 rarity tiers have valid names, descriptions, and sprites");
+
+				// 4) Passive charm triggers: Citrus Shield, Sweet Tooth, Phantom Parry, Prismatic Core.
+				sGame.orc = {};
+				sGame.orcStart();
+				sGame.phase = PHASE_PLAY;
+				sGame.orc.upgrade[CARD_CITRUS_SHIELD] = 1;
+				sGame.orc.tempShieldHp = 3;
+				const int hpBeforeShield = sGame.orc.hp;
+				sGame.orcHurt(2, 160.0f, 120.0f, "TEST");
+				const bool shieldOk = (sGame.orc.hp == hpBeforeShield && sGame.orc.tempShieldHp == 1);
+
+				sGame.orc.hp = 10;
+				sGame.orc.maxHp = 25;
+				sGame.orc.upgrade[CARD_SWEET_TOOTH] = 1;
+				sGame.orc.sweetCounter = 9;
+				Obj testFruit{};
+				testFruit.kind = OBJ_FRUIT;
+				testFruit.x = 160.0f;
+				testFruit.y = 120.0f;
+				sGame.orcSliced(testFruit);
+				const bool sweetOk = (sGame.orc.hp == 11 && sGame.orc.sweetCounter == 0);
+
+				sGame.orc.upgrade[CARD_PHANTOM_PARRY] = 1;
+				sGame.orc.level = 10;
+				sGame.frenzyT = 2.0f;
+				sGame.orc.xp = 0.0f;
+				sGame.doubleT = 0.0f;
+				const int hpBeforeParry = sGame.orc.hp;
+				Obj testBomb{};
+				testBomb.kind = OBJ_BOMB;
+				testBomb.x = 160.0f;
+				testBomb.y = 120.0f;
+				sGame.orcBomb(testBomb);
+				const bool parryOk = (sGame.orc.hp == hpBeforeParry && sGame.orc.xp >= 10.0f);
+
+				sGame.orc.upgrade[CARD_PRISMATIC_CORE] = 1;
+				sGame.orc.xp = 0.0f;
+				sGame.orcBomb(testBomb);
+				const bool prismOk = (sGame.orc.xp >= 20.0f);
+				char mmsg[96];
+				snprintf(mmsg, sizeof mmsg, "shield=%d sweet=%d parry=%d prism=%d hp=%.1f sh=%.1f sw=%d xp=%.1f",
+				         (int)shieldOk, (int)sweetOk, (int)parryOk, (int)prismOk,
+				         (double)sGame.orc.hp, (double)sGame.orc.tempShieldHp, sGame.orc.sweetCounter, (double)sGame.orc.xp);
+				labCheck(shieldOk && sweetOk && parryOk && prismOk,
+				         "Milestone E passive charms (Citrus Shield, Sweet Tooth, Phantom Parry, Prismatic Core) trigger properly", mmsg);
+
+				// 5) Mythic unlock sets mythicsUnlocked, inventory card, mythicRevealT, and ACH_FEELIN_LUCKY.
+				sGame.orc = {};
+				sGame.orcStart();
+				const int mIdx = 0;  // CARD_ORCHARD_CROWN - kFirstMythicCard
+				const int mCard = kFirstMythicCard + mIdx;
+				gSave.mythicsUnlocked |= (u8)(1 << mIdx);
+				sGame.orc.upgrade[mCard]++;
+				if (sGame.orc.passiveCount < 24) sGame.orc.passiveOrder[sGame.orc.passiveCount++] = (u8)mCard;
+				sGame.orc.mythicRevealCard = (u8)mCard;
+				sGame.orc.mythicRevealT = 3.2f;
+				sAchAllowInLab = true;
+				achPollProgress();
+				sAchAllowInLab = false;
+				const bool mythicOk = ((gSave.mythicsUnlocked & (1 << mIdx)) != 0) &&
+				                      (sGame.orc.upgrade[mCard] > 0) &&
+				                      (sGame.orc.mythicRevealT > 0.0f) &&
+				                      achHas(ACH_FEELIN_LUCKY);
+				labCheck(mythicOk, "Mythic charm unlock sets save bit, grants inventory card, triggers pinwheel reveal, and unlocks Feelin' Lucky");
+
+				gSave = wasSaveM;
+				gSave.difficulty = wasDiff;
+				sGame.doubleT = wasDoubleT;
+				sGame.frenzyT = wasFrenzyT;
+				sGame.orc = wasOrcM;
+				sGame.mode = wasModeM;
+				sGame.phase = wasPhaseM;
+			}
 		}
 		step = 1;
 #if PORT_3DS

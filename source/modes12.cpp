@@ -476,7 +476,7 @@ void Game::labModes12(void (*check)(bool, const char*, const char*)) {
 	setup(MODE_BOSSRUSH);
 	rushPick(BUILD_GLASS);
 	snprintf(d, sizeof d, "HP %.0f", orc.maxHp);
-	check(orc.maxHp == lv.startHp * 0.5f && orc.upgrade[CARD_GLASS] && orc.upgrade[CARD_BLADE] == 3 && orc.slot[0] == CARD_CLEAVER &&
+	check(orc.maxHp == floorf(lv.startHp * 0.5f) && orc.upgrade[CARD_GLASS] && orc.upgrade[CARD_BLADE] == 3 && orc.slot[0] == CARD_CLEAVER &&
 	          orc.slot[1] == CARD_BOSSBANE,
 	      "Glass Cannon: half HP, Blade 3, Cleaver and Boss Bane", d);
 	setup(MODE_BOSSRUSH);

@@ -1963,9 +1963,16 @@ def orchard_sprites():
     out += [("cd_" + CARD_ICONS[i], spr_card_icon(i)) for i in range(42, len(CARD_ICONS))]
     out += [("ic_skull", spr_icon("skull")), ("lem_floatie", spr_lem_floatie()), ("lem_drain", spr_lem_drain()),
             ("lem_floatie_back", spr_lem_floatie_back()), ("lem_floatie_front", spr_lem_floatie_front()), ("boss_worm_hole", spr_worm_hole())]
-    # 2.1.0: 32 bespoke achievement icons appended strictly at the tail so older sprite indices never shift.
+    # 2.1.0: 32 bespoke achievement icons + 12 new passive charm icons appended strictly at the tail.
     import gen_ach_icons
+    import gen_charm_icons21
     out += [(f"ach_{i}", gen_ach_icons.make_ach_icon(i, canvas, SS, el, poly, shade, shrink, sticker)) for i in range(32)]
+    kNewCharms = [
+        "cd_citrusshield", "cd_sweettooth", "cd_quickdraw", "cd_juicyjackpot",
+        "cd_frostbite", "cd_chainreact", "cd_royaltribute", "cd_phantomparry",
+        "cd_orchardcrown", "cd_twinharvest", "cd_solarblade", "cd_prismaticcore",
+    ]
+    out += [(nm, gen_charm_icons21.make_charm_icon21(i, canvas, SS, el, poly, shade, shrink, sticker)) for i, nm in enumerate(kNewCharms)]
     return out
 
 

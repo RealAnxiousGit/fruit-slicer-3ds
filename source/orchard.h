@@ -17,10 +17,16 @@ enum CardId : u8 {
 	CARD_GOLDAPPLE, CARD_FRUITBOMB, CARD_RINDWALL, CARD_RIPESEED, CARD_SKIPPEEL, CARD_BOSSBANE, CARD_LUCKYPIT, CARD_COINJAR,
 	CARD_LASTSTAND, CARD_FLOOD,
 	CARD_CUTBOARD, CARD_LIFESTEAL, CARD_BOSSHARVEST,
+	// 2.1.0 New Passive Charms (8 Uncommon/Rare/Epic + 4 Mythics)
+	CARD_CITRUS_SHIELD, CARD_SWEET_TOOTH, CARD_QUICK_DRAW, CARD_JUICY_JACKPOT,
+	CARD_FROSTBITE_EDGE, CARD_CHAIN_REACTION, CARD_ROYAL_TRIBUTE, CARD_PHANTOM_PARRY,
+	CARD_ORCHARD_CROWN, CARD_TWIN_HARVEST, CARD_SOLAR_BLADE, CARD_PRISMATIC_CORE,
 	CARD_COUNT, CARD_NONE = 0xFF
 };
+static constexpr int kFirstMythicCard = CARD_ORCHARD_CROWN;
+static constexpr int kMythicCount = 4;
 enum CardKind : u8 { KIND_UPGRADE, KIND_PASSIVE, KIND_REUSABLE, KIND_SINGLE };
-enum Rarity : u8 { RARE_COMMON, RARE_RARE, RARE_LEGEND };
+enum Rarity : u8 { RARE_COMMON, RARE_UNCOMMON, RARE_RARE, RARE_EPIC, RARE_LEGEND, RARE_MYTHIC };
 
 struct CardInfo {
 	const char* name;
@@ -222,6 +228,12 @@ struct Orchard {
 	int paidRerolls;         // coin-purchased rerolls this run (price increments +15 per purchase)
 	int totalRerolls;        // total rerolls used this run (free + paid)
 	bool bossTookHit;        // true once player takes damage during current boss fight
+	float tempShieldHp;      // Citrus Shield temporary boss-room shield HP
+	int sweetCounter;        // Sweet Tooth fruit counter (triggers every 10)
+	int swipeCounter;        // Solar Blade / Frostbite Edge swipe counter
+	int extraPicksLeft;      // Twin Harvest bonus card pick on current level-up
+	u8 mythicRevealCard;     // Mythic card currently being revealed (CARD_NONE if none)
+	float mythicRevealT;     // animation timer for rotating pinwheel reveal
 	u32 coinsSpent;          // coins spent from this run's gathered coins on rerolls
 	bool luckyPit;           // the next level-up shows 5 cards
 	// Room 50 first-encounter retro dialogue cutscene & Dev Room/Level Skip prompt.

@@ -219,7 +219,7 @@ static void drawMods() {
 			fitText(m->name, x + 48, y + 7, 0.35f, 126, sel ? COL_ACCENT : COL_CREAM, ALIGN_LEFT);
 			char sub[64];
 			snprintf(sub, sizeof sub, "#%d %s v%s", i + 1, m->isZip ? "ZIP" : "DIR", m->version);
-			fitText(sub, x + 48, y + 24, 0.27f, 126, COL_DIM, ALIGN_LEFT);
+			fitText(sub, x + 48, y + 24, PORT_3DS ? 0.30f : 0.27f, 126, COL_DIM, ALIGN_LEFT);
 
 			drawPlank(x + 180, y + 10, 22, 26, false, false);
 			gfx::text("UP", x + 191, y + 17, 0.25f, i > 0 ? COL_CREAM : COL_DIM, ALIGN_CENTER);

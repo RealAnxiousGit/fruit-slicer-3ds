@@ -66,6 +66,19 @@ const CardInfo kCards[CARD_COUNT] = {
 	{"Cutting Board", "Sliced fruit splits into pieces", "you can cut again for extra XP.", KIND_PASSIVE, RARE_LEGEND, 1, 0, 0},
 	{"Lifesteal Tome", "Clean boss slices heal HP", "based on your Blade level.", KIND_PASSIVE, RARE_RARE, 1, 0, 0},
 	{"Boss Harvest", "Fruits and shots in boss rooms", "grant XP again.", KIND_PASSIVE, RARE_RARE, 1, 0, 0},
+	// 2.1.0 New Passive Charms (8 Uncommon/Rare/Epic + 4 Mythics)
+	{"Citrus Shield", "Gain +5 temp shield HP", "entering each boss room.", KIND_PASSIVE, RARE_UNCOMMON, 1, 0, 0},
+	{"Sweet Tooth", "Every 10th fruit sliced", "heals +1 HP.", KIND_PASSIVE, RARE_UNCOMMON, 1, 0, 0},
+	{"Quick Draw", "Reusable active charms", "recharge 25% faster.", KIND_PASSIVE, RARE_UNCOMMON, 1, 0, 0},
+	{"Juicy Jackpot", "Coins grant +4 XP and", "drift toward your blade.", KIND_PASSIVE, RARE_RARE, 1, 0, 0},
+	{"Frostbite Edge", "Every 6th swipe chills", "nearby fruit and shots.", KIND_PASSIVE, RARE_EPIC, 1, 0, 0},
+	{"Chain Reaction", "4+ combos emit a shockwave", "popping nearby fruit.", KIND_PASSIVE, RARE_EPIC, 1, 0, 0},
+	{"Royal Tribute", "Beating a boss heals 40% HP,", "+1 Reroll, and bonus coins.", KIND_PASSIVE, RARE_EPIC, 1, 0, 0},
+	{"Phantom Parry", "Bombs sliced in Frenzy", "grant +10 XP, no damage.", KIND_PASSIVE, RARE_EPIC, 1, 0, 0},
+	{"Orchard Crown", "Every 5 rooms: +1 Armor or", "+3 Max HP & better odds.", KIND_PASSIVE, RARE_MYTHIC, 1, 0, 0},
+	{"Twin Harvest", "25% chance on level-up to", "pick 2 cards instead of 1.", KIND_PASSIVE, RARE_MYTHIC, 1, 0, 0},
+	{"Solar Blade", "Every 3rd swipe fires a", "golden sunbeam wave.", KIND_PASSIVE, RARE_MYTHIC, 1, 0, 0},
+	{"Prismatic Core", "Doubles the strength of all", "other passive charm triggers.", KIND_PASSIVE, RARE_MYTHIC, 1, 0, 0},
 };
 
 // Each card's badge on the sprite sheet: older cards stay contiguous at sprites_cd_ring_idx + card.
@@ -75,6 +88,18 @@ int cardIcon(int card) {
 		case CARD_CUTBOARD: return sprites_cd_cutboard_idx;
 		case CARD_LIFESTEAL: return sprites_cd_lifesteal_idx;
 		case CARD_BOSSHARVEST: return sprites_cd_bossharvest_idx;
+		case CARD_CITRUS_SHIELD: return sprites_cd_citrusshield_idx;
+		case CARD_SWEET_TOOTH: return sprites_cd_sweettooth_idx;
+		case CARD_QUICK_DRAW: return sprites_cd_quickdraw_idx;
+		case CARD_JUICY_JACKPOT: return sprites_cd_juicyjackpot_idx;
+		case CARD_FROSTBITE_EDGE: return sprites_cd_frostbite_idx;
+		case CARD_CHAIN_REACTION: return sprites_cd_chainreact_idx;
+		case CARD_ROYAL_TRIBUTE: return sprites_cd_royaltribute_idx;
+		case CARD_PHANTOM_PARRY: return sprites_cd_phantomparry_idx;
+		case CARD_ORCHARD_CROWN: return sprites_cd_orchardcrown_idx;
+		case CARD_TWIN_HARVEST: return sprites_cd_twinharvest_idx;
+		case CARD_SOLAR_BLADE: return sprites_cd_solarblade_idx;
+		case CARD_PRISMATIC_CORE: return sprites_cd_prismaticcore_idx;
 		default: return sprites_cd_ring_idx;
 	}
 }
@@ -146,9 +171,9 @@ int orchardBossForRoom(int room, u32 seed, const u8 order[kRegularBossCount], bo
 }
 
 static const OrchardLevel kLevels[DIFF_COUNT] = {
-	{25, 2, 0.45f, 0.65f, 0.72f, 2.60f, 1, 0.85f},  // Easy: beginners
-	{20, 4, 0.85f, 0.92f, 0.92f, 2.20f, 2, 0.95f},  // Normal: casual players (bombDamage 4)
-	{16, 6, 1.15f, 1.12f, 1.14f, 1.75f, 3, 1.05f},  // Hard: adds a bit of spice
+	{30, 1, 0.38f, 0.55f, 0.68f, 3.15f, 1, 0.72f},  // Easy: beginners (30 HP, slower throws, generous XP)
+	{25, 3, 0.75f, 0.90f, 0.86f, 2.55f, 2, 0.92f},  // Normal: accessible standard (25 HP, smoother Lv 1-3)
+	{16, 6, 1.15f, 1.12f, 1.14f, 1.75f, 3, 1.05f},  // Hard: strict veteran challenge
 	{12, 7, 1.45f, 1.32f, 1.34f, 1.40f, 4, 1.15f},  // Insane: demanding but skill-beatable
 };
 const OrchardLevel& orchardLevel(int diff) { return kLevels[diff % DIFF_COUNT]; }
@@ -384,6 +409,10 @@ bool Game::orcLoadRun() {
 	phase = PHASE_PLAY;
 	phaseT = 0;
 	if (orc.bossRoom) {
+		if (orc.upgrade[CARD_CITRUS_SHIELD]) {
+			const int prism = orc.upgrade[CARD_PRISMATIC_CORE] ? 2 : 1;
+			orc.tempShieldHp = 5.0f * prism;
+		}
 		waveTimer = 999.0f;
 		bool royal = false;
 		const int bid = orchardBossForRoom(orc.room, orc.runSeed, orc.bossOrder, &royal);
@@ -415,6 +444,14 @@ void Game::orcStart() {
 	orc.level = 1;
 	orc.rerolls = 1;
 	orc.paidRerolls = 0;
+	orc.totalRerolls = 0;
+	orc.bossTookHit = false;
+	orc.tempShieldHp = 0;
+	orc.sweetCounter = 0;
+	orc.swipeCounter = 0;
+	orc.extraPicksLeft = 0;
+	orc.mythicRevealCard = CARD_NONE;
+	orc.mythicRevealT = 0;
 	orc.coinsSpent = 0;
 	orc.slot[0] = orc.slot[1] = CARD_NONE;
 	maxStrikes = 0;  // HP, not misses
@@ -723,6 +760,7 @@ void Game::orcGainXp(float amount) {
 	amount *= 1.0f + 0.2f * orc.upgrade[CARD_RING];
 	if (orc.upgrade[CARD_GLASS]) amount *= 2;
 	if (orc.floodT > 0) amount *= 2;
+	if (doubleT > 0) amount *= 2;
 	orc.xp += amount;
 	orc.xpPulse = 1;
 	for (int guard = 0; guard < 8; guard++) {
@@ -732,6 +770,10 @@ void Game::orcGainXp(float amount) {
 		if (orc.upgrade[CARD_OVERFLOW]) orc.xp *= 2;
 		orc.level++;
 		orc.levelsWaiting++;
+		if (orc.upgrade[CARD_TWIN_HARVEST]) {
+			const int chance = orc.upgrade[CARD_PRISMATIC_CORE] ? 50 : 25;
+			if (gRng.below(100) < chance) orc.extraPicksLeft++;
+		}
 	}
 #ifdef BOSS_TEST_APP
 	if (orc.boss.beaten) return;
@@ -748,6 +790,14 @@ void Game::orcSliced(const Obj& o) {
 			else if (o.loose) xp = orc.upgrade[CARD_SEEDPOUCH] ? 3 : 1;
 			else xp = o.fruit >= kSpiky ? 3 : 1;
 			if (orc.upgrade[CARD_JUICE] && o.cutGen == 0) orc.hp = fminf(orc.maxHp, orc.hp + 0.25f);
+			if (orc.upgrade[CARD_SWEET_TOOTH] && o.cutGen == 0) {
+				const int prism = orc.upgrade[CARD_PRISMATIC_CORE] ? 2 : 1;
+				if (++orc.sweetCounter >= 10) {
+					orc.sweetCounter = 0;
+					orc.hp = fminf(orc.maxHp, orc.hp + 1.0f * prism);
+					addPopup(prism > 1 ? "+2 HP" : "+1 HP", o.x, o.y - 14, rgba(255, 160, 210), 0.58f);
+				}
+			}
 			break;
 		case OBJ_GOLD:
 			xp = o.cutGen == 1 ? 1.5f : (o.cutGen >= 2 ? 0.75f : 3.0f);
@@ -756,6 +806,10 @@ void Game::orcSliced(const Obj& o) {
 		case OBJ_SEED: xp = orc.upgrade[CARD_SEEDPOUCH] ? 1 : 0; break;
 		case OBJ_COIN:
 			if (orc.coinJar) coinsCaught++;  // counts twice
+			if (orc.upgrade[CARD_JUICY_JACKPOT]) {
+				const int prism = orc.upgrade[CARD_PRISMATIC_CORE] ? 2 : 1;
+				xp += 4.0f * prism;
+			}
 			break;
 		default: break;
 	}
@@ -767,6 +821,19 @@ void Game::orcCombo(int n) {
 	if (n < 3) return;
 	float xp = (float)(n - 2);
 	if (orc.upgrade[CARD_BATTERY] && n >= 5) xp *= 2;
+	if (orc.upgrade[CARD_CHAIN_REACTION] && n >= 4) {
+		const int prism = orc.upgrade[CARD_PRISMATIC_CORE] ? 2 : 1;
+		int popped = 0;
+		for (auto& o : objs) {
+			if (!o.on || o.kind != OBJ_FRUIT || o.fruit == kSpiky || o.cutGen > 0) continue;
+			o.on = false;
+			emitSparks(o.x, o.y, rgba(200, 140, 255), juiceAmount(8), 160);
+			addRing(o.x, o.y, rgba(200, 140, 255), 1.6f, 0.25f);
+			xp += 1.5f * prism;
+			sliced++;
+			if (++popped >= 2 * prism) break;
+		}
+	}
 	orcGainXp(xp);
 }
 
@@ -796,6 +863,17 @@ void Game::orcHurt(int damage, float x, float y, const char* what) {
 	}
 	int d = damage - orc.upgrade[CARD_ARMOR];
 	if (d < 1) d = 1;
+	if (orc.tempShieldHp > 0) {
+		const float absorb = fminf(orc.tempShieldHp, (float)d);
+		orc.tempShieldHp -= absorb;
+		d -= (int)absorb;
+		addRing(x, y, rgba(160, 244, 180), 2.0f, 0.28f);
+		if (d <= 0) {
+			audio::play(SFX_KNOCK, 0.8f, fieldPan(x), 0.9f);
+			addPopup("SHIELDED!", x, y - 16, rgba(160, 244, 180), 0.62f);
+			return;
+		}
+	}
 	float hp = orc.hp - d;
 	if (orc.lastStandT > 0 && hp < 1) hp = 1;
 	orc.hp = hp;
@@ -822,6 +900,13 @@ void Game::orcHurt(int damage, float x, float y, const char* what) {
 }
 
 void Game::orcBomb(Obj& o) {
+	if (orc.upgrade[CARD_PHANTOM_PARRY] && frenzyT > 0) {
+		const int prism = orc.upgrade[CARD_PRISMATIC_CORE] ? 2 : 1;
+		addRing(o.x, o.y, rgba(210, 140, 255), 2.2f, 0.3f);
+		addPopup(prism > 1 ? "+20 XP" : "+10 XP", o.x, o.y - 16, rgba(210, 140, 255), 0.68f);
+		orcGainXp(10.0f * prism);
+		return;
+	}
 	if (orc.upgrade[CARD_SHARPRIND] && orc.boss.on && orc.boss.dazeT <= 0 && !orc.boss.beaten) bossOpen(1.5f);
 	if (orc.boss.on && !orc.boss.beaten && (orc.boss.id == BOSS_KING || orc.boss.id == BOSS_CHILI) && o.tag == 1) {
 		orcGainXp(1);
@@ -867,8 +952,23 @@ void Game::orcNextRoom() {
 	orc.coinJar = false;
 	orc.peelShield = orc.upgrade[CARD_THICKPEEL] != 0;
 	orc.bossRoom = orc.room % 5 == 0;
+	if (orc.upgrade[CARD_ORCHARD_CROWN] && orc.room % 5 == 0) {
+		const int prism = orc.upgrade[CARD_PRISMATIC_CORE] ? 2 : 1;
+		if (gRng.below(2) == 0) {
+			orc.upgrade[CARD_ARMOR]++;
+			setCallout("CROWN: +1 ARMOR!", rgba(255, 220, 120));
+		} else {
+			orc.maxHp += 3.0f * prism;
+			orc.hp = fminf(orc.maxHp, orc.hp + 3.0f * prism);
+			setCallout("CROWN: +MAX HP!", rgba(255, 220, 120));
+		}
+	}
 	char buf[32];
 	if (orc.bossRoom) {
+		if (orc.upgrade[CARD_CITRUS_SHIELD]) {
+			const int prism = orc.upgrade[CARD_PRISMATIC_CORE] ? 2 : 1;
+			orc.tempShieldHp = 5.0f * prism;
+		}
 		bool royal = false;
 		const int bid = orchardBossForRoom(orc.room, orc.runSeed, orc.bossOrder, &royal);
 		for (auto& p : pending) p = {};
@@ -900,8 +1000,22 @@ void Game::orcOffer() {
 		if (info.kind == KIND_REUSABLE || info.kind == KIND_SINGLE) {
 			if (orc.slot[0] == c || orc.slot[1] == c) continue;  // already in a slot
 		}
-		int w = info.rarity == RARE_LEGEND ? 16 : (info.rarity == RARE_RARE ? 42 : 60);
+		if (c >= kFirstMythicCard) {
+			if (!(gSave.mythicsUnlocked & (1u << (c - kFirstMythicCard)))) continue;
+		}
+		int w = 60;
+		switch (info.rarity) {
+			case RARE_UNCOMMON: w = 48; break;
+			case RARE_RARE: w = 36; break;
+			case RARE_EPIC: w = 22; break;
+			case RARE_LEGEND: w = 14; break;
+			case RARE_MYTHIC: w = 3; break;
+			default: w = 60; break;
+		}
 		if (orc.room >= 5 && info.rarity != RARE_COMMON) w += 10;
+		if (orc.upgrade[CARD_ORCHARD_CROWN] && info.rarity >= RARE_RARE) {
+			w += orc.upgrade[CARD_PRISMATIC_CORE] ? 16 : 8;
+		}
 		if (info.kind == KIND_SINGLE && afterBoss) w = w * 8 / 5;
 		pool[n] = c;
 		weight[n] = w;
@@ -948,6 +1062,11 @@ void Game::orcReroll() {
 void Game::orcClose() {
 	orc.choosing = false;
 	orc.placing = false;
+	if (orc.extraPicksLeft > 0) {
+		orc.extraPicksLeft--;
+		orcOffer();
+		return;
+	}
 	if (orc.levelsWaiting > 0) orc.levelsWaiting--;
 	if (orc.levelsWaiting > 0) orcOffer();
 	else orc.resumeT = 0;
@@ -1195,9 +1314,54 @@ void Game::orcUpdate(Blade& blade) {
 	if (orc.slowmoT > 0) orc.slowmoT -= dt;
 	if (orc.stillT > 0) orc.stillT -= dt;
 	if (orc.floodT > 0) orc.floodT -= dt;
+	const float coolRate = orc.upgrade[CARD_QUICK_DRAW] ? (orc.upgrade[CARD_PRISMATIC_CORE] ? 1.50f : 1.25f) : 1.0f;
 	for (int s = 0; s < kSlots; s++) {
 		if (orc.slotOn[s] > 0) orc.slotOn[s] -= dt;
-		if (orc.slotCool[s] > 0) orc.slotCool[s] -= dt;
+		if (orc.slotCool[s] > 0) orc.slotCool[s] -= dt * coolRate;
+	}
+	if (orc.mythicRevealT > 0) {
+		orc.mythicRevealT += dt;
+		if (orc.mythicRevealT >= 3.65f) {
+			orc.mythicRevealT = 0;
+			orc.mythicRevealCard = CARD_NONE;
+		}
+	}
+	if (orc.upgrade[CARD_JUICY_JACKPOT] && blade.active) {
+		const float pull = orc.upgrade[CARD_PRISMATIC_CORE] ? 140.0f : 85.0f;
+		for (auto& o : objs) {
+			if (!o.on || o.kind != OBJ_COIN) continue;
+			const float dx = blade.x - o.x, dy = blade.y - o.y;
+			const float d = sqrtf(dx * dx + dy * dy);
+			if (d > 4.0f && d < 180.0f) {
+				o.vx += (dx / d) * pull * dt;
+				o.vy += (dy / d) * pull * dt;
+			}
+		}
+	}
+	static u32 sLastSwipeId = 0;
+	if (blade.active && blade.strokeId != sLastSwipeId) {
+		sLastSwipeId = blade.strokeId;
+		orc.swipeCounter++;
+		const int prism = orc.upgrade[CARD_PRISMATIC_CORE] ? 2 : 1;
+		if (orc.upgrade[CARD_SOLAR_BLADE] && (orc.swipeCounter % 3) == 0) {
+			addRing(blade.x, blade.y, rgba(255, 220, 90), 2.8f, 0.35f);
+			Blade sun;
+			sun.px = blade.x - 45; sun.py = blade.y;
+			sun.x = blade.x + 45; sun.y = blade.y;
+			sun.active = true; sun.speed = 35; sun.strokeId = 0x501A0000u | (u32)orc.swipeCounter;
+			int hits = 0;
+			for (auto& o : objs) {
+				if (!o.on || o.kind != OBJ_FRUIT || o.fruit == kSpiky) continue;
+				if (fabsf(o.x - blade.x) < 80 * prism && fabsf(o.y - blade.y) < 80 * prism) {
+					sliceObj(o, sun);
+					if (++hits >= 3 * prism) break;
+				}
+			}
+		}
+		if (orc.upgrade[CARD_FROSTBITE_EDGE] && (orc.swipeCounter % 6) == 0) {
+			addRing(blade.x, blade.y, rgba(160, 230, 255), 2.4f, 0.35f);
+			orc.slowmoT = fmaxf(orc.slowmoT, 1.2f * prism);
+		}
 	}
 	if (orc.blenderT > 0) {
 		orc.blenderT -= dt;
@@ -1505,7 +1669,7 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 
 	// Starting a run.
 	setup();
-	check(orc.room == 1 && orc.hp == 20 && orc.maxHp == 20 && orc.level == 1 && maxStrikes == 0, "Orchard Blast starts in room 1 with 20 HP on Normal", "");
+	check(orc.room == 1 && orc.hp == 25 && orc.maxHp == 25 && orc.level == 1 && maxStrikes == 0, "Orchard Blast starts in room 1 with 25 HP on Normal", "");
 	check(orc.slot[0] == CARD_NONE && orc.slot[1] == CARD_NONE && orc.rerolls == 1, "Orchard Blast starts with empty charm slots and one Reroll", "");
 
 	// Only bombs and bosses cost HP.
@@ -1519,7 +1683,7 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 	bomb.hits = 1;
 	hitBomb(bomb);
 	snprintf(d, sizeof d, "HP %.1f", orc.hp);
-	check(orc.hp == 16 && phase == PHASE_PLAY, "Orchard Blast: a bomb costs 4 HP on Normal and the run goes on", d);
+	check(orc.hp == 22 && phase == PHASE_PLAY, "Orchard Blast: a bomb costs 3 HP on Normal and the run goes on", d);
 	Obj& drop = objs[1];
 	drop = {};
 	drop.on = true;
@@ -1592,7 +1756,7 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 	orc.paidRerolls = 0;
 	orc.offer[0] = CARD_HEALTH;
 	orcPick(0);
-	check(orc.maxHp == 25 && orc.upgrade[CARD_HEALTH] == 1 && !orc.choosing && orc.resumeT == 0, "Health adds 5 Max HP, and play resumes right away", "");
+	check(orc.maxHp == 30 && orc.upgrade[CARD_HEALTH] == 1 && !orc.choosing && orc.resumeT == 0, "Health adds 5 Max HP, and play resumes right away", "");
 	feverT = 4.0f;
 	orcGainXp((float)orcXpNeed());
 	check(orc.choosing && feverT > 0, "Leveling up during a Fruit Frenzy opens the upgrade screen right away", "");
@@ -1790,7 +1954,7 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 	check(decoy && decoy->kind == OBJ_BOMB, "A decoy fruit turns into a bomb", "");
 
 	// Difficulty numbers.
-	check(orchardLevel(DIFF_EASY).startHp == 25 && orchardLevel(DIFF_INSANE).startHp == 12 && orchardLevel(DIFF_HARD).bombDamage == 6, "Difficulty sets HP and bomb damage", "");
+	check(orchardLevel(DIFF_EASY).startHp == 30 && orchardLevel(DIFF_INSANE).startHp == 12 && orchardLevel(DIFF_HARD).bombDamage == 6, "Difficulty sets HP and bomb damage", "");
 
 	// Seeded boss order, Endless rooms past 10, Room 50 Milestone Bosses, Royal laps, room-start Save/Continue, and boss mechanics.
 	{
@@ -2484,6 +2648,7 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 		bool finiteOk = true;
 		static const int kFiniteDiffs[] = {DIFF_NORMAL, DIFF_INSANE};
 		static const int kFiniteBosses[] = {BOSS_MELON, BOSS_KING, BOSS_LEMON};
+		char fmsg[96] = "";
 		for (int dif : kFiniteDiffs) {
 			for (int bossId : kFiniteBosses) {
 				gSave.difficulty = (u8)dif;
@@ -2553,11 +2718,14 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 						openFor = 0;
 					}
 				}
-				if (!orc.boss.beaten || orc.hp <= 0) finiteOk = false;
+				if ((!orc.boss.beaten || orc.hp <= 0) && finiteOk) {
+					finiteOk = false;
+					snprintf(fmsg, sizeof fmsg, "dif=%d boss=%d hp=%.1f beaten=%d t=%.1f", dif, bossId, (double)orc.hp, (int)orc.boss.beaten, (double)t);
+				}
 				audio::fuse(false);
 			}
 		}
-		check(finiteOk, "Finite-HP skilled runs survive and beat Big Melon, Bomb King, and Milestone Boss on Normal & Insane", "");
+		check(finiteOk, "Finite-HP skilled runs survive and beat Big Melon, Bomb King, and Milestone Boss on Normal & Insane", fmsg);
 	}
 
 	// Regression checks for v2.0.0 hitbox parity, full boss rotations + upright recovery, and progressive XP curve.

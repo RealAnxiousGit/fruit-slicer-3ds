@@ -289,7 +289,11 @@ struct Game {
 	void drawOrchardOverlay() const;  // charm slots and the 3, 2, 1, over everything on the field
 	static void orcSlotRect(int slot, float* x, float* y, float* w, float* h);  // where a charm slot sits on the field
 
+#if defined(LAB) || defined(V21_VIS)
+public:
+#else
 private:
+#endif
 	// Orchard Blast (orchard.cpp).
 	void orcStart();
 	void orcBeginRoom50Cutscene(int bid);

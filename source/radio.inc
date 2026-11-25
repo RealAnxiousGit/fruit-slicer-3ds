@@ -485,14 +485,15 @@ static void drawRadio() {
 
 			const char* kindLbl = list[i].isAuto ? "AUTO" : (list[i].isBoss ? "BOSS" : "REG");
 			const u32 kindCol = list[i].isAuto ? COL_ACCENT : (list[i].isBoss ? rgba(255, 110, 110, 255) : rgba(130, 210, 255, 255));
+			const float kBadgeScale = PORT_3DS ? 0.31f : 0.28f;
 			if (sRadioGrid) {
 				fitText(list[i].title, x + 11, y + 6, 0.34f, w - 22, sel ? COL_ACCENT : COL_CREAM, ALIGN_LEFT);
-				gfx::text(kindLbl, x + 11, y + 23, 0.28f, kindCol);
-				if (eq) gfx::text("IN USE", x + w - 11, y + 23, 0.28f, COL_ACCENT, ALIGN_RIGHT);
+				gfx::text(kindLbl, x + 11, y + 23, kBadgeScale, kindCol);
+				if (eq) gfx::text("IN USE", x + w - 11, y + 23, kBadgeScale, COL_ACCENT, ALIGN_RIGHT);
 			} else {
 				fitText(list[i].title, x + 12, y + 7, 0.35f, w - 102, sel ? COL_ACCENT : COL_CREAM, ALIGN_LEFT);
-				if (eq) gfx::text("IN USE", x + w - 52, y + 8, 0.28f, COL_ACCENT, ALIGN_RIGHT);
-				gfx::text(kindLbl, x + w - 12, y + 8, 0.28f, kindCol, ALIGN_RIGHT);
+				if (eq) gfx::text("IN USE", x + w - 52, y + 8, kBadgeScale, COL_ACCENT, ALIGN_RIGHT);
+				gfx::text(kindLbl, x + w - 12, y + 8, kBadgeScale, kindCol, ALIGN_RIGHT);
 			}
 		}
 	}

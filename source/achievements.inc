@@ -348,7 +348,7 @@ static void drawAchBanner(float x, float y, float w, float h, int id, bool unloc
 	const u32 titleCol = unlocked ? COL_CREAM : rgba(10, 10, 12, 255);
 	const u32 descCol = unlocked ? rgba(236, 232, 218, 255) : rgba(12, 12, 14, 255);
 	fitText(a.title, tx, y + 5.0f, 0.35f, tw, titleCol, ALIGN_LEFT);
-	fitText(a.desc, tx, y + 19.0f, 0.28f, tw, descCol, ALIGN_LEFT);
+	fitText(a.desc, tx, y + 19.0f, PORT_3DS ? 0.30f : 0.28f, tw, descCol, ALIGN_LEFT);
 
 	// Bottom universal coin reward strip
 	char cbuf[32];

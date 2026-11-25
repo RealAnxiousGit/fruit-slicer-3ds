@@ -306,7 +306,7 @@ void rescan() {
 		if (ciEq(entryName, "modTemplate.zip") || ciEq(entryName, "README.md") || ciEq(entryName, "mods.txt")) return;
 		if (!isDir && !endsWithCi(entryName, ".zip")) return;
 
-		char full[512];
+		char full[768];
 		snprintf(full, sizeof full, "%s/%s", dir, entryName);
 
 		u8* txtBuf = nullptr;
@@ -364,7 +364,7 @@ void rescan() {
 #else
 	if (DIR* d = opendir(dir)) {
 		while (struct dirent* e = readdir(d)) {
-			char full[512];
+			char full[768];
 			snprintf(full, sizeof full, "%s/%s", dir, e->d_name);
 			struct stat st{};
 			if (stat(full, &st) == 0) {
@@ -451,12 +451,12 @@ bool readAsset(const char* relPath, u8** outBuf, size_t* outSize) {
 	modsDir(dir, sizeof dir);
 	for (int i = 0; i < sCount; i++) {
 		if (!sMods[i].enabled) continue;
-		char full[512];
+		char full[768];
 		snprintf(full, sizeof full, "%s/%s", dir, sMods[i].id);
 		if (sMods[i].isZip) {
 			if (readZipEntry(full, relPath, outBuf, outSize)) return true;
 		} else {
-			char fileP[540];
+			char fileP[1024];
 			snprintf(fileP, sizeof fileP, "%s/%s", full, relPath);
 			if (readDiskFile(fileP, outBuf, outSize)) return true;
 		}

@@ -132,6 +132,42 @@ void Game::bossHitSlice(float x, float y, float dx, float dy) {
 			audio::play(SFX_VICTORY, 1.0f);
 		}
 		orcGainXp(20);
+		if (orc.upgrade[CARD_ROYAL_TRIBUTE]) {
+			const int prism = orc.upgrade[CARD_PRISMATIC_CORE] ? 2 : 1;
+			orc.hp = fminf(orc.maxHp, orc.hp + orc.maxHp * 0.40f * prism);
+			orc.rerolls += prism;
+			coinsCaught += (u32)(15 * prism);
+		}
+		if (mode == MODE_ORCHARD) {
+			const int odds = b.id >= kFirstMilestoneBoss ? 4 : 8;
+			u32 mh = (gRng.s ^ orc.runSeed ^ ((u32)orc.room * 2654435761u) ^ ((u32)b.id * 2246822519u)) * 1664525u + 1013904223u;
+			if ((int)((mh >> 16) % (u32)odds) == 0) {
+				int cands[kMythicCount], nc = 0;
+				for (int m = 0; m < kMythicCount; m++) {
+					int cid = kFirstMythicCard + m;
+					if (!orc.upgrade[cid]) cands[nc++] = cid;
+				}
+				if (nc == 0) {
+					for (int m = 0; m < kMythicCount; m++) cands[nc++] = kFirstMythicCard + m;
+				}
+				mh = mh * 1664525u + 1013904223u;
+				const int chosen = cands[(int)((mh >> 16) % (u32)nc)];
+				orc.upgrade[chosen] = 1;
+				bool inPassives = false;
+				for (int pi = 0; pi < orc.passiveCount; pi++) if (orc.passiveOrder[pi] == chosen) inPassives = true;
+				if (!inPassives && orc.passiveCount < 24) orc.passiveOrder[orc.passiveCount++] = (u8)chosen;
+				const u32 newMyth = gSave.mythicsUnlocked | (1u << (chosen - kFirstMythicCard));
+				const u8 newFlags2 = (u8)(gSave.achFlags2 | (1 << 4));
+				if (newMyth != gSave.mythicsUnlocked || newFlags2 != gSave.achFlags2) {
+					gSave.mythicsUnlocked = newMyth;
+					gSave.achFlags2 = newFlags2;
+					saveWrite();
+				}
+				orc.mythicRevealCard = (u8)chosen;
+				orc.mythicRevealT = 0.001f;
+				audio::play(SFX_MYTHIC, 0.95f);
+			}
+		}
 		if (mode == MODE_BOSSRUSH) award(1);
 		return;
 	}

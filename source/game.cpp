@@ -1436,7 +1436,7 @@ void Game::sliceObj(Obj& o, const Blade& blade) {
 		case OBJ_DOUBLE:
 			doubleT = 8;
 			audio::play(SFX_POWER, 1.0f, pan);
-			setCallout("DOUBLE POINTS!", rgba(255, 140, 190));
+			setCallout(orchardLike() ? "DOUBLE XP!" : "DOUBLE POINTS!", rgba(255, 140, 190));
 			break;
 		case OBJ_FRENZY:
 			frenzyT = 5;
