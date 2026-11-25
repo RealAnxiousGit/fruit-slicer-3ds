@@ -637,6 +637,70 @@ static void fitText(const char* s, float x, float y, float scale, float room, u3
 	gfx::text(s, x, y, scale, color, align);
 }
 
+static void drawWrappedText(const char* s, float x, float y, float scale, float room, float lineH, u32 color, Align align = ALIGN_CENTER) {
+	if (!s || !s[0]) return;
+	if (gfx::textWidth(s, scale) <= room) {
+		gfx::text(s, x, y, scale, color, align);
+		return;
+	}
+	char buf[256];
+	snprintf(buf, sizeof buf, "%s", s);
+	int n = (int)strlen(buf);
+	int split = -1;
+	float bestDiff = 1e9f;
+	const float totalW = gfx::textWidth(buf, scale);
+	for (int i = 1; i < n - 1; i++) {
+		if (buf[i] != ' ') continue;
+		buf[i] = 0;
+		const float lw = gfx::textWidth(buf, scale);
+		buf[i] = ' ';
+		const float diff = fabsf(lw - totalW * 0.5f);
+		if (lw <= room && diff < bestDiff) {
+			bestDiff = diff;
+			split = i;
+		}
+	}
+	if (split < 0) {
+		for (int i = n - 1; i > 0; i--) {
+			if (buf[i] == ' ') {
+				buf[i] = 0;
+				const float lw = gfx::textWidth(buf, scale);
+				buf[i] = ' ';
+				if (lw <= room || split < 0) { split = i; if (lw <= room) break; }
+			}
+		}
+	}
+	if (split > 0) {
+		buf[split] = 0;
+		const char* line1 = buf;
+		const char* line2 = buf + split + 1;
+		fitText(line1, x, y, scale, room, color, align);
+		if (gfx::textWidth(line2, scale) <= room) {
+			gfx::text(line2, x, y + lineH, scale, color, align);
+		} else {
+			char buf2[256];
+			snprintf(buf2, sizeof buf2, "%s", line2);
+			int n2 = (int)strlen(buf2), sp2 = -1;
+			for (int i = n2 - 1; i > 0; i--) {
+				if (buf2[i] == ' ') {
+					buf2[i] = 0;
+					if (gfx::textWidth(buf2, scale) <= room) { sp2 = i; break; }
+					buf2[i] = ' ';
+				}
+			}
+			if (sp2 > 0) {
+				buf2[sp2] = 0;
+				fitText(buf2, x, y + lineH, scale, room, color, align);
+				fitText(buf2 + sp2 + 1, x, y + lineH * 2.0f, scale, room, color, align);
+			} else {
+				fitText(line2, x, y + lineH, scale, room, color, align);
+			}
+		}
+	} else {
+		fitText(s, x, y, scale, room, color, align);
+	}
+}
+
 // A label too wide for room at this scale, split at the space that leaves the two halves most even. False
 // (and nothing written) when it fits as it is, or has no space to split at.
 static bool splitLine(const char* s, float scale, float room, char* first, char* second, size_t size) {
@@ -5310,7 +5374,7 @@ static void drawTopContent(Screen screen) {
 				static const char* const kWhat[kTitleCount] = {"Pick a game and start slicing.", "Sound, looks, controls and more.", "Appearance, Radio, Achievements, Journal and Stats.", "Enable and order texture and audio mods.", "The rules, and a practice run.", "Spend coins on themes, trails and music.", "Who made the game."};
 				int f = sFocus[SCREEN_TITLE];
 				gfx::setDepth(0.6f);
-				if (f >= 0 && f < kTitleCount) gfx::text(kWhat[f], 200, 204, 0.36f, COL_CREAM, ALIGN_CENTER);
+				if (f >= 0 && f < kTitleCount) drawWrappedText(kWhat[f], 200, 196, 0.34f, 344.0f, 13.0f, COL_CREAM, ALIGN_CENTER);
 			}
 #endif
 			if (sNoSound) {
@@ -6967,8 +7031,8 @@ static void updateFrame(const Input& in, bool wasTouching) {
 			if (f >= 0 && (rows[f].value == &gSave.blade || rows[f].value == &gSave.trail)) {
 				Input fake{};
 				fake.touching = true;
-				fake.tx = (int)(200 + sinf(sTime * 3.1f) * 60);
-				fake.ty = (int)(50 + sinf(sTime * 6.2f) * 30);
+				fake.tx = (int)(200 + sinf(sTime * 3.1f) * 70);
+				fake.ty = (int)(124 + sinf(sTime * 6.2f) * 26);
 				sPreviewBlade.update(fake);
 			}
 			break;
@@ -7001,8 +7065,8 @@ static void updateFrame(const Input& in, bool wasTouching) {
 			if (sAppTab == APP_TRAILS || sAppTab == APP_BLADES) {
 				Input fake{};
 				fake.touching = true;
-				fake.tx = (int)(200 + sinf(sTime * 3.1f) * 60);
-				fake.ty = (int)(50 + sinf(sTime * 6.2f) * 30);
+				fake.tx = (int)(200 + sinf(sTime * 3.1f) * 70);
+				fake.ty = (int)(124 + sinf(sTime * 6.2f) * 26);
 				sPreviewBlade.update(fake);
 			}
 			break;
@@ -7477,6 +7541,25 @@ static bool showsField(Screen s) { return s == SCREEN_GAME || s == SCREEN_PAUSE 
 // One screen: the board, then the field and its score sign if a game is on, then the menu layout on top.
 static void drawFrame() {
 	float e = sSlideT * sSlideT * (3 - 2 * sSlideT);
+	if (sScreen == SCREEN_RADIO && sRadioOsc && !sSliding) {
+		beginHighlightFrame();
+		gfx::beginFrame();
+		gfx::beginField();
+		drawRadioFullOsc(kFieldW, kFieldH);
+		if (menuBladeShown()) {
+			sMenuBlade.draw();
+			drawMenuStickPoint();
+		}
+		{
+			float wx, wy, ww, wh;
+			gfx::beginCorner();
+			gfx::windowArea(&wx, &wy, &ww, &wh);
+			drawAchToast(wx, wy, ww);
+		}
+		if (sFade > 0) gfx::fadeAll(clampf(sFade, 0, 1));
+		gfx::endFrame();
+		return;
+	}
 	bool field = showsField(sScreen) || (sSliding && showsField(sSlideFrom));
 	beginHighlightFrame();
 	gfx::beginFrame();

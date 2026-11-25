@@ -154,6 +154,7 @@ static bool achCheckAllowed(int id) {
 	if (!sAchAllowInLab) return false;
 #endif
 	if (sScreen == SCREEN_BOSS_TEST) return false;
+	if (sScreen == SCREEN_GAME && (sGame.mode == MODE_PRACTICE || sGame.passName != nullptr)) return false;
 	// Mixer runs only allow Mix It Up and Mixologist
 	if (sScreen == SCREEN_GAME && sGame.mode != MODE_DAILY && sGame.mixed) {
 		if (id != ACH_MIX_IT_UP && id != ACH_MIXOLOGIST) return false;
@@ -260,6 +261,18 @@ static void achPollProgress() {
 	if (gSave.achFlags2 & (1 << 6)) achUnlock(ACH_MIXOLOGIST);
 
 	if (sScreen == SCREEN_GAME || sScreen == SCREEN_RESULT) {
+		if (sGame.mode != MODE_PRACTICE && !sGame.passName) {
+			const u32 liveFruit = gSave.totalFruit + (sGame.scoreCommitted ? 0u : (u32)sGame.sliced);
+			const int liveBestCombo = sGame.bestCombo > (int)gSave.bestCombo ? sGame.bestCombo : (int)gSave.bestCombo;
+			if (sGame.coinsCaught >= 1) achUnlock(ACH_OOH_SHINY);
+			if (liveFruit >= 100) achUnlock(ACH_FRUIT_JUICE);
+			if (liveFruit >= 1000) achUnlock(ACH_WHAT_A_MESS);
+			if (liveBestCombo >= 5) achUnlock(ACH_COMBO_MASTER);
+			if (sGame.mode == MODE_ZEN && sGame.score >= 100) achUnlock(ACH_ZEN_SERENITY);
+			if (sGame.mode == MODE_RECIPE && sGame.score >= 10) achUnlock(ACH_MASTER_CHEF);
+			if (sGame.mode == MODE_SHARP && sGame.score >= 50) achUnlock(ACH_DEADEYE);
+			if (sGame.orchardLike() && sGame.orc.bossesBeaten > 0) achUnlock(ACH_ORCHARD_SURVIVOR);
+		}
 		if (sGame.mode != MODE_DAILY && sGame.mixed) {
 			gSave.achFlags2 |= (1 << 5);
 			achUnlock(ACH_MIX_IT_UP);
@@ -377,18 +390,64 @@ static void drawAchToast(float sx, float sy, float sw) {
 static int sAchIds[ACH_COUNT];
 static int sAchCount = 0;
 static int sAchSel = 0;
+static int sAchFilter = 0;  // 0 Default, 1 Completed, 2 Name, 3 Difficulty
+static bool sAchDropOpen = false;
 static float sAchScroll = 0.0f;
 static float sAchScrollDraw = 0.0f;
 static bool sAchDrag = false;
 static int sAchDragY = 0;
+static int sAchLastX = 0;
+static int sAchLastY = 0;
 static bool sAchMoved = false;
 
-static void openAchievements() {
+static int achCmpAlpha(const char* a, const char* b) {
+	while (*a && *b) {
+		char ca = *a >= 'A' && *a <= 'Z' ? (char)(*a + 32) : *a;
+		char cb = *b >= 'A' && *b <= 'Z' ? (char)(*b + 32) : *b;
+		if (ca != cb) return ca < cb ? -1 : 1;
+		a++; b++;
+	}
+	return (*a == *b) ? 0 : (*a ? 1 : -1);
+}
+
+static void achRebuildList() {
 	sAchCount = 0;
 	for (int i = 0; i < ACH_COUNT; i++) {
 		if (achInPlatform(i)) sAchIds[sAchCount++] = i;
 	}
+	for (int i = 1; i < sAchCount; i++) {
+		int key = sAchIds[i];
+		int j = i - 1;
+		while (j >= 0) {
+			int cur = sAchIds[j];
+			bool swap = false;
+			if (sAchFilter == 1) {
+				const bool uk = achHas(key), uc = achHas(cur);
+				if (uk != uc) swap = uk && !uc;
+				else swap = key < cur;
+			} else if (sAchFilter == 2) {
+				int c = achCmpAlpha(kAchievements[key].title, kAchievements[cur].title);
+				swap = (c < 0) || (c == 0 && key < cur);
+			} else if (sAchFilter == 3) {
+				if (kAchievements[key].coins != kAchievements[cur].coins)
+					swap = kAchievements[key].coins < kAchievements[cur].coins;
+				else swap = key < cur;
+			} else {
+				swap = key < cur;
+			}
+			if (!swap) break;
+			sAchIds[j + 1] = sAchIds[j];
+			j--;
+		}
+		sAchIds[j + 1] = key;
+	}
 	if (sAchSel >= sAchCount) sAchSel = 0;
+}
+
+static void openAchievements() {
+	sAchDropOpen = false;
+	achRebuildList();
+	sAchSel = 0;
 	sAchScroll = 0.0f;
 	sAchScrollDraw = 0.0f;
 	sAchDrag = false;
@@ -401,48 +460,94 @@ static void drawAchievementsTop() {
 	const AchDef& a = kAchievements[id];
 	const bool unl = achHas(id);
 
-	topPanel(24, 16, 352, 208);
-	gfx::text("ACHIEVEMENTS", 200, 26, 0.52f, COL_ACCENT, ALIGN_CENTER);
+	topPanel(20, 12, 360, 216);
+	gfx::text("ACHIEVEMENTS", 200, 20, 0.50f, COL_ACCENT, ALIGN_CENTER);
 
-	const float iconScale = 2.1f;
-	gfx::sprite(SHEET_SPRITES, a.sprIdx, 82, 114, iconScale, iconScale, 0.0f,
+	// Enlarged wide-banner preview card
+	const float bx = 32.0f, by = 44.0f, bw = 336.0f, bh = 142.0f;
+	drawPlank(bx, by, bw, bh, true, false);
+	if (unl) {
+		gfx::rect(bx + 1, by + 1, bw - 2, 2.0f, COL_ACCENT);
+		gfx::rect(bx + 1, by + bh - 3.0f, bw - 2, 2.0f, COL_ACCENT);
+	}
+
+	const float iconScale = 2.3f;
+	gfx::sprite(SHEET_SPRITES, a.sprIdx, bx + 48.0f, by + 70.0f, iconScale, iconScale, 0.0f,
 	            unl ? WHITE : rgba(0, 0, 0, 255));
 
+	const float tx = bx + 98.0f;
+	const float tw = bw - 112.0f;
 	const u32 titleCol = unl ? COL_CREAM : rgba(12, 12, 16, 255);
 	const u32 descCol = unl ? rgba(236, 232, 218, 255) : rgba(14, 14, 18, 255);
-	fitText(a.title, 132, 68, 0.44f, 226, titleCol, ALIGN_LEFT);
-	fitText(a.desc, 132, 98, 0.34f, 226, descCol, ALIGN_LEFT);
+	fitText(a.title, tx, by + 14.0f, 0.48f, tw, titleCol, ALIGN_LEFT);
+	drawWrappedText(a.desc, tx, by + 44.0f, 0.36f, tw, 15.0f, descCol, ALIGN_LEFT);
 
-	char cbuf[48];
-	snprintf(cbuf, sizeof cbuf, "%s  |  +%u COINS", unl ? "UNLOCKED" : "LOCKED", (unsigned)a.coins);
-	gfx::rect(132, 142, 226, 22, unl ? rgba(36, 24, 12, 180) : rgba(12, 12, 16, 160));
-	fitText(cbuf, 245, 146, 0.34f, 216, unl ? COL_ACCENT : rgba(14, 14, 18, 255), ALIGN_CENTER);
+	char cbuf[64];
+	const char* tier = a.coins >= 75 ? "HARD" : (a.coins >= 40 ? "MEDIUM" : "EASY");
+	snprintf(cbuf, sizeof cbuf, "%s - %s - +%u COINS", unl ? "UNLOCKED" : "LOCKED", tier, (unsigned)a.coins);
+	gfx::rect(tx, by + bh - 32.0f, tw, 22.0f, unl ? rgba(36, 24, 12, 185) : rgba(12, 12, 16, 165));
+	fitText(cbuf, tx + tw * 0.5f, by + bh - 28.0f, 0.34f, tw - 8.0f, unl ? COL_ACCENT : rgba(14, 14, 18, 255), ALIGN_CENTER);
 
 	int tot = 0;
 	const int got = achCountPlatform(&tot);
 	snprintf(cbuf, sizeof cbuf, "%d / %d DISCOVERED", got, tot);
-	gfx::text(cbuf, 200, 194, 0.34f, COL_DIM, ALIGN_CENTER);
+	gfx::text(cbuf, 200, 198, 0.36f, COL_DIM, ALIGN_CENTER);
 }
 
 static void updateAchievements(const Input& in, bool wasTouching) {
 	if (in.down & KEY_B) {
+		if (sAchDropOpen) {
+			sAchDropOpen = false;
+			return;
+		}
 		audio::click();
 		goTo(SCREEN_RECORDS, -1);
 		return;
 	}
+
+	static constexpr int kAchCols = 3;
 	const float viewH = 192.0f;
-	const float rowH = 48.0f;
-	const float maxScroll = clampf(sAchCount * rowH - viewH, 0.0f, 9999.0f);
+	const float rowH = 62.0f;
+	const int rows = (sAchCount + kAchCols - 1) / kAchCols;
+	const float maxScroll = clampf(rows * rowH - viewH, 0.0f, 9999.0f);
 
 	if (in.wheel != 0) sAchScroll = clampf(sAchScroll - in.wheel * 30.0f, 0.0f, maxScroll);
 
+	const Button filterBtn = {202, 10, 108, 22, ""};
+
+	if (in.touching) {
+		sAchLastX = in.tx;
+		sAchLastY = in.ty;
+	}
+
 	if (in.touching && !wasTouching) {
-		if (radioHit(kBack, in.tx, in.ty)) {
+		if (hit(kBack, in.tx, in.ty)) {
 			audio::click();
 			goTo(SCREEN_RECORDS, -1);
 			return;
 		}
-		if (in.ty >= 40 && in.ty <= 234) {
+		if (radioHit(filterBtn, in.tx, in.ty)) {
+			audio::click();
+			sAchDropOpen = !sAchDropOpen;
+			return;
+		}
+		if (sAchDropOpen) {
+			for (int opt = 0; opt < 4; opt++) {
+				const Button ob = {202.0f, 34.0f + opt * 20.0f, 108.0f, 20.0f, nullptr};
+				if (radioHit(ob, in.tx, in.ty)) {
+					audio::click();
+					sAchFilter = opt;
+					sAchDropOpen = false;
+					achRebuildList();
+					sAchScroll = 0.0f;
+					sAchSel = 0;
+					return;
+				}
+			}
+			sAchDropOpen = false;
+			return;
+		}
+		if (in.ty >= 42 && in.ty <= 234) {
 			sAchDrag = true;
 			sAchDragY = in.ty;
 			sAchMoved = false;
@@ -460,8 +565,12 @@ static void updateAchievements(const Input& in, bool wasTouching) {
 
 	if (sAchDrag && !in.touching) {
 		sAchDrag = false;
-		if (!sAchMoved && in.ty >= 40 && in.ty <= 234) {
-			const int idx = (int)(((in.ty - 42.0f) + sAchScrollDraw) / rowH);
+		if (!sAchMoved && sAchLastY >= 42 && sAchLastY <= 234 && sAchLastX >= 10 && sAchLastX <= 310) {
+			int col = (sAchLastX - 12) / 100;
+			if (col < 0) col = 0;
+			if (col >= kAchCols) col = kAchCols - 1;
+			const int row = (int)(((sAchLastY - 44.0f) + sAchScrollDraw) / rowH);
+			const int idx = row * kAchCols + col;
 			if (idx >= 0 && idx < sAchCount) {
 				sAchSel = idx;
 				audio::click(0.55f);
@@ -471,14 +580,17 @@ static void updateAchievements(const Input& in, bool wasTouching) {
 
 	if (sAchCount > 0) {
 		int next = sAchSel;
-		if (in.down & KEY_UP) next--;
-		if (in.down & KEY_DOWN) next++;
+		if (in.down & KEY_LEFT) next--;
+		if (in.down & KEY_RIGHT) next++;
+		if (in.down & KEY_UP) next -= kAchCols;
+		if (in.down & KEY_DOWN) next += kAchCols;
 		if (next < 0) next = 0;
 		if (next >= sAchCount) next = sAchCount - 1;
 		if (next != sAchSel) {
 			sAchSel = next;
 			audio::click(0.45f);
-			const float topY = sAchSel * rowH;
+			const int row = sAchSel / kAchCols;
+			const float topY = row * rowH;
 			const float botY = topY + rowH;
 			if (topY < sAchScroll) sAchScroll = topY;
 			if (botY > sAchScroll + viewH) sAchScroll = botY - viewH;
@@ -489,20 +601,52 @@ static void updateAchievements(const Input& in, bool wasTouching) {
 }
 
 static void drawAchievements() {
+	static const char* const kFilterBtnLbl[4] = {"ALL v", "DONE v", "NAME v", "DIFF v"};
+	static const char* const kFilterOptLbl[4] = {"DEFAULT", "COMPLETED", "NAME", "DIFFICULTY"};
 	drawBackArrow(false, false);
 	int tot = 0;
 	const int got = achCountPlatform(&tot);
 	char hdr[32];
-	snprintf(hdr, sizeof hdr, "ACHIEVEMENTS (%d/%d)", got, tot);
-	fitText(hdr, 56, 10, 0.44f, 250, COL_CREAM, ALIGN_LEFT);
+	snprintf(hdr, sizeof hdr, "ACH (%d/%d)", got, tot);
+	fitText(hdr, 56, 13, 0.44f, 140, COL_CREAM, ALIGN_LEFT);
 
-	gfx::setClip(10, 40, 300, 194);
-	const float rowH = 48.0f;
+	drawPlank(202, 10, 108, 22, sAchDropOpen, false);
+	fitText(kFilterBtnLbl[sAchFilter], 256, 15, 0.32f, 96, COL_ACCENT, ALIGN_CENTER);
+
+	gfx::setClip(8, 42, 304, 192);
+	static constexpr int kAchCols = 3;
+	const float rowH = 62.0f;
 	for (int i = 0; i < sAchCount; i++) {
-		const float y = 42.0f + i * rowH - sAchScrollDraw;
-		if (y + 44.0f < 38.0f || y > 236.0f) continue;
+		const int r = i / kAchCols;
+		const int c = i % kAchCols;
+		const float x = 12.0f + c * 100.0f;
+		const float y = 44.0f + r * rowH - sAchScrollDraw;
+		const float w = 96.0f, h = 58.0f;
+		if (y + h < 40.0f || y > 236.0f) continue;
+
 		const int id = sAchIds[i];
-		drawAchBanner(14.0f, y, 292.0f, 44.0f, id, achHas(id), i == sAchSel);
+		const AchDef& a = kAchievements[id];
+		const bool unl = achHas(id);
+		const bool sel = (i == sAchSel);
+		drawPlank(x, y, w, h, sel, false);
+		if (unl) {
+			gfx::rect(x + 1, y + 1, w - 2, 1.5f, COL_ACCENT);
+			gfx::rect(x + 1, y + h - 2.5f, w - 2, 1.5f, COL_ACCENT);
+		}
+		gfx::sprite(SHEET_SPRITES, a.sprIdx, x + w * 0.5f, y + 16.0f, 0.78f, 0.78f, 0.0f,
+		            unl ? WHITE : rgba(0, 0, 0, 255));
+		drawWrappedText(a.title, x + w * 0.5f, y + 30.0f, 0.28f, w - 8.0f, 9.0f, unl ? COL_CREAM : rgba(10, 10, 12, 255), ALIGN_CENTER);
+		char cbuf[16];
+		snprintf(cbuf, sizeof cbuf, "+%uC", (unsigned)a.coins);
+		fitText(cbuf, x + w * 0.5f, y + 48.5f, 0.26f, w - 10.0f, unl ? COL_ACCENT : rgba(14, 14, 18, 255), ALIGN_CENTER);
 	}
 	gfx::clearClip();
+
+	if (sAchDropOpen) {
+		for (int opt = 0; opt < 4; opt++) {
+			const float oy = 34.0f + opt * 20.0f;
+			drawPlank(202, oy, 108, 20, sAchFilter == opt, false);
+			fitText(kFilterOptLbl[opt], 256, oy + 4.0f, 0.31f, 96, sAchFilter == opt ? COL_ACCENT : COL_CREAM, ALIGN_CENTER);
+		}
+	}
 }

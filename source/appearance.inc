@@ -4,11 +4,11 @@
 // ---------------------------------------------------------------- Records hub
 static const Button kRecordsButtons[] = {
 	kBack,
-	{12, 46, 94, 78, "Appearance"},
-	{113, 46, 94, 78, "Radio"},
-	{214, 46, 94, 78, "Achievements"},
-	{54, 134, 96, 78, "Journal"},
-	{170, 134, 96, 78, "Stats"},
+	{24, 54, 88, 74, "Appearance"},
+	{116, 54, 88, 74, "Radio"},
+	{208, 54, 88, 74, "Achievements"},
+	{68, 136, 90, 74, "Journal"},
+	{162, 136, 90, 74, "Stats"},
 };
 static constexpr int kRecordsCount = sizeof kRecordsButtons / sizeof kRecordsButtons[0];
 
@@ -17,7 +17,17 @@ static void drawRecords() {
 	drawHeader("Records");
 	drawBackArrow(f == 0, sPressed == 0);
 	for (int i = 1; i < kRecordsCount; i++) {
-		drawSign(kRecordsButtons[i], kRecordsButtons[i].label, f == i, sPressed == i, 0.44f, -1, fruitFor(kRecordsButtons[i].label));
+		const Button& b = kRecordsButtons[i];
+		float fx, fy, d;
+		fruitSpot(b, &fx, &fy, &d);
+		const float dy = (sPressed == i) ? 2.0f : 0.0f;
+		const float hi = highlightFade(b.x, b.y, b.w, b.h, f == i);
+		const u32 labelCol = lerpColor(COL_CREAM, COL_ACCENT, hi);
+		if (hi > 0.01f)
+			gfx::sprite(SHEET_SPRITES, sprites_ring_idx, fx, fy + dy, d / 34.0f, d / 34.0f, 0, withAlpha(COL_ACCENT, 0.9f * hi));
+		const float bob = (hi > 0.25f && !gSave.calmFx) ? sinf(sTime * 4.0f) * 1.5f * hi : 0.0f;
+		if (!isCut(b)) drawMenuFruit(fruitFor(b.label), fx, fy + dy + bob, d, sTime * 0.8f + b.x * 0.05f);
+		fitText(b.label, fx, fy + d * 0.42f + dy, 0.42f, 100.0f, labelCol, ALIGN_CENTER);
 	}
 }
 
@@ -36,7 +46,7 @@ static void drawRecordsTop() {
 	drawLogo(200, 54, 0.62f);
 	gfx::setDepth(0.7f);
 	gfx::text(f >= 1 && f < kRecordsCount ? kRecordsButtons[f].label : "Records", 200, 118, 0.56f, COL_ACCENT, ALIGN_CENTER);
-	fitText(kRecHints[f >= 0 && f < kRecordsCount ? f : 0], 200, 152, 0.36f, 316, COL_CREAM);
+	drawWrappedText(kRecHints[f >= 0 && f < kRecordsCount ? f : 0], 200, 148, 0.35f, 316, 14.0f, COL_CREAM, ALIGN_CENTER);
 }
 
 // ---------------------------------------------------------------- Appearance gallery
@@ -225,6 +235,7 @@ static void openAppearance() {
 	for (int i = 0; i < n; i++)
 		if (list[i].value == sAppKeep[sAppTab]) { sAppSel = i; break; }
 	sFocus[SCREEN_APPEARANCE] = kAppTile0 + sAppSel;
+	sPreviewBlade.reset();
 	appSyncPreview();
 	goTo(SCREEN_APPEARANCE, 1);
 }
@@ -248,6 +259,7 @@ static void appSetTab(int tab) {
 		if (list[i].value == sAppKeep[sAppTab]) { sAppSel = i; break; }
 	rowReveal(sAppList, sAppSel / kAppCols, kAppRowsShown, kAppStep);
 	sFocus[SCREEN_APPEARANCE] = kAppTile0 + sAppSel;
+	sPreviewBlade.reset();
 	appSyncPreview();
 }
 
@@ -271,6 +283,14 @@ static void appSeg(float x0, float y0, float x1, float y1, float w, u32 col) {
 	gfx::tri(x0 - nx, y0 - ny, col, x1 + nx, y1 + ny, col, x1 - nx, y1 - ny, col);
 }
 
+static int oscBloomLevel() {
+#if PORT_GRAPHICS_MENU
+	return gSave.bloom;
+#else
+	return gSave.calmFx ? 0 : 1;
+#endif
+}
+
 static void drawOscPreview(float x0, float y0, float w, float h, int style, float t) {
 	gfx::rect(x0, y0, w, h, rgba(12, 16, 26, 220));
 	gfx::rect(x0, y0, w, 1.5f, rgba(255, 255, 255, 45));
@@ -278,7 +298,9 @@ static void drawOscPreview(float x0, float y0, float w, float h, int style, floa
 	const int segs = 44;
 	const float cy = y0 + h * 0.5f;
 	const float amp = h * 0.34f;
-	if (style == 3) gfx::setAdditive(true);
+	const int bl = oscBloomLevel();
+	const bool bloomOn = (style == 3 && bl > 0);
+	if (bloomOn) gfx::setAdditive(true);
 	float px = x0 + 6, py = cy;
 	for (int i = 0; i <= segs; i++) {
 		const float u = (float)i / segs;
@@ -299,16 +321,17 @@ static void drawOscPreview(float x0, float y0, float w, float h, int style, floa
 		} else if (style == 2) {
 			col = rgba(96, 245, 132, 255);
 		} else {
-			col = rgba(92, 188, 255, 255);
+			col = bl >= 2 ? rgba(130, 215, 255, 255) : rgba(92, 188, 255, 255);
 		}
 		if (i > 0) {
-			if (style == 3) appSeg(px, py, sx, sy, 6.0f, rgba(64, 150, 255, 95));
+			if (style == 3 && bl >= 2) appSeg(px, py, sx, sy, 10.5f, rgba(48, 130, 255, 52));
+			if (style == 3 && bl >= 1) appSeg(px, py, sx, sy, 5.5f, rgba(64, 150, 255, bl >= 2 ? 115 : 75));
 			appSeg(px, py, sx, sy, 2.2f, col);
 		}
 		px = sx;
 		py = sy;
 	}
-	if (style == 3) gfx::setAdditive(false);
+	if (bloomOn) gfx::setAdditive(false);
 }
 
 static void updateAppearance(const Input& in, bool wasTouching) {
@@ -332,8 +355,10 @@ static void updateAppearance(const Input& in, bool wasTouching) {
 	Button btns[kAppSigns];
 	for (int i = 0; i < kAppTile0 + n; i++) btns[i] = appButton(i);
 	const bool inWindow = in.ty >= kAppWindowTop && in.ty < kAppWindowTop + kAppWindowH;
-	for (int i = kAppTile0; i < kAppTile0 + n; i++)
-		if (!inWindow) btns[i] = {-100, -100, 0, 0, nullptr};
+	if (in.touching || in.hovering) {
+		for (int i = kAppTile0; i < kAppTile0 + n; i++)
+			if (!inWindow) btns[i] = {-100, -100, 0, 0, nullptr};
+	}
 	int t = touchButtons(btns, kAppTile0 + n, in, wasTouching, f);
 #if PORT_MOUSE
 	if (in.hovering && !in.touching)
@@ -390,7 +415,7 @@ static void drawAppearance() {
 	for (int i = 0; i < APP_TABS; i++) {
 		Button b = appButton(kAppTab0 + i);
 		drawPlank(b.x, b.y, b.w, b.h, f == kAppTab0 + i, sPressed == kAppTab0 + i);
-		fitText(b.label, b.x + b.w / 2, b.y + 4, 0.31f, b.w - 6, i == sAppTab ? COL_ACCENT : COL_DIM);
+		fitText(b.label, b.x + b.w / 2, b.y + 4, 0.34f, b.w - 6, i == sAppTab ? COL_ACCENT : COL_DIM);
 	}
 	gfx::setClip(0, kAppWindowTop, 320, kAppWindowH);
 	for (int k = 0; k < n; k++) {
@@ -402,8 +427,8 @@ static void drawAppearance() {
 		drawPlank(b.x, b.y, b.w, b.h, sel, pressed);
 		if (!sel && f == kAppTile0 + k)
 			gfx::sign(sprites_plank_focus_idx, b.x - 2, b.y - 2 + (pressed ? 2 : 0), b.w + 4, b.h + 4, withAlpha(COL_CREAM, 0.5f));
-		fitText(list[k].name, b.x + b.w / 2, b.y + 9, 0.33f, b.w - 10, inUse ? COL_ACCENT : COL_CREAM);
-		gfx::text(inUse ? "IN USE" : "EQUIP", b.x + b.w / 2, b.y + 27, 0.27f, inUse ? COL_ACCENT : COL_DIM, ALIGN_CENTER);
+		fitText(list[k].name, b.x + b.w / 2, b.y + 8, 0.36f, b.w - 10, inUse ? COL_ACCENT : COL_CREAM);
+		gfx::text(inUse ? "IN USE" : "EQUIP", b.x + b.w / 2, b.y + 27, 0.29f, inUse ? COL_ACCENT : COL_DIM, ALIGN_CENTER);
 	}
 	gfx::clearClip();
 	drawScrollMark(kAppTop, kAppRowsShown * kAppStep - 6, sAppList.pos, appHiddenRows(n) * kAppStep);
@@ -417,8 +442,8 @@ static void drawAppearancePreview() {
 	const bool inUse = e.value == sAppKeep[sAppTab];
 	topPanel(30, 14, 340, 206);
 	gfx::setDepth(0.7f);
-	fitText(e.name, 200, 24, 0.54f, 316, COL_ACCENT);
-	fitText(e.line, 200, 50, 0.36f, 316, COL_CREAM);
+	fitText(e.name, 200, 22, 0.54f, 316, COL_ACCENT);
+	drawWrappedText(e.line, 200, 48, 0.35f, 316, 13.0f, COL_CREAM, ALIGN_CENTER);
 	gfx::setDepth(0.5f);
 	if (sAppTab == APP_BOARDS) {
 		gfx::image(SHEET_BOARD, 0, 126, 76, 148, 96);

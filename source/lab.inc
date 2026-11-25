@@ -2796,6 +2796,101 @@ static void labFinish(Input& in) {
 				sGame.mode = wasModeM;
 				sGame.phase = wasPhaseM;
 			}
+			// 2.1.0 Playtest Fixes: 3DS (0,0) touch release, Achievements filter + 3-col grid, real-time mid-run unlocks, Practice coin exclusion, Radio overlap & full-screen Osc viz.
+			{
+				const Settings wasSaveF = gSave;
+				const Screen wasScrF = sScreen;
+				const Mode wasModeF = sGame.mode;
+				const auto wasPhaseF = sGame.phase;
+				const int wasSlicedF = sGame.sliced, wasBestComboF = sGame.bestCombo;
+				const u32 wasCoinsCaughtF = sGame.coinsCaught;
+				const bool wasCommittedF = sGame.scoreCommitted;
+				const int wasAchSel = sAchSel, wasAchFilter = sAchFilter;
+				const bool wasAchDrop = sAchDropOpen;
+				const bool wasRadioGrid = sRadioGrid, wasRadioDrop = sRadioDropOpen, wasRadioOsc = sRadioOsc;
+
+				// 1) 3DS-style release at (0,0) on Achievements 3-col grid + Filter dropdown.
+				openAchievements();
+				Input tapIn{};
+				tapIn.touching = true; tapIn.tx = 160; tapIn.ty = 130;  // col 1, row 1 -> index 4
+				updateAchievements(tapIn, false);
+				Input relIn{};  // tx=0, ty=0 on 3DS stylus release!
+				updateAchievements(relIn, true);
+				const bool gridTapOk = (sAchSel == 4);
+
+				tapIn.tx = 256; tapIn.ty = 18;
+				updateAchievements(tapIn, false);
+				updateAchievements(relIn, true);
+				const bool dropOpenOk = sAchDropOpen;
+				tapIn.tx = 256; tapIn.ty = 78;  // NAME option
+				updateAchievements(tapIn, false);
+				updateAchievements(relIn, true);
+				const bool sortNameOk = (!sAchDropOpen && sAchFilter == 2 &&
+				                         achCmpAlpha(kAchievements[sAchIds[0]].title, kAchievements[sAchIds[1]].title) <= 0);
+				labCheck(gridTapOk && dropOpenOk && sortNameOk,
+				         "Achievements 3-col grid & filter dropdown handle 3DS (0,0) touch release and sort properly");
+
+				// 2) Radio & Mods non-overlapping header/search bounds + Radio 3DS touch release.
+				openRadio();
+				const bool radioNoOverlap = (42 >= kBack.y + kBack.h) && (174 >= kBack.x + kBack.w) && (202 >= kBack.x + kBack.w);
+				tapIn.touching = true; tapIn.tx = 274; tapIn.ty = 18;
+				updateRadio(tapIn, false);
+				updateRadio(relIn, true);
+				const bool rDropOk = sRadioDropOpen;
+				tapIn.tx = 274; tapIn.ty = 65;  // GRID option
+				updateRadio(tapIn, false);
+				updateRadio(relIn, true);
+				labCheck(radioNoOverlap && rDropOk && sRadioGrid && !sRadioDropOpen,
+				         "Radio & Achievements top controls clear kBack without overlap and handle 3DS touch");
+
+				// 3) Real-time mid-run achievements & Practice tutorial coin exclusion.
+				gSave.achievements[0] = gSave.achievements[1] = 0;
+				gSave.coinsLifetime = 0;
+				gSave.totalFruit = 0;
+				gSave.bestCombo = 0;
+				sAchAllowInLab = true;
+				sScreen = SCREEN_GAME;
+				sGame.mode = MODE_PRACTICE;
+				sGame.phase = PHASE_PLAY;
+				sGame.scoreCommitted = false;
+				sGame.coinsCaught = 1;
+				achPollProgress();
+				const bool practiceBlocked = !achHas(ACH_OOH_SHINY);
+
+				sGame.mode = MODE_CLASSIC;
+				sGame.coinsCaught = 1;
+				sGame.sliced = 105;
+				sGame.bestCombo = 5;
+				achPollProgress();
+				const bool liveUnlocked = achHas(ACH_OOH_SHINY) && achHas(ACH_FRUIT_JUICE) && achHas(ACH_COMBO_MASTER);
+				sAchAllowInLab = false;
+				labCheck(practiceBlocked && liveUnlocked,
+				         "Practice tutorial coins never unlock Ooh Shiny while real runs unlock achievements live mid-run");
+
+				// 4) Full-screen Oscilloscope fruit visualizer spawns and slices on beat.
+				resetRadioOscViz();
+				sRadioOsc = true;
+				for (int i = 0; i < 40; i++) updateRadioOscViz(0.05f, 400.0f, 240.0f);
+				bool hasFruitOrHalf = false;
+				for (const auto& f : sOscFruits) if (f.on) hasFruitOrHalf = true;
+				for (const auto& h : sOscHalves) if (h.on) hasFruitOrHalf = true;
+				labCheck(hasFruitOrHalf, "Full-screen Oscilloscope fruit overlay spawns and slices fruit to the beat");
+
+				sRadioOsc = wasRadioOsc;
+				sRadioDropOpen = wasRadioDrop;
+				sRadioGrid = wasRadioGrid;
+				sAchDropOpen = wasAchDrop;
+				sAchFilter = wasAchFilter;
+				sAchSel = wasAchSel;
+				sGame.scoreCommitted = wasCommittedF;
+				sGame.coinsCaught = wasCoinsCaughtF;
+				sGame.bestCombo = wasBestComboF;
+				sGame.sliced = wasSlicedF;
+				sGame.phase = wasPhaseF;
+				sGame.mode = wasModeF;
+				sScreen = wasScrF;
+				gSave = wasSaveF;
+			}
 		}
 		step = 1;
 #if PORT_3DS

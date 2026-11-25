@@ -2648,6 +2648,8 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 		bool finiteOk = true;
 		static const int kFiniteDiffs[] = {DIFF_NORMAL, DIFF_INSANE};
 		static const int kFiniteBosses[] = {BOSS_MELON, BOSS_KING, BOSS_LEMON};
+		const Rng wasRngF = gRng;
+		gRng.s = 0x51C39E11u;
 		char fmsg[96] = "";
 		for (int dif : kFiniteDiffs) {
 			for (int bossId : kFiniteBosses) {
@@ -2725,6 +2727,7 @@ void Game::labOrchard(void (*check)(bool, const char*, const char*)) {
 				audio::fuse(false);
 			}
 		}
+		gRng = wasRngF;
 		check(finiteOk, "Finite-HP skilled runs survive and beat Big Melon, Bomb King, and Milestone Boss on Normal & Insane", fmsg);
 	}
 

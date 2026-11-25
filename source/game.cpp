@@ -984,10 +984,9 @@ void Game::commitScore() {
 	if (orchardLike()) journalCoins += orc.bossCoins;  // boss milestones are Journal milestones too
 	gSave.playSeconds += (u32)elapsed;
 	if (mode == MODE_PRACTICE || passName) {
-		// No score to keep. Journal milestones still pay, and the lessons are marked done.
+		// No score to keep, and tutorial coins do not count toward lifetime coins/achievements.
 		coinsEarned = journalCoins;
 		gSave.coins += journalCoins;
-		gSave.coinsLifetime += journalCoins;
 		if (mode == MODE_PRACTICE) gSave.practiceDone = 1;
 		saveWrite();
 		return;
@@ -1396,8 +1395,8 @@ void Game::sliceObj(Obj& o, const Blade& blade) {
 		case OBJ_FRUIT:
 		case OBJ_GOLD: sliceFruit(o, blade); return;
 		case OBJ_COIN:
-			// One coin and five points. It bursts into sparkles instead of splitting.
-			coinsCaught++;
+			// One coin and five points (Practice tutorial coins are practice-only).
+			if (mode != MODE_PRACTICE) coinsCaught++;
 			coinPulse = 1;
 			if (orchardLike()) orcSliced(o);
 			if (mode == MODE_PRACTICE) practiceSliced(o);

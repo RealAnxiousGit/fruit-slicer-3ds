@@ -7,6 +7,8 @@ static float sModScroll = 0.0f;
 static float sModScrollDraw = 0.0f;
 static bool sModDrag = false;
 static int sModDragY = 0;
+static int sModLastX = 0;
+static int sModLastY = 0;
 static bool sModMoved = false;
 
 static void openMods() {
@@ -68,7 +70,7 @@ static void drawModsTop() {
 	         m->enabled ? "ENABLED" : "DISABLED");
 	fitText(badge, 108, 94, 0.30f, 246, m->enabled ? COL_ACCENT : COL_DIM, ALIGN_LEFT);
 
-	fitText(m->desc, 42, 122, 0.33f, 316, COL_CREAM, ALIGN_LEFT);
+	drawWrappedText(m->desc, 42, 122, 0.34f, 316, 14.0f, COL_CREAM, ALIGN_LEFT);
 	fitText(dir, 200, 196, 0.27f, 324, COL_DIM, ALIGN_CENTER);
 }
 
@@ -81,16 +83,21 @@ static void updateMods(const Input& in, bool wasTouching) {
 	const int n = mods::count();
 	if (sModSel >= n) sModSel = n > 0 ? n - 1 : 0;
 
-	const float viewH = 196.0f;
+	const float viewH = 192.0f;
 	const float rowH = 50.0f;
 	const float maxScroll = clampf(n * rowH - viewH, 0.0f, 9999.0f);
 	if (in.wheel != 0) sModScroll = clampf(sModScroll - in.wheel * 28.0f, 0.0f, maxScroll);
 
-	const Button refreshBtn = {166, 6, 68, 20, "REFRESH"};
-	const Button folderBtn = {238, 6, 70, 20, ""};
+	const Button refreshBtn = {166, 10, 68, 22, "REFRESH"};
+	const Button folderBtn = {238, 10, 72, 22, ""};
+
+	if (in.touching) {
+		sModLastX = in.tx;
+		sModLastY = in.ty;
+	}
 
 	if (in.touching && !wasTouching) {
-		if (radioHit(kBack, in.tx, in.ty)) {
+		if (hit(kBack, in.tx, in.ty)) {
 			audio::click();
 			leaveMods();
 			return;
@@ -105,7 +112,7 @@ static void updateMods(const Input& in, bool wasTouching) {
 			mods::openFolder();
 			return;
 		}
-		if (in.ty >= 34 && in.ty <= 234) {
+		if (in.ty >= 42 && in.ty <= 234) {
 			sModDrag = true;
 			sModDragY = in.ty;
 			sModMoved = false;
@@ -123,25 +130,25 @@ static void updateMods(const Input& in, bool wasTouching) {
 
 	if (sModDrag && !in.touching) {
 		sModDrag = false;
-		if (!sModMoved && in.ty >= 34 && in.ty <= 234) {
-			const float relY = (in.ty - 36.0f) + sModScrollDraw;
+		if (!sModMoved && sModLastY >= 42 && sModLastY <= 234) {
+			const float relY = (sModLastY - 44.0f) + sModScrollDraw;
 			const int idx = (int)(relY / rowH);
 			if (idx >= 0 && idx < n) {
 				sModSel = idx;
 				const float rx = 14.0f;
-				const float ry = 36.0f + idx * rowH - sModScrollDraw;
+				const float ry = 44.0f + idx * rowH - sModScrollDraw;
 				const Button upBtn = {rx + 180, ry + 10, 22, 26, "^"};
 				const Button dnBtn = {rx + 205, ry + 10, 22, 26, "v"};
 				const Button togBtn = {rx + 232, ry + 10, 52, 26, ""};
-				if (radioHit(upBtn, in.tx, in.ty) && idx > 0) {
+				if (radioHit(upBtn, sModLastX, sModLastY) && idx > 0) {
 					audio::click(0.55f);
 					mods::move(idx, -1);
 					sModSel = idx - 1;
-				} else if (radioHit(dnBtn, in.tx, in.ty) && idx + 1 < n) {
+				} else if (radioHit(dnBtn, sModLastX, sModLastY) && idx + 1 < n) {
 					audio::click(0.55f);
 					mods::move(idx, +1);
 					sModSel = idx + 1;
-				} else if (radioHit(togBtn, in.tx, in.ty)) {
+				} else if (radioHit(togBtn, sModLastX, sModLastY)) {
 					modToggle(idx);
 				} else {
 					audio::click(0.45f);
@@ -182,32 +189,32 @@ static void updateMods(const Input& in, bool wasTouching) {
 
 static void drawMods() {
 	drawBackArrow(false, false);
-	gfx::text("MODS", 56, 8, 0.50f, COL_CREAM, ALIGN_LEFT);
+	gfx::text("MODS", 58, 11, 0.50f, COL_CREAM, ALIGN_LEFT);
 
-	drawPlank(166, 6, 68, 20, false, false);
-	gfx::text("REFRESH", 200, 10, 0.30f, COL_CREAM, ALIGN_CENTER);
+	drawPlank(166, 10, 68, 22, false, false);
+	gfx::text("REFRESH", 200, 15, 0.30f, COL_CREAM, ALIGN_CENTER);
 
-	drawPlank(238, 6, 70, 20, false, false);
+	drawPlank(238, 10, 72, 22, false, false);
 #if defined(__EMSCRIPTEN__)
-	gfx::text("IMPORT", 273, 10, 0.30f, COL_ACCENT, ALIGN_CENTER);
+	gfx::text("IMPORT", 274, 15, 0.30f, COL_ACCENT, ALIGN_CENTER);
 #elif PORT_3DS || defined(__ANDROID__)
-	gfx::text("SD PATH", 273, 10, 0.30f, COL_DIM, ALIGN_CENTER);
+	gfx::text("SD PATH", 274, 15, 0.30f, COL_DIM, ALIGN_CENTER);
 #else
-	gfx::text("FOLDER", 273, 10, 0.30f, COL_ACCENT, ALIGN_CENTER);
+	gfx::text("FOLDER", 274, 15, 0.30f, COL_ACCENT, ALIGN_CENTER);
 #endif
 
 	const int n = mods::count();
-	gfx::setClip(10, 34, 300, 200);
+	gfx::setClip(10, 42, 300, 192);
 	if (n == 0) {
-		gfx::text("No mods found.", 160, 118, 0.42f, COL_CREAM, ALIGN_CENTER);
-		gfx::text("modTemplate.zip is ignored.", 160, 140, 0.32f, COL_DIM, ALIGN_CENTER);
+		gfx::text("No mods found.", 160, 122, 0.42f, COL_CREAM, ALIGN_CENTER);
+		gfx::text("modTemplate.zip is ignored.", 160, 144, 0.32f, COL_DIM, ALIGN_CENTER);
 	} else {
 		const float rowH = 50.0f;
 		for (int i = 0; i < n; i++) {
 			const float x = 14.0f;
-			const float y = 36.0f + i * rowH - sModScrollDraw;
+			const float y = 44.0f + i * rowH - sModScrollDraw;
 			const float w = 292.0f, h = 46.0f;
-			if (y + h < 32.0f || y > 236.0f) continue;
+			if (y + h < 40.0f || y > 236.0f) continue;
 
 			const mods::ModInfo* m = mods::get(i);
 			if (!m) continue;
