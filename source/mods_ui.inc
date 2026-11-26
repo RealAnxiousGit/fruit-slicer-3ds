@@ -46,6 +46,7 @@ static void drawModsTop() {
 
 	char dir[480];
 	mods::modsDir(dir, sizeof dir);
+	for (char* p = dir; *p; ++p) if (*p == '\\') *p = '/';
 	const int n = mods::count();
 	if (n == 0) {
 		gfx::text("NO MODS INSTALLED", 200, 66, 0.42f, COL_CREAM, ALIGN_CENTER);

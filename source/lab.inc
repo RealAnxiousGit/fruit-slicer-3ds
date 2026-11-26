@@ -2942,15 +2942,47 @@ static void labFinish(Input& in) {
 
 #if !PORT_3DS
 				if (getenv("FRUIT_SLICER_V2F_SHOTS")) {
-					sRadioGrid = false;
-					openRadio();
-					labSnapV2f("v21_radio_list");
-					sRadioGrid = true;
-					labSnapV2f("v21_radio_grid");
+					sScreen = SCREEN_TITLE;
+					sFocus[SCREEN_TITLE] = 0;
+					labSnapV2f("qa_title");
 
 					sScreen = SCREEN_RECORDS;
 					sFocus[SCREEN_RECORDS] = 5;
-					labSnapV2f("v21_records_stats");
+					labSnapV2f("qa_records_stats");
+
+					openAppearance();
+					sAppTab = APP_BLADES;
+					sAppSel = 1;
+					labSnapV2f("qa_appearance_blade");
+
+					openAchievements();
+					sAchSel = 0;
+					labSnapV2f("qa_achievements");
+
+					openMods();
+					labSnapV2f("qa_mods");
+
+					openShop();
+					shopSetTab(SHOP_SKINS);
+					sShopItem = 1;
+					m3d::sync();
+					labSnapV2f("qa_shop_skin");
+
+					sRadioGrid = false;
+					openRadio();
+					labSnapV2f("qa_radio_list");
+					sRadioGrid = true;
+					labSnapV2f("qa_radio_grid");
+
+					const u8 artWas = gSave.artStyle;
+					gSave.artStyle = ART_3D;
+					m3d::sync();
+					gSave.oscStyle = 3;  // Bloomin' Blue
+					resetRadioOscViz();
+					sRadioOsc = true;
+					for (int i = 0; i < 18; i++) updateRadioOscViz(0.05f, 400.0f, 240.0f);
+					labSnapV2f("qa_radio_osc");
+					sRadioOsc = false;
 
 					sScreen = SCREEN_RESULT;
 					sGame.mode = MODE_ORCHARD;
@@ -2963,10 +2995,8 @@ static void labFinish(Input& in) {
 					sGame.orc.newTracks = 1;
 					sGame.scoreCommitted = true;
 					sGame.coinsEarned = 85;
-					labSnapV2f("v21_result_orchard");
+					labSnapV2f("qa_result_orchard");
 
-					const u8 artWas = gSave.artStyle;
-					gSave.artStyle = ART_3D;
 					sScreen = SCREEN_GAME;
 					sGame.mode = MODE_ORCHARD;
 					sGame.phase = PHASE_PLAY;
@@ -2987,8 +3017,9 @@ static void labFinish(Input& in) {
 					sGame.orc.shots[1].kind = SHOT_SEED;
 					sGame.orc.shots[1].x = 182;
 					sGame.orc.shots[1].y = 128;
-					labSnapV2f("v21_boss_shield");
+					labSnapV2f("qa_boss_shield_3d");
 					gSave.artStyle = artWas;
+					m3d::sync();
 				}
 #endif
 
