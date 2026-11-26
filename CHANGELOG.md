@@ -15,6 +15,7 @@
 ### Changed & Fixed
 
 - **Double XP & Rebalance:** renamed `Double Points` to **Double XP** in Orchard Blast (`2×` XP per fruit), tuned **Easy** (`30` HP, gentler throws, generous XP) and **Normal** (`25` HP, smoother Rooms 1–10) while keeping **Hard/Insane** strict, and added 1 starter Reroll on all runs.
+- **Radio, UI & Gameplay Polish:** 2-tap track preview & equip flow, 18–20 char line wrapping, bass-punchy Oscilloscope visualizer with style-matched translucent background fruit, boss shield depth ordering fix so emerging objects render behind the shield, cleaner Results text layout, `+#C` coin badge fit inside Achievement boxes, and larger Shop item previews.
 - **3DS Small-Text Readability:** enlarged cramped labels across Orchard Blast, Radio, Mods, and Achievements.
 
 ## 2.0.0
